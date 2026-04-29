@@ -13,6 +13,13 @@ const rotasBuilder = require('./routes/builder.routes');
 const rotasBotVariables = require('./routes/bot-variables.routes');
 const rotasUsuarios = require('./routes/usuarios.routes');
 const rotasAgenda = require('./routes/agenda.routes');
+const rotasCatalogo = require('./routes/catalogo.routes');
+const rotasEstoque = require('./routes/estoque.routes');
+const rotasFinanceiro = require('./routes/financeiro.routes');
+const rotasVendas = require('./routes/vendas.routes');
+const rotasCmv = require('./routes/cmv.routes');
+const CrmUsuariosController = require('./controllers/CrmUsuariosController');
+const middlewareAutenticacao = require('./middlewares/auth.middleware');
 
 const app = express();
 const servidor = http.createServer(app);
@@ -34,6 +41,16 @@ app.use((req, res, next) => {
 // Rotas Base
 app.use('/autenticacao', rotasAutenticacao);
 app.use('/usuarios', rotasUsuarios);
+
+// Gerenciamento de Usuários do Cliente (CRM)
+const routerCrmUsuarios = express.Router();
+routerCrmUsuarios.use(middlewareAutenticacao);
+routerCrmUsuarios.get('/', (req, res) => CrmUsuariosController.listar(req, res));
+routerCrmUsuarios.post('/', (req, res) => CrmUsuariosController.criar(req, res));
+routerCrmUsuarios.put('/:id', (req, res) => CrmUsuariosController.atualizar(req, res));
+routerCrmUsuarios.delete('/:id', (req, res) => CrmUsuariosController.excluir(req, res));
+app.use('/crm/usuarios', routerCrmUsuarios);
+
 app.use('/clientes', rotasClientes);
 app.use('/bots', rotasBots);
 app.use('/alertas', rotasAlertas);
@@ -41,6 +58,10 @@ app.use('/crm', rotasCRM);
 app.use('/builder', rotasBuilder);
 app.use('/bot-variables', rotasBotVariables);
 app.use('/agenda', rotasAgenda);
+app.use('/catalogo', rotasCatalogo);
+app.use('/estoque', rotasEstoque);
+app.use('/financeiro', rotasFinanceiro);
+app.use('/vendas', rotasVendas);
 
 // Rota de Teste de Saúde (Health Check)
 app.get('/saude', (req, res) => {

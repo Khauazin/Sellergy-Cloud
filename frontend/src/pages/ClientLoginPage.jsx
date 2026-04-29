@@ -5,7 +5,7 @@ import { Bot, Lock, Mail, Loader2, ArrowRight, ShieldCheck, Sparkles, TrendingUp
 
 export default function ClientLoginPage() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [senha, setSenha] = useState('');
   const { login, error, isLoading, isAuthenticated, checkAuth, user, logout } = useAuthStore();
   const navigate = useNavigate();
 
@@ -15,10 +15,10 @@ export default function ClientLoginPage() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.role === 'ADMIN') {
+      if (user.perfil === 'ADMIN') {
         // Força logout se um Admin tentar acessar login de Cliente
         logout();
-      } else if (user.role === 'CLIENT') {
+      } else if (user.perfil === 'CLIENT') {
         navigate('/app/dashboard');
       }
     }
@@ -26,11 +26,11 @@ export default function ClientLoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await login(email, password);
+    await login(email, senha);
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex w-full">
+    <div className="min-h-screen bg-[var(--bg-app)] flex w-full">
       {/* Lado Esquerdo - Formulário */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative z-10">
         
@@ -91,8 +91,8 @@ export default function ClientLoginPage() {
                 <input
                   type="password"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-3.5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder:text-gray-600"
                   placeholder="••••••••"
                 />

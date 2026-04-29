@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, MoreVertical, Building2, Phone, Mail, DollarSign, Loader2, Edit2, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
+import { Plus, Search, MoreVertical, Building2, Phone, Mail, Loader2, Edit2, Trash2, PauseCircle, PlayCircle } from 'lucide-react';
 import api from '../services/api';
 import Modal from '../components/Modal';
 import { useAuthStore } from '../store/auth.store';
@@ -17,7 +17,7 @@ export default function ClientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
-    name: '', email: '', phone: '', segment: '', plan: 'BASIC', monthlyFee: ''
+    nome: '', email: '', telefone: '', segmento: '', plano: 'BASIC', mensalidade: ''
   });
   const [editingId, setEditingId] = useState(null);
 
@@ -35,7 +35,7 @@ export default function ClientsPage() {
   };
 
   const handleToggleStatus = async (id, currentStatus) => {
-    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const newStatus = currentStatus === 'ATIVO' ? 'INATIVO' : 'ATIVO';
     try {
       const res = await api.patch(`/clientes/${id}/status`, { status: newStatus });
       setClients(clients.map(c => c.id === id ? { ...c, status: res.data.status } : c));
@@ -72,7 +72,7 @@ export default function ClientsPage() {
         setClients([response.data, ...clients]);
       }
       setIsModalOpen(false);
-      setFormData({ name: '', email: '', phone: '', segment: '', plan: 'BASIC', monthlyFee: '' });
+      setFormData({ nome: '', email: '', telefone: '', segmento: '', plano: 'BASIC', mensalidade: '' });
       setEditingId(null);
     } catch (error) {
       console.error('Erro ao salvar cliente', error);
@@ -83,7 +83,7 @@ export default function ClientsPage() {
   };
 
   const filteredClients = clients.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
@@ -96,10 +96,10 @@ export default function ClientsPage() {
           <h2 className="text-2xl font-bold text-white tracking-tight">Gestão de Clientes</h2>
           <p className="text-gray-400 text-sm mt-1">Gerencie as empresas e contratantes da plataforma</p>
         </div>
-        {currentUser?.role === 'ADMIN' && (
+        {currentUser?.perfil === 'ADMIN' && (
           <button 
             onClick={() => {
-              setFormData({ name: '', email: '', phone: '', segment: '', plan: 'BASIC', monthlyFee: '' });
+              setFormData({ nome: '', email: '', telefone: '', segmento: '', plano: 'BASIC', mensalidade: '' });
               setEditingId(null);
               setIsModalOpen(true);
             }}
@@ -138,7 +138,7 @@ export default function ClientsPage() {
                 <th className="px-6 py-4 font-medium">Plano</th>
                 <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium text-right">Mensalidade</th>
-                {currentUser?.role === 'ADMIN' && <th className="px-6 py-4"></th>}
+                {currentUser?.perfil === 'ADMIN' && <th className="px-6 py-4"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -170,8 +170,8 @@ export default function ClientsPage() {
                           <Building2 className="w-5 h-5 text-gray-400" />
                         </div>
                         <div>
-                          <p className="text-white font-medium">{client.name}</p>
-                          <p className="text-gray-500 text-xs">{client.segment || 'Sem segmento'}</p>
+                          <p className="text-white font-medium">{client.nome}</p>
+                          <p className="text-gray-500 text-xs">{client.segmento || 'Sem segmento'}</p>
                         </div>
                       </div>
                     </td>
@@ -180,27 +180,27 @@ export default function ClientsPage() {
                         <Mail className="w-3 h-3" /> {client.email || '--'}
                       </div>
                       <div className="flex items-center gap-2 text-gray-400 text-xs">
-                        <Phone className="w-3 h-3" /> {client.phone || '--'}
+                        <Phone className="w-3 h-3" /> {client.telefone || '--'}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                        {client.plan}
+                        {client.plano}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                        client.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                        client.status === 'INACTIVE' ? 'bg-gray-500/10 text-gray-400 border-gray-500/20' : 
+                        client.status === 'ATIVO' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                        client.status === 'INATIVO' ? 'bg-gray-500/10 text-gray-400 border-gray-500/20' : 
                         'bg-red-500/10 text-red-400 border-red-500/20'
                       }`}>
-                        {client.status === 'ACTIVE' ? 'Ativo' : client.status === 'INACTIVE' ? 'Inativo' : 'Suspenso'}
+                        {client.status === 'ATIVO' ? 'Ativo' : client.status === 'INATIVO' ? 'Inativo' : 'Suspenso'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right text-gray-300 font-medium">
-                      R$ {client.monthlyFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      R$ {client.mensalidade.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
-                    {currentUser?.role === 'ADMIN' && (
+                    {currentUser?.perfil === 'ADMIN' && (
                       <td className="px-6 py-4 text-right relative">
                         <button 
                           onClick={(e) => { e.stopPropagation(); setOpenDropdownId(openDropdownId === client.id ? null : client.id); }}
@@ -217,12 +217,12 @@ export default function ClientsPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setFormData({
-                                    name: client.name || '',
+                                    nome: client.nome || '',
                                     email: client.email || '',
-                                    phone: client.phone || '',
-                                    segment: client.segment || '',
-                                    plan: client.plan || 'BASIC',
-                                    monthlyFee: client.monthlyFee || ''
+                                    telefone: client.telefone || '',
+                                    segmento: client.segmento || '',
+                                    plano: client.plano || 'BASIC',
+                                    mensalidade: client.mensalidade || ''
                                   });
                                   setEditingId(client.id);
                                   setIsModalOpen(true);
@@ -236,7 +236,7 @@ export default function ClientsPage() {
                                 onClick={(e) => { e.stopPropagation(); handleToggleStatus(client.id, client.status); }}
                                 className="w-full flex items-center gap-2 px-4 py-3 text-sm text-amber-400 hover:bg-amber-500/10 transition-colors text-left"
                               >
-                                {client.status === 'ACTIVE' ? <><PauseCircle className="w-4 h-4" /> Suspender</> : <><PlayCircle className="w-4 h-4" /> Ativar</>}
+                                {client.status === 'ATIVO' ? <><PauseCircle className="w-4 h-4" /> Suspender</> : <><PlayCircle className="w-4 h-4" /> Ativar</>}
                               </button>
                               <div className="h-px bg-white/5 my-1"></div>
                               <button 
@@ -265,7 +265,7 @@ export default function ClientsPage() {
             <label className="text-sm font-medium text-gray-300">Nome da Empresa/Cliente *</label>
             <input 
               required
-              value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}
+              value={formData.nome} onChange={e => setFormData({...formData, nome: e.target.value})}
               className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 transition-colors"
               placeholder="Ex: Imobiliária Silva"
             />
@@ -284,7 +284,7 @@ export default function ClientsPage() {
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-300">Telefone / WhatsApp</label>
               <input 
-                value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})}
+                value={formData.telefone} onChange={e => setFormData({...formData, telefone: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
                 placeholder="(00) 00000-0000"
               />
@@ -295,7 +295,7 @@ export default function ClientsPage() {
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-300">Segmento</label>
               <input 
-                value={formData.segment} onChange={e => setFormData({...formData, segment: e.target.value})}
+                value={formData.segmento} onChange={e => setFormData({...formData, segmento: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
                 placeholder="Ex: Imobiliária, Clínica..."
               />
@@ -303,7 +303,7 @@ export default function ClientsPage() {
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-300">Plano</label>
               <select 
-                value={formData.plan} onChange={e => setFormData({...formData, plan: e.target.value})}
+                value={formData.plano} onChange={e => setFormData({...formData, plano: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 appearance-none"
               >
                 <option value="BASIC">Básico</option>
@@ -317,7 +317,7 @@ export default function ClientsPage() {
             <label className="text-sm font-medium text-gray-300">Mensalidade (R$)</label>
             <input 
               type="number" step="0.01" min="0"
-              value={formData.monthlyFee} onChange={e => setFormData({...formData, monthlyFee: e.target.value})}
+              value={formData.mensalidade} onChange={e => setFormData({...formData, mensalidade: e.target.value})}
               className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
               placeholder="Ex: 199.90"
             />

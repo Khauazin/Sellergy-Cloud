@@ -1,10 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>BotManager — Painel de Controle</title>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+    <!-- Anti-flash: aplica o tema antes do React carregar -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('botmanager-ui-storage');
+          var parsed = stored ? JSON.parse(stored) : null;
+          var theme = parsed?.state?.theme ?? 'dark';
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.backgroundColor = '#0a0a0a';
+          } else {
+            document.documentElement.style.backgroundColor = '#f0f2f5';
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+          document.documentElement.style.backgroundColor = '#0a0a0a';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

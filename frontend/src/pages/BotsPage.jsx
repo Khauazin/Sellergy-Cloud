@@ -18,8 +18,8 @@ export default function BotsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
-    clientId: '', name: '', channel: 'WHATSAPP', phoneNumber: '',
-    aiProvider: '', aiModel: '', aiSystemPrompt: '', aiTemperature: 0.7
+    clienteId: '', nome: '', canal: 'WHATSAPP', telefone: '',
+    provedorIa: '', modeloIa: '', promptSistemaIa: '', temperaturaIa: 0.7
   });
   const [editingId, setEditingId] = useState(null);
 
@@ -80,21 +80,21 @@ export default function BotsPage() {
         const response = await api.put(`/bots/${editingId}`, formData);
         const updatedBot = {
           ...response.data,
-          client: clientes.find(c => c.id === formData.clientId)
+          cliente: clientes.find(c => c.id === formData.clienteId)
         };
         setBots(bots.map(b => b.id === editingId ? updatedBot : b));
       } else {
         const response = await api.post('/bots', formData);
         const novoBot = {
           ...response.data,
-          client: clientes.find(c => c.id === formData.clientId)
+          cliente: clientes.find(c => c.id === formData.clienteId)
         };
         setBots([novoBot, ...bots]);
       }
       setIsModalOpen(false);
       setFormData({ 
-        clientId: '', name: '', channel: 'WHATSAPP', phoneNumber: '',
-        aiProvider: '', aiModel: '', aiSystemPrompt: '', aiTemperature: 0.7 
+        clienteId: '', nome: '', canal: 'WHATSAPP', telefone: '',
+        provedorIa: '', modeloIa: '', promptSistemaIa: '', temperaturaIa: 0.7 
       });
       setEditingId(null);
     } catch (error) {
@@ -106,8 +106,8 @@ export default function BotsPage() {
   };
 
   const filteredBots = bots.filter(b => 
-    b.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (b.client?.name && b.client.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    b.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (b.cliente?.nome && b.cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const getStatusIcon = (status) => {
@@ -137,12 +137,12 @@ export default function BotsPage() {
           <h2 className="text-2xl font-bold text-white tracking-tight">Gestão de Bots</h2>
           <p className="text-gray-400 text-sm mt-1">Gerencie os chatbots configurados para cada cliente</p>
         </div>
-        {currentUser?.role === 'ADMIN' && (
+        {currentUser?.perfil === 'ADMIN' && (
           <button 
             onClick={() => {
               setFormData({ 
-                clientId: '', name: '', channel: 'WHATSAPP', phoneNumber: '',
-                aiProvider: '', aiModel: '', aiSystemPrompt: '', aiTemperature: 0.7 
+                clienteId: '', nome: '', canal: 'WHATSAPP', telefone: '',
+                provedorIa: '', modeloIa: '', promptSistemaIa: '', temperaturaIa: 0.7 
               });
               setEditingId(null);
               setIsModalOpen(true);
@@ -196,11 +196,11 @@ export default function BotsPage() {
                     <Bot className="w-6 h-6 text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-white font-semibold">{bot.name}</h3>
-                    <p className="text-gray-400 text-xs">{bot.client?.name || 'Cliente desconhecido'}</p>
+                    <h3 className="text-white font-semibold">{bot.nome}</h3>
+                    <p className="text-gray-400 text-xs">{bot.cliente?.nome || 'Cliente desconhecido'}</p>
                   </div>
                 </div>
-                {currentUser?.role === 'ADMIN' && (
+                {currentUser?.perfil === 'ADMIN' && (
                   <div className="relative">
                     <button 
                       onClick={() => setOpenDropdownId(openDropdownId === bot.id ? null : bot.id)}
@@ -216,14 +216,14 @@ export default function BotsPage() {
                           <button 
                             onClick={() => {
                               setFormData({
-                                clientId: bot.clientId || '',
-                                name: bot.name || '',
-                                channel: bot.channel || 'WHATSAPP',
-                                phoneNumber: bot.phoneNumber || '',
-                                aiProvider: bot.aiProvider || '',
-                                aiModel: bot.aiModel || '',
-                                aiSystemPrompt: bot.aiSystemPrompt || '',
-                                aiTemperature: bot.aiTemperature || 0.7
+                                clienteId: bot.clienteId || '',
+                                nome: bot.nome || '',
+                                canal: bot.canal || 'WHATSAPP',
+                                telefone: bot.telefone || '',
+                                provedorIa: bot.provedorIa || '',
+                                modeloIa: bot.modeloIa || '',
+                                promptSistemaIa: bot.promptSistemaIa || '',
+                                temperaturaIa: bot.temperaturaIa || 0.7
                               });
                               setEditingId(bot.id);
                               setIsModalOpen(true);
@@ -271,23 +271,23 @@ export default function BotsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500 text-xs font-medium">Canal</span>
                   <span className="text-gray-300 text-xs bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
-                    {bot.channel}
+                    {bot.canal}
                   </span>
                 </div>
 
                 <div className="pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Msgs Hoje</p>
-                    <p className="text-white font-semibold">{bot.messagesToday}</p>
+                    <p className="text-white font-semibold">{bot.mensagensHoje}</p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs mb-1">Msgs Total</p>
-                    <p className="text-white font-semibold">{bot.messagesTotal}</p>
+                    <p className="text-white font-semibold">{bot.totalMensagens}</p>
                   </div>
                 </div>
 
                 {/* Botão de acesso rápido ao Builder */}
-                {currentUser?.role === 'ADMIN' && (
+                {currentUser?.perfil === 'ADMIN' && (
                   <button 
                     onClick={() => navigate(`/admin/builder/${bot.id}`)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 border border-blue-500/20 rounded-xl text-blue-400 hover:text-white hover:border-blue-500/40 hover:from-blue-600/30 hover:to-indigo-600/30 transition-all text-sm font-medium group/btn"
@@ -309,12 +309,12 @@ export default function BotsPage() {
             <label className="text-sm font-medium text-gray-300">Cliente Dono do Bot *</label>
             <select 
               required
-              value={formData.clientId} onChange={e => setFormData({...formData, clientId: e.target.value})}
+              value={formData.clienteId} onChange={e => setFormData({...formData, clienteId: e.target.value})}
               className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 appearance-none"
             >
               <option value="" disabled>Selecione um cliente...</option>
               {clientes.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>{c.nome}</option>
               ))}
             </select>
           </div>
@@ -324,7 +324,7 @@ export default function BotsPage() {
               <label className="text-sm font-medium text-gray-300">Nome de Exibição *</label>
               <input 
                 required
-                value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})}
+                value={formData.nome} onChange={e => setFormData({...formData, nome: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
                 placeholder="Ex: Bot WhatsApp Vendas"
               />
@@ -332,7 +332,7 @@ export default function BotsPage() {
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-300">Canal *</label>
               <select 
-                value={formData.channel} onChange={e => setFormData({...formData, channel: e.target.value})}
+                value={formData.canal} onChange={e => setFormData({...formData, canal: e.target.value})}
                 className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 appearance-none"
               >
                 <option value="WHATSAPP">WhatsApp</option>
@@ -346,7 +346,7 @@ export default function BotsPage() {
           <div className="space-y-1">
             <label className="text-sm font-medium text-gray-300">Número do WhatsApp (Opcional)</label>
             <input 
-              value={formData.phoneNumber} onChange={e => setFormData({...formData, phoneNumber: e.target.value})}
+              value={formData.telefone} onChange={e => setFormData({...formData, telefone: e.target.value})}
               className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
               placeholder="Ex: 5511999998888"
             />

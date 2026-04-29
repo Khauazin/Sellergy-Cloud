@@ -28,11 +28,11 @@ export default function BuilderPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [botConfig, setBotConfig] = useState({
-    aiProvider: '',
-    aiModel: '',
-    aiApiKey: '',
-    aiSystemPrompt: '',
-    aiTemperature: 0.7
+    provedorIa: '',
+    modeloIa: '',
+    apiKeyIa: '',
+    promptSistemaIa: '',
+    temperaturaIa: 0.7
   });
 
   useEffect(() => {
@@ -45,11 +45,11 @@ export default function BuilderPage() {
       const botResponse = await api.get(`/bots/${botId}`);
       if (botResponse.data) {
         setBotConfig({
-          aiProvider: botResponse.data.aiProvider || '',
-          aiModel: botResponse.data.aiModel || '',
-          aiApiKey: botResponse.data.aiApiKey || '',
-          aiSystemPrompt: botResponse.data.aiSystemPrompt || '',
-          aiTemperature: botResponse.data.aiTemperature || 0.7
+          provedorIa: botResponse.data.provedorIa || '',
+          modeloIa: botResponse.data.modeloIa || '',
+          apiKeyIa: botResponse.data.apiKeyIa || '',
+          promptSistemaIa: botResponse.data.promptSistemaIa || '',
+          temperaturaIa: botResponse.data.temperaturaIa || 0.7
         });
       }
 
@@ -61,19 +61,19 @@ export default function BuilderPage() {
         const flow = response.data[0];
         
         // Formata os nós do BD pro React Flow
-        const formattedNodes = flow.nodes.map(n => ({
+        const formattedNodes = (flow.nos || []).map(n => ({
           id: n.id,
           type: 'default', // Para simplificar o MVP
-          position: { x: n.positionX, y: n.positionY },
-          data: { label: `${n.type}: ${n.data?.text || 'Sem texto'}`, dbType: n.type }
+          position: { x: n.posicaoX, y: n.posicaoY },
+          data: { label: `${n.tipo}: ${n.dados?.text || 'Sem texto'}`, dbType: n.tipo }
         }));
         
         // Formata as conexões
-        const formattedEdges = flow.edges.map(e => ({
+        const formattedEdges = (flow.conexoes || []).map(e => ({
           id: e.id,
-          source: e.sourceNodeId,
-          target: e.targetNodeId,
-          sourceHandle: e.sourceHandle
+          source: e.noOrigemId,
+          target: e.noDestinoId,
+          sourceHandle: e.pontoOrigem
         }));
 
         setNodes(formattedNodes);
@@ -82,9 +82,9 @@ export default function BuilderPage() {
         // Cria um fluxo default se não existir
         const res = await api.post('/builder/flows', {
           botId,
-          name: 'Fluxo Principal',
-          isActive: true,
-          triggerType: 'DEFAULT'
+          nome: 'Fluxo Principal',
+          ativo: true,
+          tipoGatilho: 'DEFAULT'
         });
         setFlows([res.data]);
         setActiveFlowId(res.data.id);
@@ -104,8 +104,19 @@ export default function BuilderPage() {
     try {
       // Salva o fluxo
       await api.post(`/builder/flows/${activeFlowId}/canvas`, {
-        nodes,
-        edges
+        nodes: nodes.map(n => ({
+          id: n.id,
+          posicaoX: n.position.x,
+          posicaoY: n.position.y,
+          tipo: n.data.dbType,
+          dados: n.data
+        })),
+        edges: edges.map(e => ({
+          id: e.id,
+          noOrigemId: e.source,
+          noDestinoId: e.target,
+          pontoOrigem: e.sourceHandle
+        }))
       });
       // Salva a config de IA do bot
       await api.put(`/bots/${botId}`, botConfig);
@@ -154,7 +165,7 @@ export default function BuilderPage() {
               className="bg-transparent border-none text-sm text-gray-300 outline-none cursor-pointer hover:text-white"
             >
               {flows.map(f => (
-                <option key={f.id} value={f.id} className="bg-gray-900">{f.name}</option>
+                <option key={f.id} value={f.id} className="bg-gray-900">{f.nome}</option>
               ))}
             </select>
           </div>
@@ -248,8 +259,8 @@ export default function BuilderPage() {
             <div>
               <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">Provedor</label>
               <select 
-                value={botConfig.aiProvider}
-                onChange={e => setBotConfig({...botConfig, aiProvider: e.target.value})}
+                value={botConfig.provedorIa}
+                onChange={e => setBotConfig({...botConfig, provedorIa: e.target.value})}
                 className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
               >
                 <option value="">Desativado (Fluxo Fixo)</option>
@@ -260,14 +271,14 @@ export default function BuilderPage() {
               </select>
             </div>
 
-            {botConfig.aiProvider && (
+            {botConfig.provedorIa && (
               <>
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase mb-1.5 block">Modelo</label>
                   <input 
                     type="text" 
-                    value={botConfig.aiModel}
-                    onChange={e => setBotConfig({...botConfig, aiModel: e.target.value})}
+                    value={botConfig.modeloIa}
+                    onChange={e => setBotConfig({...botConfig, modeloIa: e.target.value})}
                     placeholder="Ex: gpt-4o-mini" 
                     className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                   />
@@ -279,8 +290,8 @@ export default function BuilderPage() {
                   </label>
                   <input 
                     type="password" 
-                    value={botConfig.aiApiKey}
-                    onChange={e => setBotConfig({...botConfig, aiApiKey: e.target.value})}
+                    value={botConfig.apiKeyIa}
+                    onChange={e => setBotConfig({...botConfig, apiKeyIa: e.target.value})}
                     placeholder="Insira para usar chave própria..." 
                     className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                   />
@@ -292,8 +303,8 @@ export default function BuilderPage() {
                     <Sparkles className="w-3 h-3" /> System Prompt (Personalidade)
                   </label>
                   <textarea 
-                    value={botConfig.aiSystemPrompt}
-                    onChange={e => setBotConfig({...botConfig, aiSystemPrompt: e.target.value})}
+                    value={botConfig.promptSistemaIa}
+                    onChange={e => setBotConfig({...botConfig, promptSistemaIa: e.target.value})}
                     placeholder="Você é uma recepcionista de uma barbearia..." 
                     rows={6}
                     className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
@@ -305,12 +316,12 @@ export default function BuilderPage() {
                     <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1">
                       <SlidersHorizontal className="w-3 h-3" /> Temperatura
                     </label>
-                    <span className="text-xs text-blue-400">{botConfig.aiTemperature}</span>
+                    <span className="text-xs text-blue-400">{botConfig.temperaturaIa}</span>
                   </div>
                   <input 
                     type="range" min="0" max="2" step="0.1" 
-                    value={botConfig.aiTemperature}
-                    onChange={e => setBotConfig({...botConfig, aiTemperature: parseFloat(e.target.value)})}
+                    value={botConfig.temperaturaIa}
+                    onChange={e => setBotConfig({...botConfig, temperaturaIa: parseFloat(e.target.value)})}
                     className="w-full accent-blue-500"
                   />
                   <div className="flex justify-between text-[10px] text-gray-500 mt-1">

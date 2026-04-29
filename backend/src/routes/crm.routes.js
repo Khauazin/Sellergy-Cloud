@@ -11,46 +11,47 @@ roteador.use(middlewareAutenticacao);
 
 roteador.get('/stages', async (req, res) => {
   try {
-    let { clientId } = req.usuario;
-    const { clientId: queryClientId } = req.query;
+    let { clienteId } = req.usuario;
+    const { clienteId: queryClienteId } = req.query;
 
-    if (!clientId && req.usuario.role === 'ADMIN') {
-      clientId = queryClientId;
+    if (!clienteId && req.usuario.perfil === 'ADMIN') {
+      clienteId = queryClienteId;
     }
 
-    if (!clientId) {
-      return res.status(400).json({ error: 'clientId é obrigatório' });
+    if (!clienteId) {
+      return res.status(400).json({ error: 'clienteId é obrigatório' });
     }
 
-    const stages = await prisma.leadStage.findMany({
-      where: { clientId },
-      orderBy: { order: 'asc' }
+    const stages = await prisma.etapaLead.findMany({
+      where: { clienteId },
+      orderBy: { ordem: 'asc' }
     });
     res.json(stages);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Erro ao buscar fases do CRM' });
   }
 });
 
 roteador.post('/stages', async (req, res) => {
   try {
-    let { clientId } = req.usuario;
-    const { name, order, color, clientId: bodyClientId } = req.body;
+    let { clienteId } = req.usuario;
+    const { nome, ordem, cor, clienteId: bodyClienteId } = req.body;
 
-    // Se o usuário logado não tem clientId (é ADMIN), tenta pegar do body
-    if (!clientId && req.usuario.role === 'ADMIN') {
-      clientId = bodyClientId;
+    // Se o usuário logado não tem clienteId (é ADMIN), tenta pegar do body
+    if (!clienteId && req.usuario.perfil === 'ADMIN') {
+      clienteId = bodyClienteId;
     }
 
-    console.log(`[CRM] Criando stage "${name}" para cliente ${clientId}`);
+    console.log(`[CRM] Criando stage "${nome}" para cliente ${clienteId}`);
 
-    if (!clientId) {
-      console.error('[CRM] Tentativa de criar stage sem clientId');
-      return res.status(400).json({ error: 'clientId é obrigatório para criar fase' });
+    if (!clienteId) {
+      console.error('[CRM] Tentativa de criar stage sem clienteId');
+      return res.status(400).json({ error: 'clienteId é obrigatório para criar fase' });
     }
 
-    const stage = await prisma.leadStage.create({
-      data: { clientId, name, order, color }
+    const stage = await prisma.etapaLead.create({
+      data: { clienteId, nome, ordem: parseInt(ordem) || 0, cor }
     });
     res.status(201).json(stage);
   } catch (error) {
@@ -59,15 +60,14 @@ roteador.post('/stages', async (req, res) => {
   }
 });
 
-// ... outros métodos de stages (put/delete) mantendo o clientId do req.usuario
 roteador.put('/stages/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { clientId } = req.usuario;
-    const { name, order, color } = req.body;
-    const stage = await prisma.leadStage.update({
-      where: { id, clientId },
-      data: { name, order, color }
+    const { clienteId } = req.usuario;
+    const { nome, ordem, cor } = req.body;
+    const stage = await prisma.etapaLead.update({
+      where: { id, clienteId },
+      data: { nome, ordem: parseInt(ordem) || undefined, cor }
     });
     res.json(stage);
   } catch (error) {
@@ -78,8 +78,8 @@ roteador.put('/stages/:id', async (req, res) => {
 roteador.delete('/stages/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { clientId } = req.usuario;
-    await prisma.leadStage.delete({ where: { id, clientId } });
+    const { clienteId } = req.usuario;
+    await prisma.etapaLead.delete({ where: { id, clienteId } });
     res.json({ message: 'Fase excluída com sucesso' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao excluir fase' });
@@ -92,54 +92,55 @@ roteador.delete('/stages/:id', async (req, res) => {
 
 roteador.get('/leads', async (req, res) => {
   try {
-    let { clientId } = req.usuario;
-    const { clientId: queryClientId } = req.query;
+    let { clienteId } = req.usuario;
+    const { clienteId: queryClienteId } = req.query;
 
-    if (!clientId && req.usuario.role === 'ADMIN') {
-      clientId = queryClientId;
+    if (!clienteId && req.usuario.perfil === 'ADMIN') {
+      clienteId = queryClienteId;
     }
 
-    if (!clientId) {
-      return res.status(400).json({ error: 'clientId é obrigatório' });
+    if (!clienteId) {
+      return res.status(400).json({ error: 'clienteId é obrigatório' });
     }
 
     const leads = await prisma.lead.findMany({
-      where: { clientId },
-      include: { stage: true },
-      orderBy: { updatedAt: 'desc' }
+      where: { clienteId },
+      include: { etapa: true },
+      orderBy: { atualizadoEm: 'desc' }
     });
     res.json(leads);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Erro ao buscar leads' });
   }
 });
 
 roteador.post('/leads', async (req, res) => {
   try {
-    let { clientId } = req.usuario;
-    const { stageId, name, phone, email, value, tags, priority, origin, notes, clientId: bodyClientId } = req.body;
+    let { clienteId } = req.usuario;
+    const { etapaId, nome, telefone, email, valor, tags, prioridade, origem, observacoes, clienteId: bodyClienteId } = req.body;
 
-    // Se o usuário logado não tem clientId (é ADMIN), tenta pegar do body
-    if (!clientId && req.usuario.role === 'ADMIN') {
-      clientId = bodyClientId;
+    // Se o usuário logado não tem clienteId (é ADMIN), tenta pegar do body
+    if (!clienteId && req.usuario.perfil === 'ADMIN') {
+      clienteId = bodyClienteId;
     }
 
-    if (!clientId) {
-      return res.status(400).json({ error: 'clientId é obrigatório para criar lead' });
+    if (!clienteId) {
+      return res.status(400).json({ error: 'clienteId é obrigatório para criar lead' });
     }
 
     const lead = await prisma.lead.create({
-      data: { clientId, stageId, name, phone, email, value: parseFloat(value) || 0, tags, priority, origin, notes },
-      include: { stage: true }
+      data: { clienteId, etapaId, nome, telefone, email, valor: parseFloat(valor) || 0, tags, prioridade, origem, observacoes },
+      include: { etapa: true }
     });
 
     try {
-      await prisma.leadHistory.create({
+      await prisma.historicoLead.create({
         data: {
           leadId: lead.id,
-          action: 'CRIADO',
-          toStage: lead.stage?.name || 'Início',
-          notes: `Lead "${name}" criado`
+          acao: 'CRIADO',
+          paraEtapa: lead.etapa?.nome || 'Início',
+          observacoes: `Lead "${nome}" criado`
         }
       });
     } catch (e) { console.error('Erro Histórico:', e); }
@@ -154,41 +155,39 @@ roteador.post('/leads', async (req, res) => {
 roteador.put('/leads/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    let { clientId } = req.usuario;
-    const { stageId, name, phone, email, value, tags, priority, origin, notes, clientId: bodyClientId } = req.body;
+    let { clienteId } = req.usuario;
+    const { etapaId, nome, telefone, email, valor, tags, prioridade, origem, observacoes, clienteId: bodyClienteId } = req.body;
 
     // Se for ADMIN, ele pode estar editando um lead de qualquer cliente.
-    // O clientId do lead deve ser preservado ou pego do body.
-    const anterior = await prisma.lead.findUnique({ where: { id } });
+    const anterior = await prisma.lead.findUnique({ where: { id }, include: { etapa: true } });
 
     if (!anterior) return res.status(404).json({ error: 'Lead não encontrado' });
 
     // Permissão: Admin pode tudo, Cliente só o dele.
-    if (req.usuario.role !== 'ADMIN' && anterior.clientId !== clientId) {
+    if (req.usuario.perfil !== 'ADMIN' && anterior.clienteId !== clienteId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
     const lead = await prisma.lead.update({
       where: { id },
       data: { 
-        stageId, name, phone, email, 
-        value: parseFloat(value) || 0, 
-        tags, priority, origin, notes,
-        // Admin pode mudar o lead de cliente se necessário, senão mantém
-        clientId: req.usuario.role === 'ADMIN' ? (bodyClientId || anterior.clientId) : anterior.clientId
+        etapaId, nome, telefone, email, 
+        valor: parseFloat(valor) || 0, 
+        tags, prioridade, origem, observacoes,
+        clienteId: req.usuario.perfil === 'ADMIN' ? (bodyClienteId || anterior.clienteId) : anterior.clienteId
       },
-      include: { stage: true }
+      include: { etapa: true }
     });
 
-    if (anterior && anterior.stageId !== stageId) {
+    if (anterior && anterior.etapaId !== etapaId) {
       try {
-        await prisma.leadHistory.create({
+        await prisma.historicoLead.create({
           data: {
             leadId: id,
-            action: 'MOVIDO',
-            fromStage: anterior.stage?.name || 'N/A',
-            toStage: lead.stage?.name || 'N/A',
-            notes: `Movido para ${lead.stage?.name || 'nova etapa'}`
+            acao: 'MOVIDO',
+            deEtapa: anterior.etapa?.nome || 'N/A',
+            paraEtapa: lead.etapa?.nome || 'N/A',
+            observacoes: `Movido para ${lead.etapa?.nome || 'nova etapa'}`
           }
         });
       } catch (e) { console.error('Erro Histórico Move:', e); }
@@ -204,12 +203,12 @@ roteador.put('/leads/:id', async (req, res) => {
 roteador.delete('/leads/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    let { clientId } = req.usuario;
+    let { clienteId } = req.usuario;
 
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
 
-    if (req.usuario.role !== 'ADMIN' && lead.clientId !== clientId) {
+    if (req.usuario.perfil !== 'ADMIN' && lead.clienteId !== clienteId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
@@ -227,18 +226,18 @@ roteador.delete('/leads/:id', async (req, res) => {
 roteador.get('/leads/:leadId/history', async (req, res) => {
   try {
     const { leadId } = req.params;
-    const { clientId } = req.usuario;
+    const { clienteId } = req.usuario;
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) return res.json([]);
 
-    if (req.usuario.role !== 'ADMIN' && lead.clientId !== clientId) {
+    if (req.usuario.perfil !== 'ADMIN' && lead.clienteId !== clienteId) {
       return res.json([]);
     }
 
-    const history = await prisma.leadHistory.findMany({
+    const history = await prisma.historicoLead.findMany({
       where: { leadId },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { criadoEm: 'desc' }
     });
     res.json(history);
   } catch (error) {
@@ -249,18 +248,18 @@ roteador.get('/leads/:leadId/history', async (req, res) => {
 roteador.post('/leads/:leadId/history', async (req, res) => {
   try {
     const { leadId } = req.params;
-    const { clientId } = req.usuario;
-    const { notes } = req.body;
+    const { clienteId } = req.usuario;
+    const { observacoes } = req.body;
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
 
-    if (req.usuario.role !== 'ADMIN' && lead.clientId !== clientId) {
+    if (req.usuario.perfil !== 'ADMIN' && lead.clienteId !== clienteId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const entry = await prisma.leadHistory.create({
-      data: { leadId, action: 'OBSERVACAO', notes }
+    const entry = await prisma.historicoLead.create({
+      data: { leadId, acao: 'OBSERVACAO', observacoes }
     });
     res.status(201).json(entry);
   } catch (error) {

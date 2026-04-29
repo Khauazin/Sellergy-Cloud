@@ -1,16 +1,168 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #3b82f6;
   --color-secondary: #10b981;
 }
 
+/* =========================================
+   TEMA CLARO — cores suaves, sem branco puro
+   ========================================= */
+:root {
+  --bg-app:      #f0f2f5;
+  --bg-sidebar:  #e8eaed;
+  --bg-card:     #f5f6f8;
+  --text-main:   #111827;
+  --text-muted:  #6b7280;
+  --border-main: rgba(0, 0, 0, 0.08);
+}
+
+/* =========================================
+   TEMA ESCURO
+   ========================================= */
+.dark {
+  --bg-app:      #0a0a0a;
+  --bg-sidebar:  rgba(0, 0, 0, 0.4);
+  --bg-card:     rgba(255, 255, 255, 0.05);
+  --text-main:   #f9fafb;
+  --text-muted:  #9ca3af;
+  --border-main: rgba(255, 255, 255, 0.1);
+}
+
+/* =========================================
+   BASE
+   ========================================= */
+html {
+  background-color: var(--bg-app);
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f3f4f6;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* =========================================
+   SCROLLBAR
+   ========================================= */
+.custom-scrollbar::-webkit-scrollbar { width: 5px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-main);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* =========================================
+   ANIMAÇÕES
+   ========================================= */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in-from-top-2 {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes zoom-in-95 {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-in { animation-fill-mode: both; }
+.fade-in    { animation-name: fade-in; }
+.slide-in-from-top-2 { animation-name: slide-in-from-top-2; }
+.zoom-in-95 { animation-name: zoom-in-95; }
+.duration-200 { animation-duration: 200ms; }
+.duration-300 { animation-duration: 300ms; }
+.duration-500 { animation-duration: 500ms; }
+.duration-700 { animation-duration: 700ms; }
+
+/* =========================================
+   REMAPEAMENTO GLOBAL — MODO CLARO
+
+   Os componentes foram escritos dark-first com
+   classes hardcoded (text-white, bg-white/5, etc).
+   Em light mode, remapeamos para versões legíveis.
+   O seletor :not(.dark) garante que o dark fica intacto.
+   ========================================= */
+
+/* text-white → escuro legível no light */
+:not(.dark) .text-white {
+  color: #1f2937 !important;
+}
+
+/* text-gray-N → tons mais escuros e legíveis */
+:not(.dark) .text-gray-200 { color: #374151 !important; }
+:not(.dark) .text-gray-300 { color: #374151 !important; }
+:not(.dark) .text-gray-400 { color: #4b5563 !important; }
+:not(.dark) .text-gray-500 { color: #6b7280 !important; }
+:not(.dark) .text-gray-600 { color: #6b7280 !important; }
+
+/* bg-white puro → off-white suave */
+:not(.dark) .bg-white {
+  background-color: #f5f6f8 !important;
+}
+
+/* bg-white/N → cinza claro transparente */
+:not(.dark) [class*="bg-white\/"] {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* bg-black/N → cinza muito suave */
+:not(.dark) [class*="bg-black\/"] {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* bg-[#050505] e bg-[#0a0a0a] explícitos → light cinza */
+:not(.dark) [style*="background-color: rgb(5"],
+:not(.dark) [style*="background-color: rgb(10"] {
+  background-color: #f0f2f5 !important;
+}
+
+/* border-white/N → borda sutil cinza */
+:not(.dark) [class*="border-white\/"] {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* bg-gray-50/50 → mantém levíssimo */
+:not(.dark) .bg-gray-50\/50 {
+  background-color: rgba(243, 244, 246, 0.8) !important;
+}
+
+/* Inputs e selects no modo claro */
+:not(.dark) input:not([class*="bg-"]),
+:not(.dark) textarea:not([class*="bg-"]),
+:not(.dark) select:not([class*="bg-"]) {
+  color: #111827;
+  background-color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* Força inputs com bg explícito do dark a virar branco */
+:not(.dark) input[class*="bg-black"],
+:not(.dark) textarea[class*="bg-black"],
+:not(.dark) select[class*="bg-black"],
+:not(.dark) input[class*="bg-white"],
+:not(.dark) textarea[class*="bg-white"],
+:not(.dark) select[class*="bg-white"] {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+:not(.dark) input::placeholder,
+:not(.dark) textarea::placeholder {
+  color: #9ca3af !important;
 }

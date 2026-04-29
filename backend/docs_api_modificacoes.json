@@ -1,0 +1,82 @@
+{
+  "modulos": {
+    "ESTOQUE": {
+      "controller": "EstoqueController.js",
+      "endpoints": [
+        {
+          "metodo": "POST",
+          "rota": "/estoque/movimentar",
+          "descricao": "Registra movimentação. Agora suporta precoCusto, precoVenda e gera lançamentos financeiros automáticos. Impede estoque negativo para itens físicos.",
+          "campos": ["variacaoId", "tipo", "quantidade", "precoCusto", "precoVenda", "categoriaId"]
+        },
+        {
+          "metodo": "POST",
+          "rota": "/estoque/ajuste-lote",
+          "descricao": "Recebe um array de ajustes e processa todos em uma única transação Prisma.",
+          "campos": ["ajustes: [{ variacaoId, novoEstoque, motivo }]"]
+        }
+      ]
+    },
+    "CATALOGO": {
+      "controller": "CatalogoController.js",
+      "endpoints": [
+        {
+          "metodo": "GET",
+          "rota": "/catalogo",
+          "descricao": "Listagem com filtros de busca, categoriaId, tipo e visibilidade.",
+          "filtros": ["buscar", "categoriaId", "tipo", "visibilidade"]
+        },
+        {
+          "metodo": "POST",
+          "rota": "/catalogo/:produtoId/variacoes",
+          "descricao": "Criação individual de variação vinculada a um produto."
+        },
+        {
+          "metodo": "PUT",
+          "rota": "/catalogo/variacoes/:id",
+          "descricao": "Edição individual de variação."
+        },
+        {
+          "metodo": "DELETE",
+          "rota": "/catalogo/variacoes/:id",
+          "descricao": "Exclui variação se não houver movimentações de estoque."
+        },
+        {
+          "metodo": "DELETE",
+          "rota": "/catalogo/:id",
+          "descricao": "Bloqueia exclusão de produto que possua qualquer movimentação de estoque."
+        }
+      ]
+    },
+    "CMV": {
+      "controller": "CmvController.js",
+      "endpoints": [
+        {
+          "metodo": "GET",
+          "rota": "/cmv/custos",
+          "descricao": "Relatório de CMV Realizado por período."
+        },
+        {
+          "metodo": "GET",
+          "rota": "/cmv/margens",
+          "descricao": "Margem absoluta e percentual por produto e variação."
+        },
+        {
+          "metodo": "GET",
+          "rota": "/cmv/lucratividade",
+          "descricao": "Comparativo Receita vs Custo (Lucro Bruto e Margem de Contribuição)."
+        }
+      ]
+    },
+    "VENDAS": {
+      "controller": "VendaController.js",
+      "endpoints": [
+        {
+          "metodo": "POST",
+          "rota": "/vendas",
+          "descricao": "Registro de venda com baixa automática de estoque e lançamento financeiro de receita vinculado a uma categoria em transação única."
+        }
+      ]
+    }
+  }
+}

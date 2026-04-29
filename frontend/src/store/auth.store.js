@@ -9,10 +9,10 @@ export const useAuthStore = create((set) => ({
   isCheckingAuth: true,
   error: null,
 
-  login: async (email, password) => {
+  login: async (email, senha) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await api.post('/autenticacao/login', { email, password });
+      const response = await api.post('/autenticacao/login', { email, senha });
       const { usuario, token } = response.data;
       
       localStorage.setItem('@botmanager:token', token);

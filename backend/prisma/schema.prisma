@@ -8,298 +8,438 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
+// ==========================================
+// USUÁRIOS E CLIENTES
+// ==========================================
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nome         String
+  email        String   @unique
+  senha        String
+  perfil       Perfil   @default(ADMIN)
+  permissoes   Json?    @default("{}")
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  clienteId    String?
+  alertas      Alerta[]
+  cliente      Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@map("usuarios")
+}
+
+model Cliente {
+  id                    String                @id @default(uuid())
+  nome                  String
+  email                 String?               @unique
+  telefone              String?
+  segmento              String?
+  plano                 Plano                 @default(BASIC)
+  status                StatusCliente         @default(ACTIVE)
+  mensalidade           Float                 @default(0)
+  observacoes           String?
+  criadoEm              DateTime              @default(now())
+  atualizadoEm          DateTime              @updatedAt
+  alertas               Alerta[]
+  agendamentos          Agendamento[]
+  bots                  Bot[]
+  etapasLead            EtapaLead[]
+  leads                 Lead[]
+  vendas                Venda[]
+  usuarios              Usuario[]
+  produtos              Produto[]
+  lancamentosFinanceiros LancamentoFinanceiro[]
+  categoriasFinanceiras CategoriaFinanceira[]
+  saldosHistorico       SaldoHistorico[]
+
+  @@map("clientes")
+}
+
+model SaldoHistorico {
   id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(ADMIN)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  clientId  String?
-  alerts    Alert[]
-  client    Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clienteId String
+  valor     Float
+  motivo    String?
+  data      DateTime @default(now())
 
-  @@map("users")
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@map("saldo_historico")
 }
 
-model Client {
-  id           String        @id @default(uuid())
-  name         String
-  email        String?
-  phone        String?
-  segment      String?
-  plan         Plan          @default(BASIC)
-  status       ClientStatus  @default(ACTIVE)
-  monthlyFee   Float         @default(0)
-  notes        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  alerts       Alert[]
-  appointments Appointment[]
-  bots         Bot[]
-  leadStages   LeadStage[]
-  leads        Lead[]
-  sales        Sale[]
-  users        User[]
-
-  @@map("clients")
-}
+// ==========================================
+// BOTS E AUTOMAÇÃO
+// ==========================================
 
 model Bot {
-  id             String        @id @default(uuid())
-  clientId       String
-  name           String
-  channel        Channel       @default(WHATSAPP)
-  status         BotStatus     @default(OFFLINE)
-  phoneNumber    String?
-  messagesTotal  Int           @default(0)
-  messagesToday  Int           @default(0)
-  lastActivityAt DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  aiModel        String?
-  aiProvider     AIProvider?
-  aiSystemPrompt String?
-  aiTemperature  Float?        @default(0.7)
-  aiApiKey       String?
-  alerts         Alert[]
-  variables      BotVariable[]
-  client         Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  flows          Flow[]
+  id                String         @id @default(uuid())
+  clienteId         String
+  nome              String
+  canal             Canal          @default(WHATSAPP)
+  status            StatusBot      @default(OFFLINE)
+  telefone          String?
+  totalMensagens    Int            @default(0)
+  mensagensHoje     Int            @default(0)
+  ultimaAtividadeEm DateTime?
+  criadoEm          DateTime       @default(now())
+  atualizadoEm      DateTime       @updatedAt
+  modeloIa          String?
+  provedorIa        ProvedorIA?
+  promptSistemaIa   String?
+  temperaturaIa     Float?         @default(0.7)
+  apiKeyIa          String?
+  alertas           Alerta[]
+  variaveis         VariavelBot[]
+  cliente           Cliente        @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  fluxos            Fluxo[]
 
   @@map("bots")
 }
 
-model BotVariable {
-  id          String   @id @default(uuid())
-  botId       String
-  key         String
-  value       String
-  description String?
-  type        VarType  @default(TEXT)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+model VariavelBot {
+  id           String   @id @default(uuid())
+  botId        String
+  chave        String
+  valor        String
+  descricao    String?
+  tipo         TipoVariavel @default(TEXT)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  bot          Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
 
-  @@unique([botId, key])
-  @@map("bot_variables")
+  @@unique([botId, chave])
+  @@map("bot_variaveis")
 }
 
-model Flow {
-  id             String      @id @default(uuid())
-  botId          String
-  name           String
-  isActive       Boolean     @default(false)
-  triggerType    TriggerType @default(KEYWORD)
-  triggerKeyword String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  edges          Edge[]
-  bot            Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
-  nodes          Node[]
+model Fluxo {
+  id                  String      @id @default(uuid())
+  botId               String
+  nome                String
+  ativo               Boolean     @default(false)
+  tipoGatilho         TipoGatilho @default(KEYWORD)
+  palavraChaveGatilho String?
+  criadoEm            DateTime    @default(now())
+  atualizadoEm        DateTime    @updatedAt
+  conexoes            Conexao[]
+  bot                 Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  nos                 No[]
 
-  @@map("flows")
+  @@map("fluxos")
 }
 
-model Node {
-  id        String   @id
-  flowId    String
-  type      NodeType
-  positionX Float
-  positionY Float
-  data      Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  flow      Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
-
-  @@map("nodes")
-}
-
-model Edge {
+model No {
   id           String   @id
-  flowId       String
-  sourceNodeId String
-  targetNodeId String
-  sourceHandle String?
-  createdAt    DateTime @default(now())
-  flow         Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  fluxoId      String
+  tipo         TipoNo
+  posicaoX     Float
+  posicaoY     Float
+  dados        Json
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  fluxo        Fluxo    @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
 
-  @@map("edges")
+  @@map("nos")
 }
 
-model LeadStage {
-  id        String   @id @default(uuid())
-  clientId  String
-  name      String
-  order     Int
-  color     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  leads     Lead[]
+model Conexao {
+  id              String   @id
+  fluxoId         String
+  noOrigemId      String
+  noDestinoId     String
+  pontoOrigem     String?
+  criadoEm        DateTime @default(now())
+  fluxo           Fluxo    @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
 
-  @@map("lead_stages")
+  @@map("conexoes")
+}
+
+// ==========================================
+// CRM E LEADS
+// ==========================================
+
+model EtapaLead {
+  id           String   @id @default(uuid())
+  clienteId    String
+  nome         String
+  ordem        Int
+  cor          String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+
+  @@map("lead_etapas")
 }
 
 model Lead {
-  id           String        @id @default(uuid())
-  clientId     String
-  stageId      String?
-  name         String
-  phone        String?
-  email        String?
-  value        Float?
-  notes        String?
-  lastContact  DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  tags         String?
-  priority     Priority      @default(MEDIUM)
-  origin       String?
-  appointments Appointment[]
-  history      LeadHistory[]
-  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  stage        LeadStage?    @relation(fields: [stageId], references: [id])
-  messages     Message[]
-  sales        Sale[]
+  id                    String                 @id @default(uuid())
+  clienteId             String
+  etapaId               String?
+  nome                  String
+  telefone              String?
+  email                 String?
+  valor                 Float?
+  observacoes           String?
+  ultimoContato         DateTime?
+  criadoEm              DateTime               @default(now())
+  atualizadoEm          DateTime               @updatedAt
+  tags                  String?
+  prioridade            Prioridade             @default(MEDIUM)
+  origem                String?
+  agendamentos          Agendamento[]
+  historico             HistoricoLead[]
+  cliente               Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  etapa                 EtapaLead?             @relation(fields: [etapaId], references: [id])
+  mensagens             Mensagem[]
+  vendas                Venda[]
+  lancamentosFinanceiros LancamentoFinanceiro[]
 
   @@map("leads")
 }
 
-model LeadHistory {
+model HistoricoLead {
+  id           String   @id @default(uuid())
+  leadId       String
+  acao         String
+  deEtapa      String?
+  paraEtapa    String?
+  observacoes  String?
+  criadoEm     DateTime @default(now())
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_historico")
+}
+
+model Mensagem {
   id        String   @id @default(uuid())
   leadId    String
-  action    String
-  fromStage String?
-  toStage   String?
-  notes     String?
-  createdAt DateTime @default(now())
+  conteudo  String
+  doBot     Boolean  @default(false)
+  criadoEm  DateTime @default(now())
   lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  @@map("lead_history")
+  @@map("mensagens")
 }
 
-model Message {
-  id        String   @id @default(uuid())
-  leadId    String
-  content   String
-  fromBot   Boolean  @default(false)
-  createdAt DateTime @default(now())
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+model Agendamento {
+  id              String            @id @default(uuid())
+  clienteId       String
+  leadId          String?
+  nomeCliente     String
+  telefoneCliente String?
+  duracao         Int               @default(30)
+  origem          OrigemAgendamento @default(MANUAL)
+  data            DateTime
+  servico         String?
+  preco           Float?
+  status          StatusAgendamento @default(PENDING)
+  observacoes     String?
+  criadoEm        DateTime          @default(now())
+  atualizadoEm    DateTime          @updatedAt
 
-  @@map("messages")
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead    Lead?   @relation(fields: [leadId], references: [id])
+
+  @@map("agendamentos")
 }
 
-model Appointment {
-  id            String            @id @default(uuid())
-  clientId      String
-  leadId        String?
-  customerName  String
-  customerPhone String?
-  duration      Int               @default(30)
-  origin        AppointmentOrigin @default(MANUAL)
-  date          DateTime
-  service       String?
-  price         Float?
-  status        AppointmentStatus @default(PENDING)
-  notes         String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+model Venda {
+  id                    String                @id @default(uuid())
+  clienteId             String
+  leadId                String?
+  valor                 Float
+  metodoPagamento       String?
+  status                StatusVenda           @default(COMPLETED)
+  descricao             String?
+  data                  DateTime              @default(now())
+  criadoEm              DateTime              @default(now())
+  atualizadoEm          DateTime              @updatedAt
+  cliente               Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead                  Lead?                 @relation(fields: [leadId], references: [id])
+  lancamentosFinanceiros LancamentoFinanceiro[]
+  movimentacoesEstoque  MovimentacaoEstoque[]
 
-  client        Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  lead          Lead?             @relation(fields: [leadId], references: [id])
-
-  @@map("appointments")
+  @@map("vendas")
 }
 
-model Sale {
-  id            String     @id @default(uuid())
-  clientId      String
-  leadId        String?
-  amount        Float
-  paymentMethod String?
-  status        SaleStatus @default(COMPLETED)
-  description   String?
-  date          DateTime   @default(now())
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  client        Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  lead          Lead?      @relation(fields: [leadId], references: [id])
+// ==========================================
+// MÓDULO DE CATÁLOGO
+// ==========================================
 
-  @@map("sales")
+model Produto {
+  id            String              @id @default(uuid())
+  clienteId     String
+  categoriaId   String?
+  nome          String
+  descricao     String?
+  tipo          TipoProduto         @default(FISICO)
+  visibilidade  VisibilidadeProduto @default(ATIVO)
+  criadoEm      DateTime            @default(now())
+  atualizadoEm  DateTime            @updatedAt
+
+  cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  categoria CategoriaFinanceira? @relation(fields: [categoriaId], references: [id])
+  variacoes VariacaoProduto[]
+
+  @@map("produtos")
 }
 
-model Alert {
-  id         String      @id @default(uuid())
-  botId      String
-  clientId   String
-  userId     String?
-  severity   Severity    @default(ERROR)
-  title      String
-  message    String
-  status     AlertStatus @default(OPEN)
-  resolvedAt DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  bot        Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
-  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  user       User?       @relation(fields: [userId], references: [id])
+model VariacaoProduto {
+  id            String   @id @default(uuid())
+  produtoId     String
+  nome          String // Ex: "Tamanho P", "Cor Azul"
+  sku           String?  @unique
+  preco         Float // Preço de Venda
+  precoCusto    Float?   @default(0) // Preço de Compra
+  estoqueAtual  Int      @default(0)
+  estoqueMinimo Int?     @default(0) // Alerta de falta
+  estoqueIdeal  Int?     @default(0) // Alvo de reposição
+  localizacao   String? // Ex: "Corredor A, Prateleira 2"
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
 
-  @@map("alerts")
+  produto       Produto               @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoEstoque[]
+
+  @@map("variacoes_produto")
 }
 
-enum Role {
+// ==========================================
+// MÓDULO DE ESTOQUE
+// ==========================================
+
+model MovimentacaoEstoque {
+  id         String           @id @default(uuid())
+  variacaoId String
+  tipo       TipoMovimentacao
+  quantidade Int // Positivo para entrada, negativo para saída
+  motivo     String?
+  vendaId    String?
+  data       DateTime         @default(now())
+
+  variacao VariacaoProduto @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
+  venda    Venda?           @relation(fields: [vendaId], references: [id])
+
+  @@map("movimentacoes_estoque")
+}
+
+// ==========================================
+// MÓDULO FINANCEIRO
+// ==========================================
+
+model LancamentoFinanceiro {
+  id                 String           @id @default(uuid())
+  clienteId          String
+  leadId             String?
+  vendaId            String?
+  categoriaId        String?
+  descricao          String
+  valor              Float
+  tipo               TipoLancamento
+  status             StatusFinanceiro @default(PENDENTE)
+  dataVencimento     DateTime
+  dataPagamento      DateTime?
+  dataCancelamento   DateTime?
+  motivoCancelamento String?
+  idAgrupamento      String?
+  criadoEm           DateTime         @default(now())
+  atualizadoEm       DateTime         @updatedAt
+
+  cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead      Lead?                @relation(fields: [leadId], references: [id])
+  venda     Venda?               @relation(fields: [vendaId], references: [id])
+  categoria CategoriaFinanceira? @relation(fields: [categoriaId], references: [id])
+
+  @@map("lancamentos_financeiros")
+}
+
+model CategoriaFinanceira {
+  id        String         @id @default(uuid())
+  clienteId String
+  nome      String
+  tipo      TipoLancamento
+
+  cliente     Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lancamentos LancamentoFinanceiro[]
+  produtos    Produto[]
+
+  @@map("categorias_financeiras")
+}
+
+model Alerta {
+  id           String      @id @default(uuid())
+  botId        String
+  clienteId    String
+  usuarioId    String?
+  severidade   Severidade  @default(ERROR)
+  titulo       String
+  mensagem     String
+  status       StatusAlerta @default(OPEN)
+  resolvidoEm  DateTime?
+  criadoEm     DateTime    @default(now())
+  atualizadoEm DateTime    @updatedAt
+  bot          Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  cliente      Cliente     @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  usuario      Usuario?    @relation(fields: [usuarioId], references: [id])
+
+  @@map("alertas")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum Perfil {
   ADMIN
   VIEWER
   CLIENT
 }
 
-enum Plan {
+enum Plano {
   BASIC
   PRO
   PREMIUM
 }
 
-enum ClientStatus {
+enum StatusCliente {
   ACTIVE
   INACTIVE
   SUSPENDED
 }
 
-enum BotStatus {
+enum StatusBot {
   ONLINE
   OFFLINE
   ERROR
 }
 
-enum Channel {
+enum Canal {
   WHATSAPP
   INSTAGRAM
   WEBSITE
   TELEGRAM
 }
 
-enum Severity {
+enum Severidade {
   INFO
   WARNING
   ERROR
   CRITICAL
 }
 
-enum AlertStatus {
+enum StatusAlerta {
   OPEN
   RESOLVED
   IGNORED
 }
 
-enum TriggerType {
+enum TipoGatilho {
   KEYWORD
   DEFAULT
   ALWAYS
 }
 
-enum NodeType {
+enum TipoNo {
   MESSAGE
   QUESTION
   CONDITION
@@ -308,13 +448,13 @@ enum NodeType {
   UPDATE_LEAD
 }
 
-enum VarType {
+enum TipoVariavel {
   TEXT
   NUMBER
   BOOLEAN
 }
 
-enum AIProvider {
+enum ProvedorIA {
   OPENAI
   ANTHROPIC
   DEEPSEEK
@@ -322,27 +462,58 @@ enum AIProvider {
   GEMINI
 }
 
-enum AppointmentStatus {
+enum StatusAgendamento {
   PENDING
   CONFIRMED
   CANCELED
   COMPLETED
 }
 
-enum SaleStatus {
+enum StatusVenda {
   PENDING
   COMPLETED
   CANCELLED
   REFUNDED
 }
 
-enum Priority {
+enum Prioridade {
   LOW
   MEDIUM
   HIGH
 }
 
-enum AppointmentOrigin {
+enum OrigemAgendamento {
   MANUAL
   AI
+}
+
+enum VisibilidadeProduto {
+  ATIVO
+  PAUSADO
+  ARQUIVADO
+}
+
+enum TipoProduto {
+  FISICO
+  SERVICO
+}
+
+enum TipoMovimentacao {
+  VENDA
+  AJUSTE
+  DEVOLUCAO
+  COMPRA_FORNECEDOR
+  RESERVA
+}
+
+enum StatusFinanceiro {
+  PENDENTE
+  PAGO
+  ATRASADO
+  CANCELADO
+}
+
+enum TipoLancamento {
+  RECEITA
+  DESPESA
 }

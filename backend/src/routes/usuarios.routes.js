@@ -1,10 +1,9 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma');
 const middlewareAutenticacao = require('../middlewares/auth.middleware');
 const bcrypt = require('bcryptjs');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Todas as rotas de usuários exigem autenticação
 router.use(middlewareAutenticacao);
@@ -12,46 +11,48 @@ router.use(middlewareAutenticacao);
 // Listar todos os usuários
 router.get('/', async (req, res) => {
   try {
-    const usuarios = await prisma.user.findMany({
+    const usuarios = await prisma.usuario.findMany({
       select: {
         id: true,
-        name: true,
+        nome: true,
         email: true,
-        role: true,
-        createdAt: true,
+        perfil: true,
+        criadoEm: true,
       }
     });
     res.json(usuarios);
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Falha ao buscar usuários' });
   }
 });
 
 // Criar novo usuário (Admin)
 router.post('/', async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { nome, email, senha, perfil } = req.body;
 
   try {
-    const usuarioExistente = await prisma.user.findUnique({ where: { email } });
+    const usuarioExistente = await prisma.usuario.findUnique({ where: { email } });
     if (usuarioExistente) {
       return res.status(400).json({ erro: 'Este e-mail já está em uso' });
     }
 
     const salt = await bcrypt.genSalt(10);
-    const senhaHasheada = await bcrypt.hash(password, salt);
+    const senhaHasheada = await bcrypt.hash(senha, salt);
 
-    const novoUsuario = await prisma.user.create({
+    const novoUsuario = await prisma.usuario.create({
       data: {
-        name,
+        nome,
         email,
-        password: senhaHasheada,
-        role: role || 'ADMIN',
+        senha: senhaHasheada,
+        perfil: perfil || 'ADMIN',
       },
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, nome: true, email: true, perfil: true }
     });
 
     res.status(201).json(novoUsuario);
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Erro ao criar usuário' });
   }
 });
@@ -59,24 +60,25 @@ router.post('/', async (req, res) => {
 // Atualizar usuário
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, email, password, role } = req.body;
+  const { nome, email, senha, perfil } = req.body;
 
   try {
-    const dataToUpdate = { name, email, role };
+    const dataToUpdate = { nome, email, perfil };
 
-    if (password) {
+    if (senha) {
       const salt = await bcrypt.genSalt(10);
-      dataToUpdate.password = await bcrypt.hash(password, salt);
+      dataToUpdate.senha = await bcrypt.hash(senha, salt);
     }
 
-    const usuarioAtualizado = await prisma.user.update({
+    const usuarioAtualizado = await prisma.usuario.update({
       where: { id },
       data: dataToUpdate,
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, nome: true, email: true, perfil: true }
     });
 
     res.json(usuarioAtualizado);
   } catch (erro) {
+    console.error(erro);
     if (erro.code === 'P2002') {
       return res.status(400).json({ erro: 'Este e-mail já está em uso' });
     }
@@ -87,15 +89,16 @@ router.put('/:id', async (req, res) => {
 // Excluir usuário
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
-  
-  if (id === req.usuarioId) {
+
+  if (id === req.usuario.id) {
     return res.status(400).json({ erro: 'Você não pode excluir a si mesmo' });
   }
 
   try {
-    await prisma.user.delete({ where: { id } });
+    await prisma.usuario.delete({ where: { id } });
     res.json({ mensagem: 'Usuário excluído com sucesso' });
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Erro ao excluir usuário' });
   }
 });

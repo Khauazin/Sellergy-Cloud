@@ -3,9 +3,7 @@ import { createPortal } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useAuthStore } from '../store/auth.store';
 import { 
-  Plus, Search, DollarSign, Filter, ArrowUpDown, 
-  MoreVertical, Clock, CheckCircle2, AlertCircle, 
-  User as UserIcon, Phone, Tag, Calendar, Building2
+  Plus, Search, DollarSign, User as UserIcon, Building2
 } from 'lucide-react';
 import api from '../services/api';
 import LeadDetailPanel from '../components/LeadDetailPanel';
@@ -17,9 +15,9 @@ const PRIORITY_CONFIG = {
   HIGH: { label: 'Alta', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' }
 };
 
-function getInitialColor(name) {
+function getInitialColor(nome) {
   const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
-  const i = (name?.charCodeAt(0) || 0) % colors.length;
+  const i = (nome?.charCodeAt(0) || 0) % colors.length;
   return colors[i];
 }
 
@@ -57,48 +55,46 @@ const LeadSkeleton = () => (
 
 export default function CRMPage() {
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.perfil === 'ADMIN';
 
   const [stages, setStages] = useState([]);
   const [leads, setLeads] = useState([]);
   const [clients, setClients] = useState([]); // Para seletor de admin
-  const [selectedClientId, setSelectedClientId] = useState(user?.clientId || '');
+  const [selectedClienteId, setSelectedClienteId] = useState(user?.clienteId || '');
   
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterPriority, setFilterPriority] = useState('ALL');
-  const [sortBy, setSortBy] = useState('updatedAt');
+  const [sortBy, setSortBy] = useState('atualizadoEm');
   
   const [selectedLead, setSelectedLead] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
-  const [defaultStageId, setDefaultStageId] = useState(null);
+  const [defaultEtapaId, setDefaultEtapaId] = useState(null);
 
   // Carregar lista de clientes se for Admin
   useEffect(() => {
     if (isAdmin) {
       api.get('/clientes').then(res => {
         setClients(res.data);
-        if (res.data.length > 0 && !selectedClientId) {
-          setSelectedClientId(res.data[0].id);
+        if (res.data.length > 0 && !selectedClienteId) {
+          setSelectedClienteId(res.data[0].id);
         }
       });
     }
   }, [isAdmin]);
 
-  // Carregar dados quando o clientId mudar
+  // Carregar dados quando o clienteId mudar
   useEffect(() => {
-    if (selectedClientId) {
+    if (selectedClienteId || !isAdmin) {
       loadData();
-    } else if (!isAdmin) {
-      loadData(); // Se for cliente normal, carrega direto (clientId vem do token no back)
     }
-  }, [selectedClientId]);
+  }, [selectedClienteId, isAdmin]);
 
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const params = isAdmin ? { clientId: selectedClientId } : {};
+      const params = isAdmin ? { clienteId: selectedClienteId } : {};
       
       const [sRes, lRes] = await Promise.all([
         api.get('/crm/stages', { params }),
@@ -118,16 +114,16 @@ export default function CRMPage() {
     if (search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(l =>
-        l.name?.toLowerCase().includes(q) || l.phone?.includes(q)
+        l.nome?.toLowerCase().includes(q) || l.telefone?.includes(q)
       );
     }
     if (filterPriority !== 'ALL') {
-      filtered = filtered.filter(l => l.priority === filterPriority);
+      filtered = filtered.filter(l => l.prioridade === filterPriority);
     }
     return [...filtered].sort((a, b) => {
-      if (sortBy === 'value') return (b.value || 0) - (a.value || 0);
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      return new Date(b.updatedAt) - new Date(a.updatedAt);
+      if (sortBy === 'valor') return (b.valor || 0) - (a.valor || 0);
+      if (sortBy === 'nome') return a.nome.localeCompare(b.nome);
+      return new Date(b.atualizadoEm) - new Date(a.atualizadoEm);
     });
   }, [leads, search, filterPriority, sortBy]);
 
@@ -137,12 +133,12 @@ export default function CRMPage() {
 
     const lead = leads.find(l => l.id === draggableId);
     const prevLeads = [...leads];
-    const newStageId = destination.droppableId;
+    const newEtapaId = destination.droppableId;
 
-    setLeads(leads.map(l => l.id === draggableId ? { ...l, stageId: newStageId, updatedAt: new Date().toISOString() } : l));
+    setLeads(leads.map(l => l.id === draggableId ? { ...l, etapaId: newEtapaId, atualizadoEm: new Date().toISOString() } : l));
 
     try {
-      await api.put(`/crm/leads/${draggableId}`, { ...lead, stageId: newStageId, clientId: selectedClientId });
+      await api.put(`/crm/leads/${draggableId}`, { ...lead, etapaId: newEtapaId, clienteId: isAdmin ? selectedClienteId : undefined });
     } catch (error) {
       setLeads(prevLeads);
     }
@@ -156,7 +152,7 @@ export default function CRMPage() {
 
   const handleSave = async (data) => {
     try {
-      const payload = { ...data, clientId: selectedClientId };
+      const payload = { ...data, clienteId: isAdmin ? selectedClienteId : undefined };
       if (editingLead?.id) {
         const res = await api.put(`/crm/leads/${editingLead.id}`, payload);
         setLeads(prev => prev.map(l => l.id === editingLead.id ? res.data : l));
@@ -171,7 +167,7 @@ export default function CRMPage() {
   };
 
   const handleDelete = async (lead) => {
-    if (!window.confirm(`Excluir o lead "${lead.name}"?`)) return;
+    if (!window.confirm(`Excluir o lead "${lead.nome}"?`)) return;
     try {
       await api.delete(`/crm/leads/${lead.id}`);
       setLeads(prev => prev.filter(l => l.id !== lead.id));
@@ -183,14 +179,14 @@ export default function CRMPage() {
 
   const criarStagesPadrao = async () => {
     const padrao = [
-      { name: 'Novo Lead', order: 1, color: '#3b82f6' },
-      { name: 'Em Contato', order: 2, color: '#a855f7' },
-      { name: 'Agendado', order: 3, color: '#f59e0b' },
-      { name: 'Fechado', order: 4, color: '#10b981' },
-      { name: 'Perdido', order: 5, color: '#ef4444' },
+      { nome: 'Novo Lead', ordem: 1, color: '#3b82f6' },
+      { nome: 'Em Contato', ordem: 2, color: '#a855f7' },
+      { nome: 'Agendado', ordem: 3, color: '#f59e0b' },
+      { nome: 'Fechado', ordem: 4, color: '#10b981' },
+      { nome: 'Perdido', ordem: 5, color: '#ef4444' },
     ];
     try {
-      await Promise.all(padrao.map(s => api.post('/crm/stages', { ...s, clientId: selectedClientId })));
+      await Promise.all(padrao.map(s => api.post('/crm/stages', { ...s, clienteId: isAdmin ? selectedClienteId : undefined })));
       loadData();
     } catch (e) { alert('Erro ao criar funil.'); }
   };
@@ -206,11 +202,11 @@ export default function CRMPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(99,102,241,0.1)', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
                 <Building2 size={14} color="#818cf8" />
                 <select 
-                  value={selectedClientId} 
-                  onChange={e => setSelectedClientId(e.target.value)}
+                  value={selectedClienteId} 
+                  onChange={e => setSelectedClienteId(e.target.value)}
                   style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, outline: 'none', cursor: 'pointer' }}
                 >
-                  {clients.map((c, idx) => <option key={c.id || idx} value={c.id}>{c.name}</option>)}
+                  {clients.map((c, idx) => <option key={c.id || idx} value={c.id}>{c.nome}</option>)}
                 </select>
               </div>
             )}
@@ -218,7 +214,7 @@ export default function CRMPage() {
               <UserIcon size={14} /> <strong>{leads.length}</strong> leads
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#10b981', fontSize: 13 }}>
-              <DollarSign size={14} /> <strong>R$ {leads.reduce((a,b) => a+(b.value||0),0).toLocaleString('pt-BR')}</strong>
+              <DollarSign size={14} /> <strong>R$ {leads.reduce((a,b) => a+(b.valor||0),0).toLocaleString('pt-BR')}</strong>
             </div>
           </div>
         </div>
@@ -241,13 +237,13 @@ export default function CRMPage() {
                <option value="LOW">Baixa</option>
              </select>
              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: 'transparent', color: '#9ca3af', border: 'none', fontSize: 12, padding: '0 8px', outline: 'none', cursor: 'pointer' }}>
-               <option value="updatedAt">Recentes</option>
-               <option value="value">Valor</option>
-               <option value="name">Nome</option>
+               <option value="atualizadoEm">Recentes</option>
+               <option value="valor">Valor</option>
+               <option value="nome">Nome</option>
              </select>
           </div>
 
-          <button onClick={() => { setEditingLead(null); setDefaultStageId(stages[0]?.id); setModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#6366f1', border: 'none', borderRadius: 12, padding: '0 16px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', height: 40 }}>
+          <button onClick={() => { setEditingLead(null); setDefaultEtapaId(stages[0]?.id); setModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#6366f1', border: 'none', borderRadius: 12, padding: '0 16px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', height: 40 }}>
             <Plus size={18} /> Novo
           </button>
         </div>
@@ -263,8 +259,8 @@ export default function CRMPage() {
           <DragDropContext onDragEnd={onDragEnd}>
             <div style={{ display: 'flex', gap: 20, height: '100%', alignItems: 'flex-start', minWidth: 'max-content' }}>
               {stages.map(stage => {
-                const stageLeads = processedLeads.filter(l => l.stageId === stage.id);
-                const totalValue = stageLeads.reduce((acc, l) => acc + (l.value || 0), 0);
+                const stageLeads = processedLeads.filter(l => l.etapaId === stage.id);
+                const totalValue = stageLeads.reduce((acc, l) => acc + (l.valor || 0), 0);
 
                 return (
                   <Droppable key={stage.id} droppableId={stage.id}>
@@ -280,7 +276,7 @@ export default function CRMPage() {
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 8, height: 8, borderRadius: '50%', background: stage.color || '#6366f1' }} />
-                              <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>{stage.name}</span>
+                              <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>{stage.nome}</span>
                             </div>
                             <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, color: '#9ca3af' }}>{stageLeads.length}</span>
                           </div>
@@ -296,7 +292,7 @@ export default function CRMPage() {
                           }}
                         >
                           {isLoading ? [1, 2, 3].map(i => <LeadSkeleton key={i} />) : stageLeads.map((lead, index) => {
-                              const priority = PRIORITY_CONFIG[lead.priority];
+                              const priority = PRIORITY_CONFIG[lead.prioridade];
                               return (
                                 <Draggable key={lead.id} draggableId={lead.id} index={index}>
                                   {(provided, snapshot) => (
@@ -318,17 +314,17 @@ export default function CRMPage() {
                                         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                                           <div style={{
                                             width: 36, height: 36, borderRadius: 12, flexShrink: 0,
-                                            background: `linear-gradient(135deg, ${getInitialColor(lead.name)}, ${getInitialColor(lead.name)}99)`,
+                                            background: `linear-gradient(135deg, ${getInitialColor(lead.nome)}, ${getInitialColor(lead.nome)}99)`,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff'
-                                          }}>{lead.name?.charAt(0).toUpperCase()}</div>
+                                          }}>{lead.nome?.charAt(0).toUpperCase()}</div>
                                           <div style={{ flex: 1, minWidth: 0 }}>
-                                            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name}</h4>
-                                            <div style={{ marginTop: 2, color: '#6b7280', fontSize: 11 }}>{lead.phone || 'S/ Tel'}</div>
+                                            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.nome}</h4>
+                                            <div style={{ marginTop: 2, color: '#6b7280', fontSize: 11 }}>{lead.telefone || 'S/ Tel'}</div>
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                           <div style={{ padding: '4px 8px', borderRadius: 8, background: priority.bg, color: priority.color, fontSize: 10, fontWeight: 700 }}>{priority.label}</div>
-                                          {lead.value > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>R$ {Number(lead.value).toLocaleString('pt-BR')}</div>}
+                                          {lead.valor > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>R$ {Number(lead.valor).toLocaleString('pt-BR')}</div>}
                                         </div>
                                       </div>
                                     </DraggablePortal>
@@ -340,7 +336,7 @@ export default function CRMPage() {
                           {provided.placeholder}
                         </div>
 
-                        <button onClick={() => { setEditingLead(null); setDefaultStageId(stage.id); setModalOpen(true); }} style={{ margin: 12, padding: 12, background: 'transparent', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 14, color: '#6b7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Adicionar Lead</button>
+                        <button onClick={() => { setEditingLead(null); setDefaultEtapaId(stage.id); setModalOpen(true); }} style={{ margin: 12, padding: 12, background: 'transparent', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 14, color: '#6b7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Adicionar Lead</button>
                       </div>
                     )}
                   </Droppable>
@@ -359,9 +355,9 @@ export default function CRMPage() {
 
       {modalOpen && (
         <LeadFormModal
-          lead={editingLead ? { ...editingLead } : { stageId: defaultStageId }}
+          lead={editingLead ? { ...editingLead } : { etapaId: defaultEtapaId }}
           stages={stages}
-          clientId={selectedClientId}
+          clienteId={isAdmin ? selectedClienteId : undefined}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
         />

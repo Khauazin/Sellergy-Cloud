@@ -56,13 +56,13 @@ export default function AlertsPage() {
   };
 
   const filteredAlertas = alertas.filter(a => 
-    a.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (a.bot?.name && a.bot.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (a.client?.name && a.client.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    (a.titulo && a.titulo.toLowerCase().includes(searchTerm.toLowerCase())) || 
+    (a.bot?.nome && a.bot.nome.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (a.cliente?.nome && a.cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const getSeverityStyles = (severity) => {
-    switch(severity) {
+  const getSeverityStyles = (severidade) => {
+    switch(severidade) {
       case 'CRITICAL': return { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20' };
       case 'ERROR': return { icon: XCircle, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' };
       case 'WARNING': return { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20' };
@@ -77,19 +77,19 @@ export default function AlertsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-[var(--text-main)] tracking-tight flex items-center gap-2">
             Central de Alertas 
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
             </span>
           </h2>
-          <p className="text-gray-400 text-sm mt-1">Monitoramento em tempo real dos erros dos bots</p>
+          <p className="text-[var(--text-muted)] text-sm mt-1">Monitoramento em tempo real dos erros dos bots</p>
         </div>
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-2 rounded-2xl backdrop-blur-sm">
+      <div className="flex items-center gap-4 bg-[var(--bg-card)] border border-[var(--border-main)] p-2 rounded-2xl">
         <div className="relative flex-1 max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-gray-500" />
@@ -99,7 +99,7 @@ export default function AlertsPage() {
             placeholder="Buscar por erro, bot ou cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-black/40 border border-white/5 text-white rounded-xl py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-gray-600 text-sm"
+            className="w-full bg-[var(--bg-app)] border border-[var(--border-main)] text-[var(--text-main)] rounded-xl py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-[var(--text-muted)] text-sm"
           />
         </div>
       </div>
@@ -112,14 +112,14 @@ export default function AlertsPage() {
             Buscando alertas...
           </div>
         ) : filteredAlertas.length === 0 ? (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center text-gray-500 backdrop-blur-sm flex flex-col items-center">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl p-12 text-center text-[var(--text-muted)] flex flex-col items-center">
             <CheckCircle2 className="w-12 h-12 text-emerald-500/50 mb-3" />
-            <p className="text-white font-medium">Tudo tranquilo por aqui!</p>
+            <p className="text-[var(--text-main)] font-medium">Tudo tranquilo por aqui!</p>
             <p className="text-sm mt-1">Nenhum alerta encontrado no momento.</p>
           </div>
         ) : (
           filteredAlertas.map((alerta) => {
-            const style = getSeverityStyles(alerta.severity);
+            const style = getSeverityStyles(alerta.severidade);
             const Icon = style.icon;
             
             return (
@@ -127,8 +127,8 @@ export default function AlertsPage() {
                 key={alerta.id} 
                 className={`p-5 rounded-2xl border backdrop-blur-sm transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
                   alerta.status === 'OPEN' 
-                    ? `bg-white/5 border-white/10 hover:border-white/20` 
-                    : `bg-black/20 border-white/5 opacity-60 grayscale-[50%]`
+                    ? `bg-[var(--bg-card)] border-[var(--border-main)] hover:border-blue-500/20` 
+                    : `bg-[var(--bg-app)] border-[var(--border-main)] opacity-60 grayscale-[50%]`
                 }`}
               >
                 <div className="flex gap-4">
@@ -138,8 +138,8 @@ export default function AlertsPage() {
                   
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className={`font-semibold ${alerta.status === 'OPEN' ? 'text-white' : 'text-gray-400 line-through'}`}>
-                        {alerta.title}
+                      <h3 className={`font-semibold ${alerta.status === 'OPEN' ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)] line-through'}`}>
+                        {alerta.titulo}
                       </h3>
                       {alerta.status !== 'OPEN' && (
                         <span className="text-[10px] uppercase font-bold tracking-wider text-gray-500 border border-gray-600/50 px-2 py-0.5 rounded-full">
@@ -147,17 +147,17 @@ export default function AlertsPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-gray-400 text-sm mb-2">{alerta.message}</p>
+                    <p className="text-[var(--text-muted)] text-sm mb-2">{alerta.mensagem}</p>
                     
                     <div className="flex flex-wrap gap-2 text-xs font-medium">
-                      <span className="bg-white/5 text-gray-300 px-2.5 py-1 rounded-md border border-white/10">
-                        Bot: {alerta.bot?.name || 'Desconhecido'}
+                      <span className="bg-[var(--bg-card)] text-[var(--text-muted)] px-2.5 py-1 rounded-md border border-[var(--border-main)]">
+                        Bot: {alerta.bot?.nome || 'Desconhecido'}
                       </span>
-                      <span className="bg-white/5 text-gray-300 px-2.5 py-1 rounded-md border border-white/10">
-                        Cliente: {alerta.client?.name || 'Desconhecido'}
+                      <span className="bg-[var(--bg-card)] text-[var(--text-muted)] px-2.5 py-1 rounded-md border border-[var(--border-main)]">
+                        Cliente: {alerta.cliente?.nome || 'Desconhecido'}
                       </span>
                       <span className="text-gray-500 px-1 py-1">
-                        {new Date(alerta.createdAt).toLocaleString('pt-BR')}
+                        {new Date(alerta.criadoEm).toLocaleString('pt-BR')}
                       </span>
                     </div>
                   </div>

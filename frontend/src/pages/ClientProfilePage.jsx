@@ -81,7 +81,7 @@ export default function ClientProfilePage() {
             </div>
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-3xl font-bold text-white tracking-tight">{client.name}</h1>
+                <h1 className="text-3xl font-bold text-white tracking-tight">{client.nome}</h1>
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                   isAtivo ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
                   'bg-red-500/10 text-red-400 border-red-500/20'
@@ -89,11 +89,11 @@ export default function ClientProfilePage() {
                   {isAtivo ? 'Ativo' : 'Suspenso'}
                 </span>
               </div>
-              <p className="text-gray-400">{client.segment || 'Sem segmento definido'}</p>
+              <p className="text-gray-400">{client.segmento || 'Sem segmento definido'}</p>
             </div>
           </div>
 
-          {currentUser?.role === 'ADMIN' && (
+          {currentUser?.perfil === 'ADMIN' && (
             <div className="flex items-center gap-3 w-full md:w-auto">
               <button 
                 onClick={handleToggleStatus}
@@ -123,21 +123,21 @@ export default function ClientProfilePage() {
             <div className="p-2 bg-indigo-500/10 rounded-lg"><Phone className="w-5 h-5 text-indigo-400" /></div>
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Telefone</p>
-              <p className="text-sm text-gray-200">{client.phone || 'Não informado'}</p>
+              <p className="text-sm text-gray-200">{client.telefone || 'Não informado'}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-lg"><DollarSign className="w-5 h-5 text-emerald-400" /></div>
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mensalidade</p>
-              <p className="text-sm font-bold text-white">R$ {client.monthlyFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-sm font-bold text-white">R$ {(client.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="p-2 bg-purple-500/10 rounded-lg"><Calendar className="w-5 h-5 text-purple-400" /></div>
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Criado em</p>
-              <p className="text-sm text-gray-200">{new Date(client.createdAt).toLocaleDateString('pt-BR')}</p>
+              <p className="text-sm text-gray-200">{new Date(client.criadoEm).toLocaleDateString('pt-BR')}</p>
             </div>
           </div>
         </div>
@@ -152,7 +152,7 @@ export default function ClientProfilePage() {
               <Bot className="w-5 h-5 text-blue-400" /> 
               Robôs Ativos ({client.bots?.length || 0})
             </h2>
-            {currentUser?.role === 'ADMIN' && (
+            {currentUser?.perfil === 'ADMIN' && (
               <span className="text-sm text-gray-500 font-medium">
                 Admin view
               </span>
@@ -171,7 +171,7 @@ export default function ClientProfilePage() {
                 <div key={bot.id} className="bg-black/40 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="text-white font-semibold flex items-center gap-2">
-                      {bot.name}
+                      {bot.nome}
                     </h3>
                     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                       bot.status === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
@@ -182,14 +182,14 @@ export default function ClientProfilePage() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center mb-4">
-                    <p className="text-xs text-gray-500">Canal: {bot.channel}</p>
-                    {currentUser?.role === 'ADMIN' && (
+                    <p className="text-xs text-gray-500">Canal: {bot.canal}</p>
+                    {currentUser?.perfil === 'ADMIN' && (
                       <button 
                         onClick={() => navigate(`/admin/builder/${bot.id}`)}
                         className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
                         title="Abrir Construtor de Fluxo"
                       >
-                        <Edit3 className="w-4 h-4" />
+                        <Bot className="w-4 h-4" />
                       </button>
                     )}
                   </div>
@@ -197,11 +197,11 @@ export default function ClientProfilePage() {
                   <div className="flex items-center justify-between pt-3 border-t border-white/5">
                     <div>
                       <p className="text-[10px] text-gray-500 uppercase font-bold">Msgs Hoje</p>
-                      <p className="text-white text-sm font-medium">{bot.messagesToday}</p>
+                      <p className="text-white text-sm font-medium">{bot.mensagensHoje}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] text-gray-500 uppercase font-bold">Total Tráfego</p>
-                      <p className="text-white text-sm font-medium">{bot.messagesTotal}</p>
+                      <p className="text-white text-sm font-medium">{bot.totalMensagens}</p>
                     </div>
                   </div>
                 </div>
@@ -221,7 +221,7 @@ export default function ClientProfilePage() {
             <div className="flex items-center justify-between mb-6">
               <span className="text-gray-400 text-sm">Plano Contratado</span>
               <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs font-bold border border-indigo-500/30">
-                {client.plan}
+                {client.plano}
               </span>
             </div>
 
@@ -230,7 +230,7 @@ export default function ClientProfilePage() {
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-400">Limite de Disparos</span>
                   <span className="text-white font-medium">
-                    {client.bots?.reduce((acc, b) => acc + b.messagesToday, 0) || 0} / {client.plan === 'PREMIUM' ? 'Ilimitado' : '10.000'}
+                    {client.bots?.reduce((acc, b) => acc + b.mensagensHoje, 0) || 0} / {client.plano === 'PREMIUM' ? 'Ilimitado' : '10.000'}
                   </span>
                 </div>
                 <div className="w-full bg-black/50 rounded-full h-2">

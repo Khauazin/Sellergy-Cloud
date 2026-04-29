@@ -8,10 +8,10 @@ roteador.use(middlewareAutenticacao);
 // Listar agendamentos do cliente logado
 roteador.get('/', async (req, res) => {
   try {
-    const { clientId } = req.usuario;
+    const { clienteId } = req.usuario;
     const { month, year, date } = req.query;
 
-    if (!clientId) {
+    if (!clienteId) {
       return res.status(403).json({ erro: 'Apenas clientes podem acessar a agenda' });
     }
 
@@ -32,17 +32,17 @@ roteador.get('/', async (req, res) => {
       filtroData = { gte: inicioMes, lte: fimMes };
     }
 
-    const agendamentos = await prisma.appointment.findMany({
+    const agendamentos = await prisma.agendamento.findMany({
       where: {
-        clientId,
-        date: filtroData
+        clienteId,
+        data: filtroData
       },
       include: {
         lead: {
-          select: { name: true, phone: true }
+          select: { nome: true, telefone: true }
         }
       },
-      orderBy: { date: 'asc' }
+      orderBy: { data: 'asc' }
     });
 
     res.json(agendamentos);
@@ -55,46 +55,46 @@ roteador.get('/', async (req, res) => {
 // Criar novo agendamento
 roteador.post('/', async (req, res) => {
   try {
-    let { clientId } = req.usuario;
-    const { leadId, customerName, customerPhone, date, duration, service, price, notes, origin, clientId: bodyClientId } = req.body;
+    let { clienteId } = req.usuario;
+    const { leadId, nomeCliente, telefoneCliente, data, duracao, servico, preco, observacoes, origem, clienteId: bodyClienteId } = req.body;
 
-    // Se o usuário logado não tem clientId (é ADMIN), tenta pegar do body ou do leadId
-    if (!clientId && req.usuario.role === 'ADMIN') {
-      if (bodyClientId) {
-        clientId = bodyClientId;
+    // Se o usuário logado não tem clienteId (é ADMIN), tenta pegar do body ou do leadId
+    if (!clienteId && req.usuario.perfil === 'ADMIN') {
+      if (bodyClienteId) {
+        clienteId = bodyClienteId;
       } else if (leadId) {
         const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-        if (lead) clientId = lead.clientId;
+        if (lead) clienteId = lead.clienteId;
       }
     }
 
-    if (!clientId) {
+    if (!clienteId) {
       return res.status(403).json({ erro: 'Ação não permitida' });
     }
 
-    const novoAgendamento = await prisma.appointment.create({
+    const novoAgendamento = await prisma.agendamento.create({
       data: {
-        clientId,
+        clienteId,
         leadId: leadId || null,
-        customerName,
-        customerPhone,
-        date: new Date(date),
-        duration: parseInt(duration) || 30,
-        service,
-        price: parseFloat(price) || 0,
-        notes,
-        origin: origin || 'MANUAL',
+        nomeCliente,
+        telefoneCliente,
+        data: new Date(data),
+        duracao: parseInt(duracao) || 30,
+        servico,
+        preco: parseFloat(preco) || 0,
+        observacoes,
+        origem: origem || 'MANUAL',
         status: 'PENDING'
       }
     });
 
     // Se tiver leadId, registra no histórico do Lead
     if (leadId) {
-      await prisma.leadHistory.create({
+      await prisma.historicoLead.create({
         data: {
           leadId,
-          action: 'EDITADO',
-          notes: `Novo agendamento criado: ${service} em ${new Date(date).toLocaleString()}`
+          acao: 'EDITADO',
+          observacoes: `Novo agendamento criado: ${servico} em ${new Date(data).toLocaleString()}`
         }
       });
     }
@@ -110,17 +110,26 @@ roteador.post('/', async (req, res) => {
 roteador.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { clientId } = req.usuario;
+    const { clienteId } = req.usuario;
     const dados = req.body;
 
     // Converte datas e números se presentes
-    if (dados.date) dados.date = new Date(dados.date);
-    if (dados.price) dados.price = parseFloat(dados.price);
-    if (dados.duration) dados.duration = parseInt(dados.duration);
+    if (dados.data) dados.data = new Date(dados.data);
+    if (dados.preco) dados.preco = parseFloat(dados.preco);
+    if (dados.duracao) dados.duracao = parseInt(dados.duracao);
 
-    const atualizado = await prisma.appointment.update({
-      where: { id, clientId },
-      data: dados
+    const atualizado = await prisma.agendamento.update({
+      where: { id, clienteId },
+      data: {
+        nomeCliente: dados.nomeCliente,
+        telefoneCliente: dados.telefoneCliente,
+        data: dados.data,
+        duracao: dados.duracao,
+        servico: dados.servico,
+        preco: dados.preco,
+        observacoes: dados.observacoes,
+        status: dados.status
+      }
     });
 
     res.json(atualizado);
@@ -134,10 +143,10 @@ roteador.put('/:id', async (req, res) => {
 roteador.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { clientId } = req.usuario;
+    const { clienteId } = req.usuario;
 
-    await prisma.appointment.delete({
-      where: { id, clientId }
+    await prisma.agendamento.delete({
+      where: { id, clienteId }
     });
 
     res.status(204).send();
@@ -150,7 +159,7 @@ roteador.delete('/:id', async (req, res) => {
 roteador.patch('/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { clientId } = req.usuario;
+    const { clienteId } = req.usuario;
     const { status } = req.body;
 
     const statusValidos = ['PENDING', 'CONFIRMED', 'CANCELED', 'COMPLETED'];
@@ -158,8 +167,8 @@ roteador.patch('/:id/status', async (req, res) => {
       return res.status(400).json({ erro: 'Status inválido' });
     }
 
-    const atualizado = await prisma.appointment.update({
-      where: { id, clientId },
+    const atualizado = await prisma.agendamento.update({
+      where: { id, clienteId },
       data: { status }
     });
 

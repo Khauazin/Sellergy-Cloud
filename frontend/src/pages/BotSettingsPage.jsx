@@ -89,18 +89,18 @@ export default function BotSettingsPage() {
       
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-          <Settings className="w-8 h-8 text-gray-400" />
+        <h1 className="text-3xl font-bold text-[var(--text-main)] tracking-tight flex items-center gap-3">
+          <Settings className="w-8 h-8 text-[var(--text-muted)]" />
           Configurações do Bot
         </h1>
-        <p className="text-gray-400 mt-2">
+        <p className="text-[var(--text-muted)] mt-2">
           Personalize as mensagens e configurações do seu chatbot. Alterações avançadas no fluxo devem ser solicitadas ao suporte.
         </p>
       </div>
 
       {/* Seletor de Bot */}
       {bots.length > 1 && (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl p-4">
           <label className="text-sm font-medium text-gray-400 mb-2 block">Selecione o Bot</label>
           <div className="flex flex-wrap gap-2">
             {bots.map(bot => (
@@ -122,10 +122,10 @@ export default function BotSettingsPage() {
 
       {/* Variáveis */}
       {variables.length === 0 ? (
-        <div className="bg-white/5 border border-white/10 border-dashed rounded-3xl p-12 text-center">
-          <MessageSquare className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-white mb-2">Nenhuma configuração disponível</h3>
-          <p className="text-gray-400 max-w-md mx-auto">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] border-dashed rounded-3xl p-12 text-center">
+          <MessageSquare className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-[var(--text-main)] mb-2">Nenhuma configuração disponível</h3>
+          <p className="text-[var(--text-muted)] max-w-md mx-auto">
             O administrador ainda não liberou configurações editáveis para este bot. Entre em contato com o suporte se precisar alterar alguma mensagem.
           </p>
         </div>
@@ -134,16 +134,16 @@ export default function BotSettingsPage() {
           {variables.map(variable => (
             <div 
               key={variable.id}
-              className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:border-white/20 transition-all group"
+              className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl p-6 hover:border-blue-500/30 transition-all group"
             >
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/5 rounded-lg border border-white/10">
+                  <div className="p-2 bg-[var(--bg-card)] rounded-lg border border-[var(--border-main)]">
                     {getVarIcon(variable.type)}
                   </div>
                   <div>
-                    <h3 className="text-white font-semibold">{variable.description || variable.key}</h3>
-                    <p className="text-xs text-gray-500 font-mono">{variable.key}</p>
+                    <h3 className="text-[var(--text-main)] font-semibold">{variable.description || variable.key}</h3>
+                    <p className="text-xs text-[var(--text-muted)] font-mono">{variable.key}</p>
                   </div>
                 </div>
                 
@@ -185,14 +185,14 @@ export default function BotSettingsPage() {
                   type="number"
                   value={variable.value}
                   onChange={(e) => handleChangeValue(variable.id, e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-[var(--bg-app)] border border-[var(--border-main)] text-[var(--text-main)] rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               ) : (
                 <textarea
                   value={variable.value}
                   onChange={(e) => handleChangeValue(variable.id, e.target.value)}
                   rows={3}
-                  className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors resize-none"
+                  className="w-full bg-[var(--bg-app)] border border-[var(--border-main)] text-[var(--text-main)] rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors resize-none"
                   placeholder="Digite o valor..."
                 />
               )}

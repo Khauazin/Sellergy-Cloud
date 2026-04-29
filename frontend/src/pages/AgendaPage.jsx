@@ -134,7 +134,7 @@ function ActionDropdown({ app, onStatusChange, onEdit, onDelete }) {
 // ─── Página Principal ─────────────────────────────────────
 export default function AgendaPage() {
   const { user } = useAuthStore();
-  const clientId = user?.clientId;
+  const clienteId = user?.clienteId;
   const { toasts, show } = useToast();
 
   const [appointments, setAppointments] = useState([]);
@@ -146,12 +146,12 @@ export default function AgendaPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
   const [formData, setFormData] = useState({
-    customerName: '', customerPhone: '', service: '', date: '',
-    time: '09:00', duration: 30, price: '', notes: '', leadId: '', origin: 'MANUAL'
+    nomeCliente: '', telefoneCliente: '', servico: '', date: '',
+    time: '09:00', duracao: 30, preco: '', observacoes: '', leadId: '', origem: 'MANUAL'
   });
 
   useEffect(() => { carregarAgendamentos(); }, [viewDate]);
-  useEffect(() => { if (clientId) carregarLeads(); }, [clientId]);
+  useEffect(() => { if (clienteId) carregarLeads(); }, [clienteId]);
 
   const carregarAgendamentos = async () => {
     try {
@@ -166,7 +166,7 @@ export default function AgendaPage() {
 
   const carregarLeads = async () => {
     try {
-      const res = await api.get(`/crm/leads/${clientId}`);
+      const res = await api.get('/crm/leads');
       setLeads(res.data);
     } catch { console.error('Erro ao carregar leads'); }
   };
@@ -196,7 +196,7 @@ export default function AgendaPage() {
     for (let i = 1; i <= daysInMonth; i++) {
       const date = new Date(year, month, i);
       const dayApps = appointments.filter(app => {
-        const d = new Date(app.date);
+        const d = new Date(app.data);
         return d.getFullYear() === year && d.getMonth() === month && d.getDate() === i;
       });
       days.push({ day: i, date, apps: dayApps });
@@ -209,7 +209,7 @@ export default function AgendaPage() {
   const filteredAppointments = useMemo(() => {
     if (isMonthFilter) return appointments;
     return appointments.filter(app => {
-      const d = new Date(app.date);
+      const d = new Date(app.data);
       return d.getFullYear() === selectedDate.getFullYear() &&
         d.getMonth() === selectedDate.getMonth() &&
         d.getDate() === selectedDate.getDate();
@@ -219,21 +219,21 @@ export default function AgendaPage() {
   // ── Ações ──
   const handleOpenModal = (app = null) => {
     if (app) {
-      const d = new Date(app.date);
+      const d = new Date(app.data);
       setEditingAppointment(app);
       setFormData({
-        customerName: app.customerName, customerPhone: app.customerPhone || '',
-        service: app.service || '', date: d.toISOString().split('T')[0],
-        time: d.toTimeString().substring(0, 5), duration: app.duration,
-        price: app.price || '', notes: app.notes || '',
-        leadId: app.leadId || '', origin: app.origin
+        nomeCliente: app.nomeCliente, telefoneCliente: app.telefoneCliente || '',
+        servico: app.servico || '', date: d.toISOString().split('T')[0],
+        time: d.toTimeString().substring(0, 5), duracao: app.duracao,
+        preco: app.preco || '', observacoes: app.observacoes || '',
+        leadId: app.leadId || '', origem: app.origem
       });
     } else {
       setEditingAppointment(null);
       setFormData({
-        customerName: '', customerPhone: '', service: '',
+        nomeCliente: '', telefoneCliente: '', servico: '',
         date: selectedDate.toISOString().split('T')[0],
-        time: '09:00', duration: 30, price: '', notes: '', leadId: '', origin: 'MANUAL'
+        time: '09:00', duracao: 30, preco: '', observacoes: '', leadId: '', origem: 'MANUAL'
       });
     }
     setIsModalOpen(true);
@@ -243,7 +243,7 @@ export default function AgendaPage() {
     e.preventDefault();
     try {
       const fullDate = new Date(`${formData.date}T${formData.time}:00`).toISOString();
-      const payload = { ...formData, date: fullDate };
+      const payload = { ...formData, data: fullDate };
       if (editingAppointment) {
         await api.put(`/agenda/${editingAppointment.id}`, payload);
         show('Agendamento atualizado!');
@@ -410,7 +410,7 @@ export default function AgendaPage() {
               filteredAppointments.map(app => {
                 const status = STATUS_CONFIG[app.status];
                 const origin = ORIGIN_CONFIG[app.origin] || ORIGIN_CONFIG.MANUAL;
-                const hora = new Date(app.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                const hora = new Date(app.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
                 return (
                   <div key={app.id} style={{
@@ -425,7 +425,7 @@ export default function AgendaPage() {
                     {/* Hora */}
                     <div style={{ width: 52, textAlign: 'center', flexShrink: 0 }}>
                       <div style={{ fontSize: 17, fontWeight: 800, color: '#fff' }}>{hora}</div>
-                      <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{app.duration}m</div>
+                      <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{app.duracao}m</div>
                     </div>
 
                     <div style={{ width: 1, height: 36, background: 'rgba(255,255,255,0.06)' }} />
@@ -433,7 +433,7 @@ export default function AgendaPage() {
                     {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{app.customerName}</h4>
+                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{app.nomeCliente}</h4>
 
                         {/* Status Badge Clicável */}
                         <button
@@ -459,11 +459,11 @@ export default function AgendaPage() {
 
                       <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#9ca3af' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <CalendarIcon size={12} /> {app.service}
+                          <CalendarIcon size={12} /> {app.servico}
                         </span>
-                        {app.customerPhone && (
+                        {app.telefoneCliente && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Phone size={12} /> {app.customerPhone}
+                            <Phone size={12} /> {app.telefoneCliente}
                           </span>
                         )}
                       </div>
@@ -510,9 +510,9 @@ export default function AgendaPage() {
               </div>
 
               {[
-                { label: 'Cliente *', key: 'customerName', placeholder: 'Nome completo', required: true },
-                { label: 'Telefone', key: 'customerPhone', placeholder: '(00) 00000-0000' },
-                { label: 'Serviço / Procedimento *', key: 'service', placeholder: 'Ex: Consulta, Botox', required: true },
+                { label: 'Cliente *', key: 'nomeCliente', placeholder: 'Nome completo', required: true },
+                { label: 'Telefone', key: 'telefoneCliente', placeholder: '(00) 00000-0000' },
+                { label: 'Serviço / Procedimento *', key: 'servico', placeholder: 'Ex: Consulta, Botox', required: true },
               ].map(f => (
                 <div key={f.key}>
                   <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>{f.label}</label>
@@ -525,8 +525,8 @@ export default function AgendaPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
-                  { label: 'Duração (min)', key: 'duration', type: 'number' },
-                  { label: 'Valor (R$)', key: 'price', type: 'number', placeholder: '0.00' },
+                  { label: 'Duração (min)', key: 'duracao', type: 'number' },
+                  { label: 'Valor (R$)', key: 'preco', type: 'number', placeholder: '0.00' },
                 ].map(f => (
                   <div key={f.key}>
                     <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 6 }}>{f.label}</label>
@@ -543,7 +543,7 @@ export default function AgendaPage() {
                 <select value={formData.leadId} onChange={e => setFormData({ ...formData, leadId: e.target.value })}
                   style={{ width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}>
                   <option value="">Nenhum lead</option>
-                  {leads.map(l => <option key={l.id} value={l.id}>{l.name} {l.phone ? `(${l.phone})` : ''}</option>)}
+                  {leads.map(l => <option key={l.id} value={l.id}>{l.nome} {l.telefone ? `(${l.telefone})` : ''}</option>)}
                 </select>
               </div>
 

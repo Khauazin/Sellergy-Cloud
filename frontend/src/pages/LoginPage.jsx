@@ -5,7 +5,7 @@ import { Bot, Lock, Mail, Loader2, ArrowRight } from 'lucide-react';
 
 export default function LoginPage({ isAdmin = true }) {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [senha, setSenha] = useState('');
   const { login, error, isLoading, isAuthenticated, checkAuth, user, logout } = useAuthStore();
   const navigate = useNavigate();
 
@@ -15,10 +15,10 @@ export default function LoginPage({ isAdmin = true }) {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.role === 'CLIENT') {
+      if (user.perfil === 'CLIENT') {
         // Força logout se um Cliente tentar acessar login de Admin
         logout();
-      } else if (user.role === 'ADMIN') {
+      } else if (user.perfil === 'ADMIN') {
         navigate('/admin/dashboard');
       }
     }
@@ -26,7 +26,7 @@ export default function LoginPage({ isAdmin = true }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = await login(email, password);
+    const success = await login(email, senha);
     // Redirecionamento é tratado no useEffect acima após o user ser populado
   };
 
@@ -87,8 +87,8 @@ export default function LoginPage({ isAdmin = true }) {
                 <input
                   type="password"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
                   className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder:text-gray-600"
                   placeholder="••••••••"
                 />

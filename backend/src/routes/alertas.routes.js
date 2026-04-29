@@ -7,15 +7,16 @@ roteador.use(middlewareAutenticacao);
 
 roteador.get('/', async (req, res) => {
   try {
-    const alertas = await prisma.alert.findMany({
+    const alertas = await prisma.alerta.findMany({
       include: {
-        bot: { select: { name: true } },
-        client: { select: { name: true } }
+        bot: { select: { nome: true } },
+        cliente: { select: { nome: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { criadoEm: 'desc' }
     });
     res.json(alertas);
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Erro ao listar alertas' });
   }
 });
@@ -23,13 +24,14 @@ roteador.get('/', async (req, res) => {
 roteador.patch('/:id/resolver', async (req, res) => {
   try {
     const { id } = req.params;
-    const alerta = await prisma.alert.update({
+    const alerta = await prisma.alerta.update({
       where: { id },
-      data: { status: 'RESOLVED', resolvedAt: new Date(), userId: req.usuarioId }
+      data: { status: 'RESOLVED', resolvidoEm: new Date(), usuarioId: req.usuario.id }
     });
-    req.io.emit('alerta_atualizado', alerta);
+    if (req.io) req.io.emit('alerta_atualizado', alerta);
     res.json(alerta);
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Erro ao resolver alerta' });
   }
 });
@@ -37,13 +39,14 @@ roteador.patch('/:id/resolver', async (req, res) => {
 roteador.patch('/:id/ignorar', async (req, res) => {
   try {
     const { id } = req.params;
-    const alerta = await prisma.alert.update({
+    const alerta = await prisma.alerta.update({
       where: { id },
-      data: { status: 'IGNORED', userId: req.usuarioId }
+      data: { status: 'IGNORED', usuarioId: req.usuario.id }
     });
-    req.io.emit('alerta_atualizado', alerta);
+    if (req.io) req.io.emit('alerta_atualizado', alerta);
     res.json(alerta);
   } catch (erro) {
+    console.error(erro);
     res.status(500).json({ erro: 'Erro ao ignorar alerta' });
   }
 });

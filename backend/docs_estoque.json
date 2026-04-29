@@ -1,0 +1,56 @@
+{
+  "modulo": "Estoque Profissional",
+  "descricao": "Documentação das novas funcionalidades de estoque com KPIs e reposição inteligente.",
+  "endpoints": [
+    {
+      "rota": "/estoque/dashboard",
+      "metodo": "GET",
+      "descricao": "Retorna KPIs de inventário como valor total (patrimônio), itens abaixo do mínimo e índice de ruptura.",
+      "resposta_exemplo": {
+        "valorTotalInventario": 15400.50,
+        "itensAbaixoMinimo": 5,
+        "indiceRuptura": 2.5,
+        "totalProdutos": 120
+      }
+    },
+    {
+      "rota": "/estoque/reposicao",
+      "metodo": "GET",
+      "descricao": "Lista variações que precisam de reposição baseadas no estoque ideal e mínimo.",
+      "resposta_exemplo": [
+        {
+          "id": "uuid",
+          "produto": "Camiseta",
+          "variacao": "Azul G",
+          "estoqueAtual": 2,
+          "estoqueMinimo": 5,
+          "estoqueIdeal": 20,
+          "necessidade": 18,
+          "urgencia": "ALTA"
+        }
+      ]
+    },
+    {
+      "rota": "/estoque/ajuste-balanco",
+      "metodo": "POST",
+      "descricao": "Atualiza o estoque com base em contagem física (inventário).",
+      "corpo_requisicao": {
+        "ajustes": [
+          { "variacaoId": "uuid", "estoqueReal": 10, "motivo": "Inventário Mensal" }
+        ]
+      }
+    },
+    {
+      "rota": "/estoque/movimentar",
+      "metodo": "POST",
+      "descricao": "Registra movimentação e integra com financeiro se tipo for COMPRA_FORNECEDOR ou VENDA.",
+      "corpo_requisicao": {
+        "variacaoId": "uuid",
+        "tipo": "COMPRA_FORNECEDOR",
+        "quantidade": 10,
+        "precoCusto": 50.00,
+        "categoriaId": "uuid_financeiro"
+      }
+    }
+  ]
+}

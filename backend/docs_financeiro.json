@@ -1,0 +1,87 @@
+{
+  "modulo": "Financeiro",
+  "base_url": "/financeiro",
+  "endpoints": [
+    {
+      "metodo": "GET",
+      "rota": "/dashboard",
+      "descricao": "Retorna KPIs estratégicos: Saldo em Risco, Eficácia de Cobrança e Previsão de Recuperação."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/inadimplencia",
+      "descricao": "Lista clientes com pagamentos atrasados, incluindo Aging (dias), Nível de Risco e Valor Atualizado com juros/multa."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/fluxo-caixa",
+      "descricao": "Projeção de entradas e saídas para os próximos 30 dias."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/relatorio/dre",
+      "descricao": "Demonstrativo de Resultados: Receita Bruta vs Despesas (Fixas e Variáveis) e Lucro Líquido."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/saldo-atual",
+      "descricao": "Retorna o saldo real atual baseado no último snapshot e lançamentos pagos."
+    },
+    {
+      "metodo": "POST",
+      "rota": "/saldo-atual/ajuste",
+      "payload": { "valor": 150.50, "motivo": "Ajuste saldo inicial" },
+      "descricao": "Registra um novo snapshot de saldo manual."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/lancamentos",
+      "filtros": ["tipo", "status", "inicio", "fim", "buscar", "pagina"],
+      "descricao": "Lista todos os lançamentos com paginação e busca."
+    },
+    {
+      "metodo": "POST",
+      "rota": "/lancamentos",
+      "payload": { "descricao": "Venda", "valor": 100, "tipo": "RECEITA", "dataVencimento": "2026-05-01", "parcelas": 1 },
+      "descricao": "Cria um lançamento (suporta criação automática de parcelas)."
+    },
+    {
+      "metodo": "PUT",
+      "rota": "/lancamentos/:id",
+      "descricao": "Edita um lançamento existente (apenas se não estiver pago)."
+    },
+    {
+      "metodo": "PATCH",
+      "rota": "/lancamentos/:id/status",
+      "payload": { "status": "PAGO", "dataPagamento": "2026-04-27" },
+      "descricao": "Altera o status de um lançamento (Baixa de pagamento)."
+    },
+    {
+      "metodo": "POST",
+      "rota": "/lancamentos/:id/cobrar",
+      "descricao": "Smart Action: Gera link dinâmico de cobrança via WhatsApp com valor corrigido."
+    },
+    {
+      "metodo": "POST",
+      "rota": "/lancamentos/:id/pausa",
+      "payload": { "dias": 3 },
+      "descricao": "Smart Action: Pausa Amigável - Postergue o vencimento sem gerar encargos extras."
+    },
+    {
+      "metodo": "DELETE",
+      "rota": "/lancamentos/:id",
+      "descricao": "Exclui um lançamento permanentemente do banco."
+    },
+    {
+      "metodo": "GET",
+      "rota": "/categorias",
+      "descricao": "Lista as categorias financeiras do cliente."
+    },
+    {
+      "metodo": "POST",
+      "rota": "/categorias",
+      "payload": { "nome": "Marketing", "tipo": "DESPESA" },
+      "descricao": "Cria uma nova categoria de receita ou despesa."
+    }
+  ]
+}
