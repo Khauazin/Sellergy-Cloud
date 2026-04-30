@@ -17,6 +17,13 @@ export const useAuthStore = create((set, get) => ({
 
       localStorage.setItem('@botmanager:token', token);
       set({ user: usuario, token, isAuthenticated: true, isLoading: false });
+
+      // Reforca o estado com /perfil para garantir modulosLiberados, branding, foto etc.
+      try {
+        const perfil = await api.get('/autenticacao/perfil');
+        set({ user: perfil.data });
+      } catch { /* ignora, ja temos o user do login */ }
+
       return true;
     } catch (error) {
       set({

@@ -1,254 +1,176 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Shield, User, Mail, Loader2, Edit2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit2, Trash2, MoreHorizontal, Mail, ShieldCheck, Crown } from 'lucide-react';
 import api from '../services/api';
+import {
+  Card, Button, IconButton, Input, Avatar, Badge, EmptyState, SearchBar,
+  Dropdown, DropdownItem, DropdownDivider, useToast
+} from '../components/ui';
 import Modal from '../components/Modal';
-import { useAuthStore } from '../store/auth.store';
 
 export default function UsersPage() {
+  const toast = useToast();
   const [usuarios, setUsuarios] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState('');
+  const [modal, setModal] = useState({ open: false, data: null });
 
-  const currentUser = useAuthStore(state => state.user);
+  useEffect(() => { carregar(); }, []);
 
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    nome: '', email: '', senha: '', perfil: 'ADMIN'
-  });
-  const [editingId, setEditingId] = useState(null);
-
-  useEffect(() => {
-    carregarUsuarios();
-  }, []);
-
-  const carregarUsuarios = async () => {
+  const carregar = async () => {
+    setCarregando(true);
     try {
-      const response = await api.get('/usuarios');
-      setUsuarios(response.data);
-    } catch (error) {
-      console.error('Erro ao carregar usuários', error);
+      const r = await api.get('/usuarios');
+      setUsuarios(r.data || []);
     } finally {
-      setIsLoading(false);
+      setCarregando(false);
     }
   };
 
-  const handleSaveUser = async (e) => {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      if (editingId) {
-        const payload = { ...formData };
-        if (!payload.senha) delete payload.senha;
+  const filtrados = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return usuarios;
+    return usuarios.filter((u) => u.nome?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q));
+  }, [usuarios, busca]);
 
-        const response = await api.put(`/usuarios/${editingId}`, payload);
-        setUsuarios(usuarios.map(u => u.id === editingId ? response.data : u));
+  const handleSalvar = async (dados) => {
+    try {
+      if (dados.id) {
+        await api.put(`/usuarios/${dados.id}`, dados);
+        toast.success('Administrador atualizado');
       } else {
-        const response = await api.post('/usuarios', formData);
-        setUsuarios([response.data, ...usuarios]);
+        await api.post('/usuarios', dados);
+        toast.success('Administrador criado');
       }
-      setIsModalOpen(false);
-      setFormData({ nome: '', email: '', senha: '', perfil: 'ADMIN' });
-      setEditingId(null);
-    } catch (error) {
-      console.error('Erro ao salvar usuário', error);
-      alert(error.response?.data?.erro || 'Erro ao salvar usuário.');
-    } finally {
-      setIsSaving(false);
+      setModal({ open: false, data: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.erro || 'Erro ao salvar');
     }
   };
 
-  const handleDeleteUser = async (id) => {
-    if (currentUser && id === currentUser.id) {
-      alert('Você não pode excluir o próprio usuário!');
-      return;
-    }
-    if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
-      try {
-        await api.delete(`/usuarios/${id}`);
-        setUsuarios(usuarios.filter(u => u.id !== id));
-      } catch (error) {
-        console.error('Erro ao excluir usuário', error);
-        alert('Erro ao excluir usuário.');
-      }
+  const handleExcluir = async (u) => {
+    if (!confirm(`Excluir admin "${u.nome}"?`)) return;
+    try {
+      await api.delete(`/usuarios/${u.id}`);
+      toast.success('Excluido');
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.erro || 'Erro ao excluir');
     }
   };
-
-  const filteredUsers = usuarios.filter(u =>
-    (u.nome && u.nome.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Gestão da Equipe</h2>
-          <p className="text-gray-400 text-sm mt-1">Gerencie os administradores com acesso ao painel</p>
-        </div>
-        <button
-          onClick={() => {
-            setFormData({ nome: '', email: '', senha: '', perfil: 'ADMIN' });
-            setEditingId(null);
-            setIsModalOpen(true);
-          }}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-medium transition-colors shadow-lg shadow-blue-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Membro
-        </button>
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-2 rounded-2xl backdrop-blur-sm">
-        <div className="relative flex-1 max-w-md">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-gray-500" />
+    <div className="space-y-5">
+      <Card padding="lg">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+            <Crown size={18} strokeWidth={1.75} />
           </div>
-          <input
-            type="text"
-            placeholder="Buscar por nome ou email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-black/40 border border-white/5 text-white rounded-xl py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-gray-600 text-sm"
-          />
+          <div className="flex-1">
+            <h2 className="text-base font-semibold tracking-tight text-[var(--text-main)]">Administradores do sistema</h2>
+            <p className="text-sm text-[var(--text-muted)] mt-1 leading-relaxed">
+              Pessoas com acesso total ao painel administrativo. Veem todos os clientes,
+              bots, alertas. Diferente da equipe do tenant (cada cliente gerencia a propria
+              equipe dentro do CRM).
+            </p>
+          </div>
         </div>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[240px] max-w-md">
+          <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar..." />
+        </div>
+        <Button variant="primary" icon={Plus} onClick={() => setModal({ open: true, data: null })}>Novo administrador</Button>
       </div>
 
-      {/* Grid de Usuários */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20 text-gray-500">
-          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-3" />
-          Carregando equipe...
-        </div>
-      ) : filteredUsers.length === 0 ? (
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center text-gray-500 backdrop-blur-sm">
-          Nenhum usuário encontrado.
-        </div>
+      {carregando ? (
+        <Card padding="lg"><div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando...</div></Card>
+      ) : filtrados.length === 0 ? (
+        <Card padding="lg">
+          <EmptyState
+            icon={ShieldCheck}
+            title={usuarios.length === 0 ? 'Apenas voce' : 'Sem resultados'}
+            description={usuarios.length === 0 ? 'Cadastre outros administradores se quiser delegar acesso ao painel.' : null}
+            action={usuarios.length === 0 && (
+              <Button variant="primary" icon={Plus} onClick={() => setModal({ open: true, data: null })}>Novo administrador</Button>
+            )}
+          />
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredUsers.map(usuario => (
-            <div key={usuario.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm hover:border-white/20 transition-all duration-300 group relative">
-              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                <button
-                  onClick={() => {
-                    setFormData({
-                      nome: usuario.nome,
-                      email: usuario.email,
-                      senha: '',
-                      perfil: usuario.perfil
-                    });
-                    setEditingId(usuario.id);
-                    setIsModalOpen(true);
-                  }}
-                  className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors"
-                  title="Editar usuário"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                {(!currentUser || usuario.id !== currentUser.id) && (
-                  <button
-                    onClick={() => handleDeleteUser(usuario.id)}
-                    className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
-                    title="Excluir usuário"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-gray-800 to-gray-700 border border-gray-600 flex items-center justify-center mb-4 shadow-lg shadow-black/50">
-                  <span className="text-xl font-bold text-white">{usuario.nome?.charAt(0).toUpperCase()}</span>
+        <Card padding="none">
+          <div className="divide-y divide-[var(--border-subtle)]">
+            {filtrados.map((u) => (
+              <div key={u.id} className="flex items-center gap-4 px-5 py-4">
+                <Avatar name={u.nome} size="md" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{u.nome}</span>
+                    <Badge variant="accent" size="sm" icon={Crown}>Administrador</Badge>
+                  </div>
+                  <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 mt-0.5">
+                    <Mail size={11} /> {u.email}
+                  </div>
                 </div>
-
-                <h3 className="text-white font-semibold text-lg">{usuario.nome}</h3>
-
-                <div className="flex items-center gap-2 text-gray-400 text-sm mt-1 mb-4">
-                  <Mail className="w-3.5 h-3.5" />
-                  <span className="truncate max-w-[200px]">{usuario.email}</span>
-                </div>
-
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <Shield className="w-3.5 h-3.5" />
-                  {usuario.perfil === 'ADMIN' ? 'Administrador' : 'Operador'}
-                </span>
-
-                {currentUser && usuario.id === currentUser.id && (
-                  <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-b-2xl" />
-                )}
+                <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
+                  <DropdownItem icon={Edit2} onClick={() => setModal({ open: true, data: u })}>Editar</DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem icon={Trash2} variant="danger" onClick={() => handleExcluir(u)}>Excluir</DropdownItem>
+                </Dropdown>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Card>
       )}
 
-      {/* Modal Novo Usuário */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? "Editar Membro" : "Convidar Novo Membro"}>
-        <form onSubmit={handleSaveUser} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-300">Nome Completo</label>
-            <input
-              required
-              value={formData.nome} onChange={e => setFormData({ ...formData, nome: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
-              placeholder="Ex: João Silva"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-300">E-mail de Acesso</label>
-            <input
-              required type="email"
-              value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
-              placeholder="joao@botmanager.com"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-300">Senha Inicial</label>
-            <input
-              required={!editingId} type="password" minLength={6}
-              value={formData.senha} onChange={e => setFormData({ ...formData, senha: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500"
-              placeholder={editingId ? "Deixe em branco para não alterar" : "••••••••"}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-300">Nível de Acesso</label>
-            <select
-              value={formData.perfil} onChange={e => setFormData({ ...formData, perfil: e.target.value })}
-              className="w-full bg-black/40 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 appearance-none"
-            >
-              <option value="ADMIN">Administrador Geral</option>
-              <option value="VIEWER">Operador (Apenas visualização)</option>
-            </select>
-          </div>
-
-          <div className="flex gap-3 pt-4 border-t border-white/5 mt-6">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="flex-1 py-2 px-4 rounded-xl text-gray-300 hover:bg-white/5 transition-colors font-medium"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-colors font-medium flex justify-center items-center gap-2"
-            >
-              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isSaving ? 'Salvando...' : 'Salvar Membro'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <ModalAdmin
+        isOpen={modal.open}
+        onClose={() => setModal({ open: false, data: null })}
+        admin={modal.data}
+        onSalvar={handleSalvar}
+      />
     </div>
+  );
+}
+
+function ModalAdmin({ isOpen, onClose, admin, onSalvar }) {
+  const [form, setForm] = useState({ nome: '', email: '', senha: '' });
+
+  useEffect(() => {
+    if (admin) setForm({ nome: admin.nome, email: admin.email, senha: '' });
+    else setForm({ nome: '', email: '', senha: '' });
+  }, [admin, isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!admin && !form.senha) {
+      alert('Senha eh obrigatoria para novo admin');
+      return;
+    }
+    const payload = { nome: form.nome, email: form.email };
+    if (form.senha) payload.senha = form.senha;
+    if (admin?.id) payload.id = admin.id;
+    onSalvar(payload);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={admin ? 'Editar administrador' : 'Novo administrador'} size="md">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
+        <Input label="E-mail" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+        <Input
+          label={admin ? 'Nova senha (opcional)' : 'Senha'}
+          type="password"
+          value={form.senha}
+          onChange={(e) => setForm({ ...form, senha: e.target.value })}
+          placeholder={admin ? 'Deixe em branco para manter' : 'Minimo 6 caracteres'}
+        />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">{admin ? 'Salvar' : 'Criar'}</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

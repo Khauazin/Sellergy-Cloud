@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 export const useUiStore = create(
   persist(
     (set) => ({
-      theme: 'dark', // 'light' ou 'dark'
+      theme: 'light', // 'light' (padrao premium) ou 'dark'
       toggleTheme: () => set((state) => ({ 
         theme: state.theme === 'dark' ? 'light' : 'dark' 
       })),

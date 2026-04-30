@@ -1,194 +1,262 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Users,
-  Bot,
-  MessageSquare,
-  DollarSign,
-  Activity,
-  ArrowUpRight,
-  TrendingUp,
-  Zap,
-  ShieldCheck
+  Users, Bot, Bell, DollarSign, ArrowUpRight, Plus, ShieldCheck,
+  Activity, AlertCircle, CheckCircle2, TrendingUp
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import clsx from 'clsx';
+import api from '../services/api';
+import {
+  Card, CardHeader, CardTitle, Avatar, Badge, Button, EmptyState
+} from '../components/ui';
 
-const fmt = (val) =>
-  Number(val ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-const KpiCard = ({ title, value, icon: Icon, trend, colorCls }) => (
-  <div className="bg-[var(--bg-card)] border border-[var(--border-main)] p-6 rounded-[2.5rem] relative overflow-hidden group hover:border-blue-500/30 transition-all duration-500 shadow-sm">
-    <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.02] rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700" />
-    
-    <div className="flex justify-between items-start mb-4 relative z-10">
-      <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.2em]">{title}</p>
-      <div className={clsx("p-2.5 rounded-2xl bg-current opacity-10", colorCls)}>
-         <Icon className={clsx("w-5 h-5", colorCls)} />
-      </div>
-    </div>
-
-    <div className="flex items-end justify-between relative z-10">
-      <h3 className={clsx('text-3xl font-black tracking-tighter transition-all duration-500 group-hover:translate-x-1', colorCls)}>
-        {value}
-      </h3>
-      {trend && (
-        <div className={clsx("flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-full bg-current opacity-20", colorCls)}>
-           <ArrowUpRight className="w-3 h-3" />
-           {trend}
-        </div>
-      )}
-    </div>
-  </div>
-);
-
-const data = [
-  { name: 'Seg', leads: 40, conversao: 24 },
-  { name: 'Ter', leads: 30, conversao: 13 },
-  { name: 'Qua', leads: 20, conversao: 98 },
-  { name: 'Qui', leads: 27, conversao: 39 },
-  { name: 'Sex', leads: 18, conversao: 48 },
-  { name: 'Sáb', leads: 23, conversao: 38 },
-  { name: 'Dom', leads: 34, conversao: 43 },
-];
+const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
+  const [clientes, setClientes] = useState([]);
+  const [bots, setBots] = useState([]);
+  const [alertas, setAlertas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 1000);
-    return () => clearTimeout(timer);
+    carregar();
   }, []);
 
+  const carregar = async () => {
+    setCarregando(true);
+    try {
+      const [resClientes, resBots, resAlertas] = await Promise.all([
+        api.get('/clientes').catch(() => ({ data: [] })),
+        api.get('/bots').catch(() => ({ data: [] })),
+        api.get('/alertas').catch(() => ({ data: [] })),
+      ]);
+      setClientes(resClientes.data || []);
+      setBots(resBots.data || []);
+      setAlertas(resAlertas.data || []);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const totalAtivos = clientes.filter((c) => c.status === 'ACTIVE').length;
+  const mrr = clientes.reduce((acc, c) => acc + Number(c.mensalidade || 0), 0);
+  const botsOnline = bots.filter((b) => b.status === 'ONLINE').length;
+  const alertasAbertos = alertas.filter((a) => a.status === 'OPEN').length;
+  const ultimosClientes = [...clientes]
+    .sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm))
+    .slice(0, 5);
+  const ultimosAlertas = alertas.slice(0, 5);
+
   return (
-    <div className="space-y-8 max-w-[1600px] mx-auto pb-10 animate-in fade-in duration-700">
-      
-      {/* Header Enterprise */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-        <div className="flex items-center gap-5">
-          <div className="w-16 h-16 bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-500/20 rotate-3 hover:rotate-0 transition-transform duration-500">
-            <Activity className="w-8 h-8 text-white" />
-          </div>
+    <div className="space-y-6">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi
+          icon={Users}
+          label="Clientes ativos"
+          valor={`${totalAtivos}`}
+          sublabel={`${clientes.length} no total`}
+          loading={carregando}
+        />
+        <Kpi
+          icon={DollarSign}
+          label="MRR"
+          valor={fmtBRL(mrr)}
+          sublabel="Receita mensal recorrente"
+          accent
+          loading={carregando}
+        />
+        <Kpi
+          icon={Bot}
+          label="Bots online"
+          valor={`${botsOnline}`}
+          sublabel={`${bots.length} cadastrados`}
+          loading={carregando}
+        />
+        <Kpi
+          icon={Bell}
+          label="Alertas abertos"
+          valor={`${alertasAbertos}`}
+          sublabel={alertasAbertos > 0 ? 'Precisa de atencao' : 'Tudo certo'}
+          tone={alertasAbertos > 0 ? 'warning' : 'success'}
+          loading={carregando}
+        />
+      </div>
+
+      {/* Linha principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Ultimos clientes */}
+        <Card padding="lg" className="lg:col-span-2">
+          <CardHeader>
+            <div>
+              <CardTitle>Ultimos clientes cadastrados</CardTitle>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Os 5 clientes mais recentes
+              </p>
+            </div>
+            <Link to="/admin/clientes">
+              <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                Ver todos
+              </Button>
+            </Link>
+          </CardHeader>
+
+          {ultimosClientes.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="Nenhum cliente cadastrado"
+              description="Comece adicionando seu primeiro cliente assinante."
+              action={
+                <Link to="/admin/clientes">
+                  <Button variant="primary" icon={Plus}>Adicionar cliente</Button>
+                </Link>
+              }
+            />
+          ) : (
+            <div className="divide-y divide-[var(--border-subtle)] -mx-2">
+              {ultimosClientes.map((c) => (
+                <Link
+                  to={`/admin/clientes/${c.id}`}
+                  key={c.id}
+                  className="flex items-center gap-3 px-2 py-3 rounded-lg hover:bg-[var(--bg-subtle)]/60 transition-colors"
+                >
+                  <Avatar name={c.nome} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                      {c.nome}
+                    </div>
+                    <div className="text-xs text-[var(--text-muted)] truncate">
+                      {c.email || 'Sem email'} · {c.plano || 'BASIC'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
+                      {fmtBRL(c.mensalidade)}
+                    </div>
+                    <Badge variant={c.status === 'ACTIVE' ? 'success' : 'warning'} size="sm">
+                      {c.status === 'ACTIVE' ? 'Ativo' : c.status}
+                    </Badge>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Ultimos alertas */}
+        <Card padding="lg">
+          <CardHeader>
+            <div>
+              <CardTitle>Alertas recentes</CardTitle>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Ultimos eventos do sistema
+              </p>
+            </div>
+            <Link to="/admin/alertas">
+              <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                Todos
+              </Button>
+            </Link>
+          </CardHeader>
+
+          {ultimosAlertas.length === 0 ? (
+            <div className="text-center py-8">
+              <CheckCircle2 size={28} className="mx-auto text-[var(--success)] opacity-60" strokeWidth={1.5} />
+              <p className="text-sm text-[var(--text-secondary)] font-medium mt-3">Nenhum alerta ativo</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">Tudo funcionando</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {ultimosAlertas.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-start gap-3 p-3 rounded-xl bg-[var(--bg-subtle)]/60 border border-[var(--border-subtle)]"
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    a.severidade === 'CRITICAL' ? 'bg-[var(--danger-soft)] text-[var(--danger)]' :
+                    a.severidade === 'WARNING'  ? 'bg-[var(--warning-soft)] text-[var(--warning)]' :
+                                                  'bg-[var(--info-soft)] text-[var(--info)]'
+                  }`}>
+                    <AlertCircle size={14} strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                      {a.titulo}
+                    </div>
+                    <div className="text-xs text-[var(--text-muted)] truncate">
+                      {a.cliente?.nome || 'Sistema'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Acoes rapidas */}
+      <Card padding="lg">
+        <CardHeader>
           <div>
-            <h2 className="text-3xl font-black text-[var(--text-main)] tracking-tighter uppercase italic">Operações Globais</h2>
-            <div className="flex items-center gap-2 mt-1">
-               <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-               <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.3em]">Monitoramento de Performance de Rede</p>
-            </div>
+            <CardTitle>Acoes rapidas</CardTitle>
           </div>
+        </CardHeader>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <QuickAction to="/admin/clientes" icon={Plus} label="Novo cliente" desc="Cadastrar assinante" />
+          <QuickAction to="/admin/clientes/permissoes" icon={ShieldCheck} label="Permissoes" desc="Liberar modulos" />
+          <QuickAction to="/admin/bots" icon={Bot} label="Configurar bot" desc="IA e canais" />
+          <QuickAction to="/admin/relatorios" icon={TrendingUp} label="Relatorios" desc="Visao consolidada" />
         </div>
-
-        <div className="flex items-center gap-3">
-           <div className="px-6 py-2.5 rounded-2xl bg-gray-100 dark:bg-white/5 border border-[var(--border-main)] flex items-center gap-3 shadow-sm">
-              <ShieldCheck className="w-4 h-4 text-emerald-500" />
-              <span className="text-[10px] font-black text-[var(--text-main)] uppercase tracking-widest">Sistema Seguro</span>
-           </div>
-        </div>
-      </div>
-
-      {/* Grid de KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KpiCard title="Total de Leads" value="1,284" icon={Users} trend="+12%" colorCls="text-blue-500" />
-        <KpiCard title="Automações" value="12" icon={Bot} trend="Ativas" colorCls="text-purple-500" />
-        <KpiCard title="Mensagens/Dia" value="45.2k" icon={MessageSquare} trend="+8%" colorCls="text-amber-500" />
-        <KpiCard title="Receita Estimada" value={fmt(124500)} icon={DollarSign} trend="+5%" colorCls="text-emerald-500" />
-      </div>
-
-      {/* Gráficos e Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Main Chart */}
-        <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border-main)] rounded-[2.5rem] p-8 shadow-sm flex flex-col">
-          <div className="flex justify-between items-center mb-8">
-             <div>
-                <h3 className="text-sm font-black text-[var(--text-main)] uppercase tracking-widest">Fluxo de Conversão</h3>
-                <p className="text-[var(--text-muted)] text-[10px] font-bold uppercase mt-1">Performance Semanal de Aquisição</p>
-             </div>
-             <div className="flex gap-4">
-                <div className="flex items-center gap-2">
-                   <div className="w-3 h-3 rounded-full bg-blue-500/20 border border-blue-500" />
-                   <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-tighter">Leads</span>
-                </div>
-                <div className="flex items-center gap-2">
-                   <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500" />
-                   <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-tighter">Vendas</span>
-                </div>
-             </div>
-          </div>
-          
-          <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data}>
-                <defs>
-                  <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"} vertical={false} />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#6b7280', fontSize: 10, fontWeight: 'bold' }} 
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#6b7280', fontSize: 10, fontWeight: 'bold' }} 
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: theme === 'dark' ? '#0a0a0a' : '#fff', 
-                    borderRadius: '20px', 
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
-                  }}
-                />
-                <Area type="monotone" dataKey="leads" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorLeads)" />
-                <Area type="monotone" dataKey="conversao" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorVendas)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Side Stats */}
-        <div className="space-y-8">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-[2.5rem] p-8 shadow-sm h-full">
-            <h3 className="text-sm font-black text-[var(--text-main)] uppercase tracking-widest mb-6">Status da Rede</h3>
-            <div className="space-y-6">
-              <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-3xl border border-[var(--border-main)] transition-all hover:translate-x-1 shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] font-black text-[var(--text-muted)] uppercase">API de Builder</span>
-                  <span className="text-[9px] font-black text-emerald-500 uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-sm">Online</span>
-                </div>
-                <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
-                  <div className="h-full w-[98%] bg-emerald-500 rounded-full" />
-                </div>
-              </div>
-
-              <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-3xl border border-[var(--border-main)] transition-all hover:translate-x-1 shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] font-black text-[var(--text-muted)] uppercase">Node de Atendimento</span>
-                  <span className="text-[9px] font-black text-emerald-500 uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-sm">Online</span>
-                </div>
-                <div className="h-1.5 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
-                  <div className="h-full w-[94%] bg-emerald-500 rounded-full" />
-                </div>
-              </div>
-
-              <div className="mt-10 p-6 bg-blue-500/5 border border-blue-500/10 rounded-3xl">
-                <h4 className="text-blue-900 dark:text-blue-400 text-xs font-black uppercase tracking-widest mb-1 italic">Conectividade Global</h4>
-                <p className="text-[var(--text-muted)] text-[10px] font-bold uppercase mt-1 leading-relaxed">Latência média: 45ms. Zero perdas de pacotes na última hora.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      </Card>
     </div>
+  );
+}
+
+function Kpi({ icon: Icon, label, valor, sublabel, tone = 'neutral', accent, loading }) {
+  const toneCls = {
+    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
+    success: 'bg-[var(--success-soft)] text-[var(--success)]',
+    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+    danger: 'bg-[var(--danger-soft)] text-[var(--danger)]',
+  };
+
+  return (
+    <Card padding="lg">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : toneCls[tone]}`}>
+          <Icon size={16} strokeWidth={2} />
+        </div>
+      </div>
+      <div className="mt-4">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          {label}
+        </div>
+        <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
+          {loading ? '—' : valor}
+        </div>
+        {sublabel && (
+          <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function QuickAction({ to, icon: Icon, label, desc }) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-start gap-3 p-4 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] hover:border-[var(--text-muted)] hover:shadow-[var(--shadow-xs)] transition-all"
+    >
+      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 group-hover:bg-[var(--accent-soft)] group-hover:text-[var(--accent)] transition-colors">
+        <Icon size={16} strokeWidth={1.75} className="text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
+          {label}
+        </div>
+        <div className="text-xs text-[var(--text-muted)] mt-0.5">{desc}</div>
+      </div>
+      <ArrowUpRight size={14} className="text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors" />
+    </Link>
   );
 }

@@ -1,373 +1,643 @@
 import { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { useAuthStore } from '../store/auth.store';
-import { 
-  Plus, Search, DollarSign, User as UserIcon, Building2
+import {
+  Plus, Edit2, Trash2, Phone, Mail, Tag, ArrowRight, ArrowLeft,
+  Clock, History, LayoutGrid, List, MoreHorizontal
 } from 'lucide-react';
 import api from '../services/api';
-import LeadDetailPanel from '../components/LeadDetailPanel';
-import LeadFormModal from '../components/LeadFormModal';
+import {
+  Card, Button, IconButton, Input, Textarea, Select, Badge, Avatar,
+  EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider,
+  useToast, Tabs, TabsList, TabsTrigger
+} from '../components/ui';
+import Modal from '../components/Modal';
 
-const PRIORITY_CONFIG = {
-  LOW: { label: 'Baixa', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
-  MEDIUM: { label: 'Média', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  HIGH: { label: 'Alta', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' }
-};
-
-function getInitialColor(nome) {
-  const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
-  const i = (nome?.charCodeAt(0) || 0) % colors.length;
-  return colors[i];
-}
-
-// Componente para evitar que o DND quebre com overflow: auto
-const DraggablePortal = ({ children, draggableProps, dragHandleProps, innerRef, isDragging }) => {
-  const content = (
-    <div
-      ref={innerRef}
-      {...draggableProps}
-      {...dragHandleProps}
-    >
-      {children}
-    </div>
-  );
-
-  if (isDragging) {
-    return createPortal(content, document.body);
-  }
-
-  return content;
-};
-
-const LeadSkeleton = () => (
-  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 12, padding: 12, marginBottom: 10 }}>
-    <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
-      <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', animation: 'pulse 1.5s infinite' }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ width: '70%', height: 12, background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 6, animation: 'pulse 1.5s infinite' }} />
-        <div style={{ width: '40%', height: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 4, animation: 'pulse 1.5s infinite' }} />
-      </div>
-    </div>
-    <div style={{ width: '100%', height: 24, background: 'rgba(255,255,255,0.02)', borderRadius: 6, animation: 'pulse 1.5s infinite' }} />
-  </div>
-);
+const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const PRIORIDADES = [
+  { value: 'LOW', label: 'Baixa' },
+  { value: 'MEDIUM', label: 'Media' },
+  { value: 'HIGH', label: 'Alta' },
+];
 
 export default function CRMPage() {
-  const { user } = useAuthStore();
-  const isAdmin = user?.perfil === 'ADMIN';
-
+  const toast = useToast();
   const [stages, setStages] = useState([]);
   const [leads, setLeads] = useState([]);
-  const [clients, setClients] = useState([]); // Para seletor de admin
-  const [selectedClienteId, setSelectedClienteId] = useState(user?.clienteId || '');
-  
-  const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filterPriority, setFilterPriority] = useState('ALL');
-  const [sortBy, setSortBy] = useState('atualizadoEm');
-  
-  const [selectedLead, setSelectedLead] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingLead, setEditingLead] = useState(null);
-  const [defaultEtapaId, setDefaultEtapaId] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState('');
+  const [view, setView] = useState('kanban');
 
-  // Carregar lista de clientes se for Admin
+  const [modalLead, setModalLead] = useState({ open: false, data: null });
+  const [modalStage, setModalStage] = useState({ open: false, data: null });
+  const [drawerLead, setDrawerLead] = useState({ open: false, lead: null });
+
   useEffect(() => {
-    if (isAdmin) {
-      api.get('/clientes').then(res => {
-        setClients(res.data);
-        if (res.data.length > 0 && !selectedClienteId) {
-          setSelectedClienteId(res.data[0].id);
-        }
-      });
-    }
-  }, [isAdmin]);
+    carregar();
+  }, []);
 
-  // Carregar dados quando o clienteId mudar
-  useEffect(() => {
-    if (selectedClienteId || !isAdmin) {
-      loadData();
-    }
-  }, [selectedClienteId, isAdmin]);
-
-  const loadData = async () => {
+  const carregar = async () => {
+    setCarregando(true);
     try {
-      setIsLoading(true);
-      const params = isAdmin ? { clienteId: selectedClienteId } : {};
-      
-      const [sRes, lRes] = await Promise.all([
-        api.get('/crm/stages', { params }),
-        api.get('/crm/leads', { params })
+      const [s, l] = await Promise.all([
+        api.get('/crm/stages').catch(() => ({ data: [] })),
+        api.get('/crm/leads').catch(() => ({ data: [] })),
       ]);
-      setStages(sRes.data);
-      setLeads(lRes.data);
-    } catch (e) {
-      console.error(e);
+      setStages(s.data || []);
+      setLeads(l.data || []);
     } finally {
-      setIsLoading(false);
+      setCarregando(false);
     }
   };
 
-  const processedLeads = useMemo(() => {
-    let filtered = leads;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(l =>
-        l.nome?.toLowerCase().includes(q) || l.telefone?.includes(q)
-      );
-    }
-    if (filterPriority !== 'ALL') {
-      filtered = filtered.filter(l => l.prioridade === filterPriority);
-    }
-    return [...filtered].sort((a, b) => {
-      if (sortBy === 'valor') return (b.valor || 0) - (a.valor || 0);
-      if (sortBy === 'nome') return a.nome.localeCompare(b.nome);
-      return new Date(b.atualizadoEm) - new Date(a.atualizadoEm);
+  const leadsFiltered = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return leads;
+    return leads.filter(
+      (l) => l.nome?.toLowerCase().includes(q) ||
+             l.telefone?.includes(q) ||
+             l.email?.toLowerCase().includes(q) ||
+             l.tags?.toLowerCase().includes(q)
+    );
+  }, [leads, busca]);
+
+  const leadsPorEtapa = useMemo(() => {
+    const map = {};
+    stages.forEach((s) => { map[s.id] = []; });
+    map['_sem_etapa'] = [];
+    leadsFiltered.forEach((l) => {
+      if (l.etapaId && map[l.etapaId]) map[l.etapaId].push(l);
+      else map['_sem_etapa'].push(l);
     });
-  }, [leads, search, filterPriority, sortBy]);
+    return map;
+  }, [stages, leadsFiltered]);
 
-  const onDragEnd = async ({ source, destination, draggableId }) => {
-    if (!destination) return;
-    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
-
-    const lead = leads.find(l => l.id === draggableId);
-    const prevLeads = [...leads];
-    const newEtapaId = destination.droppableId;
-
-    setLeads(leads.map(l => l.id === draggableId ? { ...l, etapaId: newEtapaId, atualizadoEm: new Date().toISOString() } : l));
-
+  const handleSalvarLead = async (dados) => {
     try {
-      await api.put(`/crm/leads/${draggableId}`, { ...lead, etapaId: newEtapaId, clienteId: isAdmin ? selectedClienteId : undefined });
-    } catch (error) {
-      setLeads(prevLeads);
-    }
-  };
-
-  const openEditLead = (lead) => {
-    setEditingLead(lead);
-    setModalOpen(true);
-    setSelectedLead(null);
-  };
-
-  const handleSave = async (data) => {
-    try {
-      const payload = { ...data, clienteId: isAdmin ? selectedClienteId : undefined };
-      if (editingLead?.id) {
-        const res = await api.put(`/crm/leads/${editingLead.id}`, payload);
-        setLeads(prev => prev.map(l => l.id === editingLead.id ? res.data : l));
+      if (dados.id) {
+        await api.put(`/crm/leads/${dados.id}`, dados);
+        toast.success('Lead atualizado');
       } else {
-        const res = await api.post('/crm/leads', payload);
-        setLeads(prev => [res.data, ...prev]);
+        await api.post('/crm/leads', dados);
+        toast.success('Lead criado');
       }
-      setModalOpen(false);
+      setModalLead({ open: false, data: null });
+      carregar();
     } catch (e) {
-      alert('Erro ao salvar lead');
+      toast.error(e.response?.data?.error || 'Erro ao salvar');
     }
   };
 
-  const handleDelete = async (lead) => {
-    if (!window.confirm(`Excluir o lead "${lead.nome}"?`)) return;
+  const handleExcluirLead = async (lead) => {
+    if (!confirm(`Excluir lead "${lead.nome}"?`)) return;
     try {
       await api.delete(`/crm/leads/${lead.id}`);
-      setLeads(prev => prev.filter(l => l.id !== lead.id));
-      setSelectedLead(null);
-    } catch (e) {
-      alert('Erro ao excluir lead');
+      toast.success('Lead excluido');
+      setDrawerLead({ open: false, lead: null });
+      carregar();
+    } catch {
+      toast.error('Erro ao excluir');
     }
   };
 
-  const criarStagesPadrao = async () => {
-    const padrao = [
-      { nome: 'Novo Lead', ordem: 1, color: '#3b82f6' },
-      { nome: 'Em Contato', ordem: 2, color: '#a855f7' },
-      { nome: 'Agendado', ordem: 3, color: '#f59e0b' },
-      { nome: 'Fechado', ordem: 4, color: '#10b981' },
-      { nome: 'Perdido', ordem: 5, color: '#ef4444' },
-    ];
+  const handleMoverLead = async (lead, etapaId) => {
     try {
-      await Promise.all(padrao.map(s => api.post('/crm/stages', { ...s, clienteId: isAdmin ? selectedClienteId : undefined })));
-      loadData();
-    } catch (e) { alert('Erro ao criar funil.'); }
+      await api.put(`/crm/leads/${lead.id}`, { ...lead, etapaId });
+      toast.success('Lead movido');
+      carregar();
+    } catch {
+      toast.error('Erro ao mover');
+    }
+  };
+
+  const handleSalvarStage = async (dados) => {
+    try {
+      if (dados.id) {
+        await api.put(`/crm/stages/${dados.id}`, dados);
+        toast.success('Etapa atualizada');
+      } else {
+        await api.post('/crm/stages', dados);
+        toast.success('Etapa criada');
+      }
+      setModalStage({ open: false, data: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao salvar etapa');
+    }
+  };
+
+  const handleExcluirStage = async (stage) => {
+    if (!confirm(`Excluir etapa "${stage.nome}"? Os leads ficarao sem etapa.`)) return;
+    try {
+      await api.delete(`/crm/stages/${stage.id}`);
+      toast.success('Etapa excluida');
+      carregar();
+    } catch {
+      toast.error('Erro ao excluir etapa');
+    }
   };
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-      
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: -1 }}>CRM Pipeline</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-            {isAdmin && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(99,102,241,0.1)', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
-                <Building2 size={14} color="#818cf8" />
-                <select 
-                  value={selectedClienteId} 
-                  onChange={e => setSelectedClienteId(e.target.value)}
-                  style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, outline: 'none', cursor: 'pointer' }}
-                >
-                  {clients.map((c, idx) => <option key={c.id || idx} value={c.id}>{c.nome}</option>)}
-                </select>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
+          <SearchBar
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome, telefone, email ou tag..."
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Tabs value={view} onValueChange={setView}>
+            <TabsList variant="pills">
+              <TabsTrigger value="kanban" variant="pills" icon={LayoutGrid}>Kanban</TabsTrigger>
+              <TabsTrigger value="lista" variant="pills" icon={List}>Lista</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button variant="secondary" icon={Plus} onClick={() => setModalStage({ open: true, data: null })}>
+            Nova etapa
+          </Button>
+          <Button variant="primary" icon={Plus} onClick={() => setModalLead({ open: true, data: null })}>
+            Novo lead
+          </Button>
+        </div>
+      </div>
+
+      {carregando ? (
+        <Card padding="lg">
+          <div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando...</div>
+        </Card>
+      ) : leads.length === 0 && stages.length === 0 ? (
+        <Card padding="lg">
+          <EmptyState
+            icon={LayoutGrid}
+            title="CRM ainda vazio"
+            description="Comece criando suas etapas (ex: Novo, Qualificado, Negociacao, Fechado) e depois cadastre os primeiros leads."
+            action={
+              <div className="flex gap-2 justify-center">
+                <Button variant="secondary" icon={Plus} onClick={() => setModalStage({ open: true, data: null })}>
+                  Criar primeira etapa
+                </Button>
+                <Button variant="primary" icon={Plus} onClick={() => setModalLead({ open: true, data: null })}>
+                  Criar primeiro lead
+                </Button>
               </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#6b7280', fontSize: 13 }}>
-              <UserIcon size={14} /> <strong>{leads.length}</strong> leads
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#10b981', fontSize: 13 }}>
-              <DollarSign size={14} /> <strong>R$ {leads.reduce((a,b) => a+(b.valor||0),0).toLocaleString('pt-BR')}</strong>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar lead..."
-              style={{ paddingLeft: 42, paddingRight: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, color: '#fff', fontSize: 14, outline: 'none', width: 220, height: 40 }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 2, border: '1px solid rgba(255,255,255,0.08)' }}>
-             <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} style={{ background: 'transparent', color: '#9ca3af', border: 'none', fontSize: 12, padding: '0 8px', outline: 'none', cursor: 'pointer' }}>
-               <option value="ALL">Prioridade</option>
-               <option value="HIGH">Alta</option>
-               <option value="MEDIUM">Média</option>
-               <option value="LOW">Baixa</option>
-             </select>
-             <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: 'transparent', color: '#9ca3af', border: 'none', fontSize: 12, padding: '0 8px', outline: 'none', cursor: 'pointer' }}>
-               <option value="atualizadoEm">Recentes</option>
-               <option value="valor">Valor</option>
-               <option value="nome">Nome</option>
-             </select>
-          </div>
-
-          <button onClick={() => { setEditingLead(null); setDefaultEtapaId(stages[0]?.id); setModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#6366f1', border: 'none', borderRadius: 12, padding: '0 16px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', height: 40 }}>
-            <Plus size={18} /> Novo
-          </button>
-        </div>
-      </div>
-
-      {stages.length === 0 && !isLoading ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 32, textAlign: 'center', padding: 60 }}>
-          <h3 style={{ color: '#fff', fontSize: 24, fontWeight: 800 }}>Funil Vazio</h3>
-          <button onClick={criarStagesPadrao} style={{ marginTop: 24, background: '#6366f1', border: 'none', borderRadius: 16, padding: '16px 32px', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>Criar Funil Padrão</button>
-        </div>
-      ) : (
-        <div style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', paddingBottom: 20, minWidth: 0, width: '100%' }}>
-          <DragDropContext onDragEnd={onDragEnd}>
-            <div style={{ display: 'flex', gap: 20, height: '100%', alignItems: 'flex-start', minWidth: 'max-content' }}>
-              {stages.map(stage => {
-                const stageLeads = processedLeads.filter(l => l.etapaId === stage.id);
-                const totalValue = stageLeads.reduce((acc, l) => acc + (l.valor || 0), 0);
-
-                return (
-                  <Droppable key={stage.id} droppableId={stage.id}>
-                    {(provided, snapshot) => (
-                      <div
-                        style={{
-                          width: 300, display: 'flex', flexDirection: 'column',
-                          background: 'rgba(255,255,255,0.02)', border: `1px solid rgba(255,255,255,0.05)`,
-                          borderRadius: 20, maxHeight: '100%'
-                        }}
-                      >
-                        <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: stage.color || '#6366f1' }} />
-                              <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>{stage.nome}</span>
-                            </div>
-                            <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, color: '#9ca3af' }}>{stageLeads.length}</span>
-                          </div>
-                          {totalValue > 0 && <div style={{ marginTop: 8, color: '#10b981', fontSize: 12, fontWeight: 700 }}>R$ {totalValue.toLocaleString('pt-BR')}</div>}
-                        </div>
-
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          style={{
-                            flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12,
-                            minHeight: 200, background: snapshot.isDraggingOver ? 'rgba(99,102,241,0.02)' : 'transparent'
-                          }}
-                        >
-                          {isLoading ? [1, 2, 3].map(i => <LeadSkeleton key={i} />) : stageLeads.map((lead, index) => {
-                              const priority = PRIORITY_CONFIG[lead.prioridade];
-                              return (
-                                <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                                  {(provided, snapshot) => (
-                                    <DraggablePortal 
-                                      innerRef={provided.innerRef} 
-                                      draggableProps={provided.draggableProps} 
-                                      dragHandleProps={provided.dragHandleProps} 
-                                      isDragging={snapshot.isDragging}
-                                    >
-                                      <div
-                                        onClick={() => setSelectedLead(lead)}
-                                        style={{
-                                          background: snapshot.isDragging ? '#1e1e30' : 'rgba(255,255,255,0.03)',
-                                          border: `1px solid ${snapshot.isDragging ? '#6366f1' : 'rgba(255,255,255,0.05)'}`,
-                                          borderRadius: 16, padding: 14, cursor: 'grab', width: snapshot.isDragging ? 276 : 'auto',
-                                          boxShadow: snapshot.isDragging ? '0 20px 40px rgba(0,0,0,0.4)' : 'none'
-                                        }}
-                                      >
-                                        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                                          <div style={{
-                                            width: 36, height: 36, borderRadius: 12, flexShrink: 0,
-                                            background: `linear-gradient(135deg, ${getInitialColor(lead.nome)}, ${getInitialColor(lead.nome)}99)`,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff'
-                                          }}>{lead.nome?.charAt(0).toUpperCase()}</div>
-                                          <div style={{ flex: 1, minWidth: 0 }}>
-                                            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.nome}</h4>
-                                            <div style={{ marginTop: 2, color: '#6b7280', fontSize: 11 }}>{lead.telefone || 'S/ Tel'}</div>
-                                          </div>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                          <div style={{ padding: '4px 8px', borderRadius: 8, background: priority.bg, color: priority.color, fontSize: 10, fontWeight: 700 }}>{priority.label}</div>
-                                          {lead.valor > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>R$ {Number(lead.valor).toLocaleString('pt-BR')}</div>}
-                                        </div>
-                                      </div>
-                                    </DraggablePortal>
-                                  )}
-                                </Draggable>
-                              );
-                            })
-                          }
-                          {provided.placeholder}
-                        </div>
-
-                        <button onClick={() => { setEditingLead(null); setDefaultEtapaId(stage.id); setModalOpen(true); }} style={{ margin: 12, padding: 12, background: 'transparent', border: '1px dashed rgba(255,255,255,0.08)', borderRadius: 14, color: '#6b7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Adicionar Lead</button>
-                      </div>
-                    )}
-                  </Droppable>
-                );
-              })}
-            </div>
-          </DragDropContext>
-        </div>
-      )}
-
-      {/* Side Panel */}
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 998, opacity: selectedLead ? 1 : 0, pointerEvents: selectedLead ? 'all' : 'none', transition: 'opacity 0.3s ease' }} onClick={() => setSelectedLead(null)} />
-      <div style={{ position: 'fixed', top: 0, right: selectedLead ? 0 : -500, bottom: 0, width: 480, background: '#0b0b14', zIndex: 999, boxShadow: '-10px 0 40px rgba(0,0,0,0.5)', transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)', display: 'flex' }}>
-        {selectedLead && <LeadDetailPanel lead={selectedLead} stages={stages} onClose={() => setSelectedLead(null)} onUpdate={openEditLead} onDelete={handleDelete} />}
-      </div>
-
-      {modalOpen && (
-        <LeadFormModal
-          lead={editingLead ? { ...editingLead } : { etapaId: defaultEtapaId }}
+            }
+          />
+        </Card>
+      ) : view === 'kanban' ? (
+        <KanbanView
           stages={stages}
-          clienteId={isAdmin ? selectedClienteId : undefined}
-          onClose={() => setModalOpen(false)}
-          onSave={handleSave}
+          leadsPorEtapa={leadsPorEtapa}
+          onSelecionarLead={(l) => setDrawerLead({ open: true, lead: l })}
+          onEditarStage={(s) => setModalStage({ open: true, data: s })}
+          onExcluirStage={handleExcluirStage}
+          onMoverLead={handleMoverLead}
+        />
+      ) : (
+        <ListaView
+          leads={leadsFiltered}
+          stages={stages}
+          onSelecionarLead={(l) => setDrawerLead({ open: true, lead: l })}
         />
       )}
 
-      <style>{`
-        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
-      `}</style>
+      <ModalLead
+        isOpen={modalLead.open}
+        onClose={() => setModalLead({ open: false, data: null })}
+        lead={modalLead.data}
+        stages={stages}
+        onSalvar={handleSalvarLead}
+      />
+
+      <ModalStage
+        isOpen={modalStage.open}
+        onClose={() => setModalStage({ open: false, data: null })}
+        stage={modalStage.data}
+        onSalvar={handleSalvarStage}
+      />
+
+      <DrawerLead
+        isOpen={drawerLead.open}
+        onClose={() => setDrawerLead({ open: false, lead: null })}
+        lead={drawerLead.lead}
+        stages={stages}
+        onEditar={() => {
+          setModalLead({ open: true, data: drawerLead.lead });
+          setDrawerLead({ open: false, lead: null });
+        }}
+        onExcluir={() => handleExcluirLead(drawerLead.lead)}
+        onMover={(etapaId) => {
+          handleMoverLead(drawerLead.lead, etapaId);
+          setDrawerLead({ open: false, lead: null });
+        }}
+      />
     </div>
+  );
+}
+
+function KanbanView({ stages, leadsPorEtapa, onSelecionarLead, onEditarStage, onExcluirStage, onMoverLead }) {
+  const stagesOrdenadas = [...stages].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+  const semEtapa = leadsPorEtapa['_sem_etapa'] || [];
+
+  return (
+    <div className="overflow-x-auto custom-scrollbar -mx-4 px-4 pb-4">
+      <div className="flex gap-3 min-w-max">
+        {semEtapa.length > 0 && (
+          <KanbanColumn
+            stage={{ id: '_sem_etapa', nome: 'Sem etapa', cor: null }}
+            leads={semEtapa}
+            stages={stages}
+            onSelecionarLead={onSelecionarLead}
+            onMoverLead={onMoverLead}
+            isSemEtapa
+          />
+        )}
+        {stagesOrdenadas.map((stage) => (
+          <KanbanColumn
+            key={stage.id}
+            stage={stage}
+            leads={leadsPorEtapa[stage.id] || []}
+            stages={stages}
+            onSelecionarLead={onSelecionarLead}
+            onMoverLead={onMoverLead}
+            onEditarStage={() => onEditarStage(stage)}
+            onExcluirStage={() => onExcluirStage(stage)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KanbanColumn({ stage, leads, stages, onSelecionarLead, onMoverLead, onEditarStage, onExcluirStage, isSemEtapa }) {
+  const totalValor = leads.reduce((acc, l) => acc + Number(l.valor || 0), 0);
+
+  return (
+    <div className="w-72 flex-shrink-0 flex flex-col">
+      <div className="flex items-center justify-between gap-2 px-2 mb-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {stage.cor && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.cor }} />}
+          <span className="text-sm font-semibold tracking-tight text-[var(--text-main)] truncate">{stage.nome}</span>
+          <Badge variant="neutral" size="sm">{leads.length}</Badge>
+        </div>
+        {!isSemEtapa && (
+          <Dropdown
+            trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}
+          >
+            <DropdownItem icon={Edit2} onClick={onEditarStage}>Editar</DropdownItem>
+            <DropdownDivider />
+            <DropdownItem icon={Trash2} variant="danger" onClick={onExcluirStage}>Excluir</DropdownItem>
+          </Dropdown>
+        )}
+      </div>
+      {totalValor > 0 && (
+        <div className="text-xs text-[var(--text-muted)] px-2 mb-2 tabular-nums">{fmtBRL(totalValor)}</div>
+      )}
+
+      <div className="bg-[var(--bg-subtle)]/50 rounded-xl p-2 flex-1 min-h-[200px] space-y-2">
+        {leads.length === 0 ? (
+          <div className="text-center py-8 text-xs text-[var(--text-muted)]">Vazio</div>
+        ) : (
+          leads.map((lead) => (
+            <KanbanCard
+              key={lead.id}
+              lead={lead}
+              stages={stages}
+              currentStageId={isSemEtapa ? null : stage.id}
+              onClick={() => onSelecionarLead(lead)}
+              onMover={onMoverLead}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KanbanCard({ lead, stages, currentStageId, onClick, onMover }) {
+  const tags = lead.tags?.split(',').map((t) => t.trim()).filter(Boolean) || [];
+  const stagesOrdenadas = [...stages].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+  const idx = stagesOrdenadas.findIndex((s) => s.id === currentStageId);
+  const proxima = idx >= 0 && idx < stagesOrdenadas.length - 1 ? stagesOrdenadas[idx + 1] : null;
+  const anterior = idx > 0 ? stagesOrdenadas[idx - 1] : null;
+
+  const prioridadeColor = { HIGH: 'danger', MEDIUM: 'warning', LOW: 'neutral' }[lead.prioridade] || 'neutral';
+
+  return (
+    <div
+      onClick={onClick}
+      className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3 cursor-pointer hover:border-[var(--text-muted)] hover:shadow-[var(--shadow-xs)] transition-all"
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Avatar name={lead.nome} size="sm" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">{lead.nome}</div>
+            {lead.telefone && <div className="text-[11px] text-[var(--text-muted)] truncate">{lead.telefone}</div>}
+          </div>
+        </div>
+        {lead.prioridade && (
+          <Badge variant={prioridadeColor} size="sm">
+            {lead.prioridade === 'HIGH' ? 'Alta' : lead.prioridade === 'MEDIUM' ? 'Media' : 'Baixa'}
+          </Badge>
+        )}
+      </div>
+
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {tags.slice(0, 3).map((t, i) => (
+            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-[var(--bg-subtle)] text-[var(--text-secondary)] font-medium">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-2">
+        {lead.valor > 0 ? (
+          <span className="text-xs font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(lead.valor)}</span>
+        ) : <span />}
+        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          {anterior && (
+            <button
+              title={`Mover para ${anterior.nome}`}
+              onClick={() => onMover(lead, anterior.id)}
+              className="p-1 rounded hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+            >
+              <ArrowLeft size={12} />
+            </button>
+          )}
+          {proxima && (
+            <button
+              title={`Mover para ${proxima.nome}`}
+              onClick={() => onMover(lead, proxima.id)}
+              className="p-1 rounded hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+            >
+              <ArrowRight size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListaView({ leads, stages, onSelecionarLead }) {
+  if (leads.length === 0) {
+    return (
+      <Card padding="lg">
+        <EmptyState icon={List} title="Nenhum lead encontrado" description="Tente ajustar a busca ou criar um novo lead." />
+      </Card>
+    );
+  }
+  const getStageNome = (etapaId) => stages.find((s) => s.id === etapaId)?.nome || '—';
+
+  return (
+    <Card padding="none">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-[var(--border-main)]">
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Lead</th>
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Etapa</th>
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Contato</th>
+            <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor</th>
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Atualizado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads.map((l) => (
+            <tr
+              key={l.id}
+              onClick={() => onSelecionarLead(l)}
+              className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors"
+            >
+              <td className="py-3 px-5">
+                <div className="flex items-center gap-3">
+                  <Avatar name={l.nome} size="sm" />
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{l.nome}</div>
+                    {l.tags && <div className="text-[11px] text-[var(--text-muted)]">{l.tags}</div>}
+                  </div>
+                </div>
+              </td>
+              <td className="py-3 px-5"><Badge variant="neutral" size="sm">{getStageNome(l.etapaId)}</Badge></td>
+              <td className="py-3 px-5 text-xs text-[var(--text-secondary)]">{l.telefone || l.email || '—'}</td>
+              <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(l.valor)}</td>
+              <td className="py-3 px-5 text-xs text-[var(--text-muted)]">{new Date(l.atualizadoEm).toLocaleDateString('pt-BR')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
+  const [form, setForm] = useState({
+    nome: '', telefone: '', email: '', valor: 0, etapaId: '', tags: '',
+    prioridade: 'MEDIUM', origem: 'MANUAL', observacoes: '',
+  });
+
+  useEffect(() => {
+    if (lead) setForm({ ...lead, valor: lead.valor || 0, tags: lead.tags || '', observacoes: lead.observacoes || '' });
+    else setForm({ nome: '', telefone: '', email: '', valor: 0, etapaId: '', tags: '', prioridade: 'MEDIUM', origem: 'MANUAL', observacoes: '' });
+  }, [lead, isOpen]);
+
+  const handleSubmit = (e) => { e.preventDefault(); onSalvar(form); };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={lead ? 'Editar lead' : 'Novo lead'} description="Cadastre as informacoes do contato." size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
+          <Input label="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+          <Input label="E-mail" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <Input label="Valor estimado (R$)" type="number" step="0.01" value={form.valor} onChange={(e) => setForm({ ...form, valor: parseFloat(e.target.value) || 0 })} />
+          <Select label="Etapa" value={form.etapaId || ''} onChange={(e) => setForm({ ...form, etapaId: e.target.value })} placeholder="Sem etapa" options={stages.map((s) => ({ value: s.id, label: s.nome }))} />
+          <Select label="Prioridade" value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: e.target.value })} options={PRIORIDADES} placeholder="" />
+          <Input label="Origem" value={form.origem} onChange={(e) => setForm({ ...form, origem: e.target.value })} placeholder="MANUAL, BOT, INSTAGRAM..." />
+          <Input label="Tags (separadas por virgula)" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="cliente vip, lead quente" />
+        </div>
+        <Textarea label="Observacoes" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} rows={3} />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">{lead ? 'Salvar' : 'Criar lead'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ModalStage({ isOpen, onClose, stage, onSalvar }) {
+  const [form, setForm] = useState({ nome: '', ordem: 0, cor: '#C4704A' });
+
+  useEffect(() => {
+    if (stage) setForm({ nome: stage.nome, ordem: stage.ordem ?? 0, cor: stage.cor || '#C4704A' });
+    else setForm({ nome: '', ordem: 0, cor: '#C4704A' });
+  }, [stage, isOpen]);
+
+  const handleSubmit = (e) => { e.preventDefault(); onSalvar(form); };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={stage ? 'Editar etapa' : 'Nova etapa'} description="Etapas organizam o funil de vendas." size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Qualificacao, Proposta..." required autoFocus />
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Ordem" type="number" value={form.ordem} onChange={(e) => setForm({ ...form, ordem: parseInt(e.target.value) || 0 })} />
+          <div>
+            <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5">Cor</label>
+            <input type="color" value={form.cor} onChange={(e) => setForm({ ...form, cor: e.target.value })} className="w-full h-11 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] cursor-pointer" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">{stage ? 'Salvar' : 'Criar etapa'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DrawerLead({ isOpen, onClose, lead, stages, onEditar, onExcluir, onMover }) {
+  const toast = useToast();
+  const [historico, setHistorico] = useState([]);
+  const [novaObs, setNovaObs] = useState('');
+  const [carregandoObs, setCarregandoObs] = useState(false);
+
+  useEffect(() => {
+    if (lead?.id) {
+      api.get(`/crm/leads/${lead.id}/history`)
+        .then((r) => setHistorico(r.data || []))
+        .catch(() => setHistorico([]));
+    }
+  }, [lead?.id]);
+
+  const adicionarObs = async () => {
+    if (!novaObs.trim()) return;
+    setCarregandoObs(true);
+    try {
+      await api.post(`/crm/leads/${lead.id}/history`, { observacoes: novaObs });
+      const r = await api.get(`/crm/leads/${lead.id}/history`);
+      setHistorico(r.data || []);
+      setNovaObs('');
+      toast.success('Observacao adicionada');
+    } catch {
+      toast.error('Erro ao adicionar');
+    } finally {
+      setCarregandoObs(false);
+    }
+  };
+
+  if (!lead) return null;
+  const stageAtual = stages.find((s) => s.id === lead.etapaId);
+
+  return (
+    <Drawer
+      isOpen={isOpen}
+      onClose={onClose}
+      title={lead.nome}
+      description={lead.email || lead.telefone}
+      size="md"
+      footer={
+        <div className="flex justify-between gap-2">
+          <Button variant="danger-soft" icon={Trash2} onClick={onExcluir}>Excluir</Button>
+          <Button variant="primary" icon={Edit2} onClick={onEditar}>Editar lead</Button>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Avatar name={lead.nome} size="lg" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              {stageAtual && <Badge variant="neutral" size="sm">{stageAtual.nome}</Badge>}
+              {lead.prioridade && (
+                <Badge variant={lead.prioridade === 'HIGH' ? 'danger' : lead.prioridade === 'MEDIUM' ? 'warning' : 'neutral'} size="sm">
+                  {lead.prioridade === 'HIGH' ? 'Alta' : lead.prioridade === 'MEDIUM' ? 'Media' : 'Baixa'} prioridade
+                </Badge>
+              )}
+            </div>
+            {lead.valor > 0 && <div className="text-lg font-semibold text-[var(--text-main)] mt-1 tabular-nums">{fmtBRL(lead.valor)}</div>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {lead.telefone && (
+            <a href={`tel:${lead.telefone}`} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
+              <Phone size={14} /> {lead.telefone}
+            </a>
+          )}
+          {lead.email && (
+            <a href={`mailto:${lead.email}`} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
+              <Mail size={14} /> {lead.email}
+            </a>
+          )}
+        </div>
+
+        {stages.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Mover para etapa</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[...stages].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)).map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onMover(s.id)}
+                  disabled={s.id === lead.etapaId}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    s.id === lead.etapaId
+                      ? 'bg-[var(--primary)] text-[var(--text-on-primary)] border-[var(--primary)] cursor-default'
+                      : 'border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {s.nome}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {lead.tags && (
+          <div>
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Tags</div>
+            <div className="flex flex-wrap gap-1.5">
+              {lead.tags.split(',').map((t, i) => (<Badge key={i} variant="accent" size="sm" icon={Tag}>{t.trim()}</Badge>))}
+            </div>
+          </div>
+        )}
+
+        {lead.observacoes && (
+          <div>
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Observacoes</div>
+            <div className="text-sm text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-subtle)] rounded-xl p-3">{lead.observacoes}</div>
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <History size={14} className="text-[var(--text-muted)]" />
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)]">Historico ({historico.length})</div>
+          </div>
+          <div className="space-y-2 mb-3">
+            <Textarea value={novaObs} onChange={(e) => setNovaObs(e.target.value)} placeholder="Adicionar observacao..." rows={2} />
+            <Button variant="secondary" size="sm" onClick={adicionarObs} loading={carregandoObs} disabled={!novaObs.trim()}>Adicionar</Button>
+          </div>
+          {historico.length === 0 ? (
+            <div className="text-xs text-[var(--text-muted)] text-center py-4">Sem registros ainda</div>
+          ) : (
+            <div className="space-y-2">
+              {historico.map((h) => (
+                <div key={h.id} className="flex gap-2 text-xs border-l-2 border-[var(--border-main)] pl-3 py-1">
+                  <Clock size={11} className="text-[var(--text-muted)] flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-[var(--text-secondary)]">{h.observacoes}</div>
+                    <div className="text-[10px] text-[var(--text-muted)] mt-0.5">{h.acao} · {new Date(h.criadoEm).toLocaleString('pt-BR')}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Drawer>
   );
 }

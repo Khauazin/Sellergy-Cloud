@@ -2,38 +2,140 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  --color-primary: #3b82f6;
-  --color-secondary: #10b981;
-}
+/* ===========================================================
+   BOTMANAGER DESIGN SYSTEM v2 — "Premium Light"
+   Paleta: monocromática preto/branco/cinzas quentes
+   Accent: terracota #C4704A
+   Default: light, dark via toggle em Configuracoes
+   =========================================================== */
 
-/* =========================================
-   TEMA CLARO — cores suaves, sem branco puro
-   ========================================= */
 :root {
-  --bg-app:      #f0f2f5;
-  --bg-sidebar:  #e8eaed;
-  --bg-card:     #f5f6f8;
-  --text-main:   #111827;
-  --text-muted:  #6b7280;
-  --border-main: rgba(0, 0, 0, 0.08);
+  /* ── Backgrounds ─────────────────────────────────────────── */
+  --bg-app:        #FAFAF7;   /* off-white quente, base do app */
+  --bg-card:       #FFFFFF;   /* branco puro, cards elevados */
+  --bg-sidebar:    #FFFFFF;   /* sidebar branca */
+  --bg-subtle:     #F5F5F2;   /* hovers, fundos secundarios */
+  --bg-elevated:   #FFFFFF;   /* dropdowns, popovers */
+  --bg-overlay:    rgba(10, 10, 10, 0.4);
+
+  /* ── Borders ─────────────────────────────────────────────── */
+  --border-main:    #E8E8E5;  /* cinza quente sutil */
+  --border-strong:  #D4D4D0;  /* divisores mais visiveis */
+  --border-subtle:  #F0F0EC;  /* quase invisivel */
+
+  /* ── Text ────────────────────────────────────────────────── */
+  --text-main:        #0A0A0A;   /* near-black, titulos */
+  --text-secondary:   #525252;   /* corpo de texto */
+  --text-muted:       #8A8A85;   /* labels, helpers */
+  --text-on-primary:  #FFFFFF;   /* texto sobre primario preto */
+  --text-on-accent:   #FFFFFF;   /* texto sobre accent terracota */
+
+  /* ── Primary (acoes principais) ──────────────────────────── */
+  --primary:         #0A0A0A;
+  --primary-hover:   #1F1F1F;
+  --primary-active:  #2A2A2A;
+  --primary-soft:    #F0F0EC;
+
+  /* ── Accent (terracota) ──────────────────────────────────── */
+  --accent:          #C4704A;
+  --accent-hover:    #B5613D;
+  --accent-active:   #A35330;
+  --accent-soft:     #F5E6DD;   /* tint de fundo */
+  --accent-text:     #8B4A2D;   /* texto sobre accent-soft */
+  --accent-border:   #E5C9B6;
+
+  /* ── Estados semanticos ──────────────────────────────────── */
+  --success:        #2D6A4F;
+  --success-soft:   #E0EDE5;
+  --success-text:   #1F4D38;
+
+  --warning:        #B45309;
+  --warning-soft:   #FEF0E0;
+  --warning-text:   #7A3704;
+
+  --danger:         #991B1B;
+  --danger-soft:    #FAE5E5;
+  --danger-text:    #6E1313;
+
+  --info:           #1E3A5F;
+  --info-soft:      #E5EAF0;
+  --info-text:      #142940;
+
+  /* ── Sombras (sutis) ─────────────────────────────────────── */
+  --shadow-xs:  0 1px 2px rgba(10, 10, 10, 0.04);
+  --shadow-sm:  0 2px 8px rgba(10, 10, 10, 0.04);
+  --shadow-md:  0 8px 24px rgba(10, 10, 10, 0.06);
+  --shadow-lg:  0 20px 48px rgba(10, 10, 10, 0.08);
+  --shadow-focus: 0 0 0 3px rgba(196, 112, 74, 0.15);
+
+  /* ── Raios ───────────────────────────────────────────────── */
+  --radius-sm:    8px;
+  --radius-md:    12px;
+  --radius-lg:    16px;
+  --radius-xl:    20px;
+  --radius-2xl:   24px;
+  --radius-full:  9999px;
 }
 
-/* =========================================
-   TEMA ESCURO
-   ========================================= */
+/* ===========================================================
+   DARK MODE — preto puro premium (Linear/Vercel-like)
+   =========================================================== */
 .dark {
-  --bg-app:      #0a0a0a;
-  --bg-sidebar:  rgba(0, 0, 0, 0.4);
-  --bg-card:     rgba(255, 255, 255, 0.05);
-  --text-main:   #f9fafb;
-  --text-muted:  #9ca3af;
-  --border-main: rgba(255, 255, 255, 0.1);
+  --bg-app:        #0A0A0A;
+  --bg-card:       #141414;
+  --bg-sidebar:    #0F0F0F;
+  --bg-subtle:     #1C1C1C;
+  --bg-elevated:   #1C1C1C;
+  --bg-overlay:    rgba(0, 0, 0, 0.6);
+
+  --border-main:    #262626;
+  --border-strong:  #3A3A3A;
+  --border-subtle:  #1A1A1A;
+
+  --text-main:        #FAFAF7;
+  --text-secondary:   #B4B4B0;
+  --text-muted:       #707070;
+  --text-on-primary:  #0A0A0A;
+  --text-on-accent:   #FFFFFF;
+
+  --primary:         #FAFAF7;
+  --primary-hover:   #E8E8E5;
+  --primary-active:  #D4D4D0;
+  --primary-soft:    #1C1C1C;
+
+  --accent:          #D4845C;
+  --accent-hover:    #C4704A;
+  --accent-active:   #B5613D;
+  --accent-soft:     #2D1F18;
+  --accent-text:     #E5A481;
+  --accent-border:   #4A3325;
+
+  --success:        #5DB17A;
+  --success-soft:   #1A2D22;
+  --success-text:   #8FCFA3;
+
+  --warning:        #D97A22;
+  --warning-soft:   #2D1F12;
+  --warning-text:   #E8A86A;
+
+  --danger:         #DC4545;
+  --danger-soft:    #2D1818;
+  --danger-text:    #E88080;
+
+  --info:           #6491C9;
+  --info-soft:      #1A2333;
+  --info-text:      #9DB8DC;
+
+  --shadow-xs:  0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm:  0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md:  0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg:  0 20px 48px rgba(0, 0, 0, 0.6);
+  --shadow-focus: 0 0 0 3px rgba(212, 132, 92, 0.2);
 }
 
-/* =========================================
+/* ===========================================================
    BASE
-   ========================================= */
+   =========================================================== */
 html {
   background-color: var(--bg-app);
 }
@@ -42,127 +144,112 @@ body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
     'Helvetica Neue', sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-app);
   color: var(--text-main);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* =========================================
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* ===========================================================
    SCROLLBAR
-   ========================================= */
-.custom-scrollbar::-webkit-scrollbar { width: 5px; }
+   =========================================================== */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border-main);
-  border-radius: 10px;
+  background: var(--border-strong);
+  border-radius: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.4);
+  background: var(--text-muted);
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* =========================================
-   ANIMAÇÕES
-   ========================================= */
+/* ===========================================================
+   ANIMACOES
+   =========================================================== */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes slide-in-from-top-2 {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes slide-in-from-right {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 @keyframes zoom-in-95 {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.96); }
   to   { opacity: 1; transform: scale(1); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .animate-in { animation-fill-mode: both; }
 .fade-in    { animation-name: fade-in; }
 .slide-in-from-top-2 { animation-name: slide-in-from-top-2; }
+.slide-in-from-right { animation-name: slide-in-from-right; }
 .zoom-in-95 { animation-name: zoom-in-95; }
+.duration-150 { animation-duration: 150ms; }
 .duration-200 { animation-duration: 200ms; }
 .duration-300 { animation-duration: 300ms; }
 .duration-500 { animation-duration: 500ms; }
-.duration-700 { animation-duration: 700ms; }
 
-/* =========================================
-   REMAPEAMENTO GLOBAL — MODO CLARO
+/* ===========================================================
+   FOCO ACESSIVEL
+   =========================================================== */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
 
-   Os componentes foram escritos dark-first com
-   classes hardcoded (text-white, bg-white/5, etc).
-   Em light mode, remapeamos para versões legíveis.
-   O seletor :not(.dark) garante que o dark fica intacto.
-   ========================================= */
+button:focus-visible,
+a:focus-visible {
+  outline-offset: 3px;
+}
 
-/* text-white → escuro legível no light */
+/* ===========================================================
+   COMPATIBILIDADE COM PAGINAS LEGADAS
+   (componentes antigos com classes hardcoded estilo dark)
+   Vamos remover esses overrides quando reescrevermos cada pagina.
+   =========================================================== */
+
 :not(.dark) .text-white {
-  color: #1f2937 !important;
+  color: var(--text-main) !important;
 }
+:not(.dark) .text-gray-200,
+:not(.dark) .text-gray-300 { color: var(--text-secondary) !important; }
+:not(.dark) .text-gray-400,
+:not(.dark) .text-gray-500,
+:not(.dark) .text-gray-600 { color: var(--text-muted) !important; }
 
-/* text-gray-N → tons mais escuros e legíveis */
-:not(.dark) .text-gray-200 { color: #374151 !important; }
-:not(.dark) .text-gray-300 { color: #374151 !important; }
-:not(.dark) .text-gray-400 { color: #4b5563 !important; }
-:not(.dark) .text-gray-500 { color: #6b7280 !important; }
-:not(.dark) .text-gray-600 { color: #6b7280 !important; }
-
-/* bg-white puro → off-white suave */
-:not(.dark) .bg-white {
-  background-color: #f5f6f8 !important;
-}
-
-/* bg-white/N → cinza claro transparente */
 :not(.dark) [class*="bg-white\/"] {
-  background-color: rgba(0, 0, 0, 0.04) !important;
+  background-color: var(--bg-subtle) !important;
 }
-
-/* bg-black/N → cinza muito suave */
 :not(.dark) [class*="bg-black\/"] {
-  background-color: rgba(0, 0, 0, 0.05) !important;
+  background-color: var(--bg-subtle) !important;
 }
-
-/* bg-[#050505] e bg-[#0a0a0a] explícitos → light cinza */
-:not(.dark) [style*="background-color: rgb(5"],
-:not(.dark) [style*="background-color: rgb(10"] {
-  background-color: #f0f2f5 !important;
-}
-
-/* border-white/N → borda sutil cinza */
 :not(.dark) [class*="border-white\/"] {
-  border-color: rgba(0, 0, 0, 0.1) !important;
-}
-
-/* bg-gray-50/50 → mantém levíssimo */
-:not(.dark) .bg-gray-50\/50 {
-  background-color: rgba(243, 244, 246, 0.8) !important;
-}
-
-/* Inputs e selects no modo claro */
-:not(.dark) input:not([class*="bg-"]),
-:not(.dark) textarea:not([class*="bg-"]),
-:not(.dark) select:not([class*="bg-"]) {
-  color: #111827;
-  background-color: #ffffff;
-  border-color: rgba(0, 0, 0, 0.12);
-}
-
-/* Força inputs com bg explícito do dark a virar branco */
-:not(.dark) input[class*="bg-black"],
-:not(.dark) textarea[class*="bg-black"],
-:not(.dark) select[class*="bg-black"],
-:not(.dark) input[class*="bg-white"],
-:not(.dark) textarea[class*="bg-white"],
-:not(.dark) select[class*="bg-white"] {
-  background-color: #ffffff !important;
-  color: #111827 !important;
-  border-color: rgba(0, 0, 0, 0.12) !important;
+  border-color: var(--border-main) !important;
 }
 
 :not(.dark) input::placeholder,
 :not(.dark) textarea::placeholder {
-  color: #9ca3af !important;
+  color: var(--text-muted) !important;
 }

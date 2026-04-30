@@ -1,128 +1,473 @@
-import { useState } from 'react';
-import { BarChart3, TrendingUp, Users, Calendar, MessageSquare, DollarSign, ArrowUpRight } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Bot, MessageCircle, Inbox, Sparkles, ArrowUpRight, AlertCircle,
+  CheckCircle2, Activity, Send, Calendar, ShoppingBag, TrendingUp,
+  Clock, Wifi, WifiOff
+} from 'lucide-react';
+import api from '../services/api';
+import { useAuthStore } from '../store/auth.store';
+import { Card, CardHeader, CardTitle, Button, Badge, EmptyState, Avatar } from '../components/ui';
+import { moduloLiberado } from '../constants/permissoes';
 
+const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/**
+ * Visao geral do cliente — foco em ATENDIMENTO e VENDAS PELO BOT.
+ *
+ * Metricas centrais:
+ *  - Conversas ativas / pendentes de atendimento humano
+ *  - Mensagens trocadas hoje
+ *  - Leads gerados pelo bot
+ *  - Vendas atribuidas ao bot
+ *  - Status dos bots (online/offline)
+ *
+ * NOTA: o modulo de Mensagens (chat) ainda nao foi implementado. Assim que
+ * estiver pronto, esta tela puxa dados reais de conversas. Por enquanto,
+ * usamos:
+ *  - bots.totalMensagens / mensagensHoje / status para metricas de atividade
+ *  - leads filtrados por origem (BOT) — futuro
+ *  - vendas com leadId (vieram via lead, geralmente do bot)
+ */
 export default function ClientDashboardPage() {
-  const [period, setPeriod] = useState('7d');
+  const user = useAuthStore((s) => s.user);
+  const modulos = user?.modulosLiberados || {};
+
+  const [bots, setBots] = useState([]);
+  const [leads, setLeads] = useState([]);
+  const [vendas, setVendas] = useState([]);
+  const [agendamentos, setAgendamentos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const carregar = async () => {
+    setCarregando(true);
+    try {
+      const promises = [];
+
+      if (moduloLiberado(modulos, 'BOTS')) {
+        promises.push(api.get('/bots').then((r) => setBots(r.data || [])).catch(() => setBots([])));
+      }
+      if (moduloLiberado(modulos, 'CRM')) {
+        promises.push(api.get('/crm/leads').then((r) => setLeads(r.data || [])).catch(() => setLeads([])));
+      }
+      if (moduloLiberado(modulos, 'VENDAS')) {
+        promises.push(api.get('/vendas').then((r) => setVendas(r.data || [])).catch(() => setVendas([])));
+      }
+      if (moduloLiberado(modulos, 'AGENDA')) {
+        const hoje = new Date().toISOString().split('T')[0];
+        promises.push(api.get(`/agenda?date=${hoje}`).then((r) => setAgendamentos(r.data || [])).catch(() => setAgendamentos([])));
+      }
+
+      await Promise.all(promises);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  // ─── Metricas focadas no BOT ──────────────────────────────
+  const metricas = useMemo(() => {
+    const botsOnline = bots.filter((b) => b.status === 'ONLINE').length;
+    const totalBots = bots.length;
+    const mensagensHoje = bots.reduce((acc, b) => acc + Number(b.mensagensHoje || 0), 0);
+    const mensagensTotal = bots.reduce((acc, b) => acc + Number(b.totalMensagens || 0), 0);
+
+    // Leads vindos pelo bot (origem == 'BOT' | 'WHATSAPP' | 'INSTAGRAM' etc.)
+    // Como o backend nao normaliza isso, consideramos qualquer origem != 'MANUAL'
+    const leadsBot = leads.filter((l) => l.origem && l.origem !== 'MANUAL');
+
+    // Vendas atribuidas ao bot = vendas que tem leadId vinculado
+    const vendasBot = vendas.filter((v) => v.leadId);
+    const valorVendasBot = vendasBot.reduce((acc, v) => acc + Number(v.valor || 0), 0);
+
+    // Conversas ativas = mock por enquanto (modulo Mensagens ainda em construcao)
+    // TODO: integrar com /mensagens/conversas-ativas quando o backend estiver pronto
+    const conversasAtivas = null;
+    const conversasPendentes = null;
+
+    return {
+      botsOnline,
+      totalBots,
+      mensagensHoje,
+      mensagensTotal,
+      leadsBot,
+      vendasBot,
+      valorVendasBot,
+      conversasAtivas,
+      conversasPendentes,
+    };
+  }, [bots, leads, vendas]);
+
+  const algumBotOnline = metricas.botsOnline > 0;
+  const algumBotOffline = metricas.totalBots > 0 && metricas.botsOnline < metricas.totalBots;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+    <div className="space-y-6">
+      {/* Saudacao */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Visão Geral</h2>
-          <p className="text-gray-400 text-sm mt-1">Acompanhe os resultados da sua IA de atendimento</p>
+          <p className="text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider">
+            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
+            Ola, {user?.nome?.split(' ')[0] || 'usuario'}
+          </h1>
+          <p className="text-sm text-[var(--text-muted)] mt-1">
+            Acompanhe o atendimento e as vendas geradas pelo seu bot.
+          </p>
         </div>
-        <select 
-          value={period} onChange={(e) => setPeriod(e.target.value)}
-          className="bg-white/5 border border-white/10 text-white rounded-xl py-2 px-4 focus:outline-none focus:border-blue-500 text-sm"
-        >
-          <option value="7d">Últimos 7 dias</option>
-          <option value="30d">Últimos 30 dias</option>
-          <option value="all">Este ano</option>
-        </select>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-blue-900/40 to-black border border-blue-500/20 p-6 rounded-3xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Calendar className="w-16 h-16 text-blue-500" />
-          </div>
-          <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center mb-4 border border-blue-500/30">
-            <Calendar className="w-6 h-6 text-blue-400" />
-          </div>
-          <p className="text-gray-400 text-sm font-medium mb-1">Agendamentos via IA</p>
-          <div className="flex items-end gap-3">
-            <h3 className="text-4xl font-bold text-white">128</h3>
-            <span className="flex items-center text-emerald-400 text-sm font-bold bg-emerald-400/10 px-2 py-1 rounded-lg mb-1">
-              <ArrowUpRight className="w-4 h-4 mr-1" /> +12%
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-emerald-900/40 to-black border border-emerald-500/20 p-6 rounded-3xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <DollarSign className="w-16 h-16 text-emerald-500" />
-          </div>
-          <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center mb-4 border border-emerald-500/30">
-            <DollarSign className="w-6 h-6 text-emerald-400" />
-          </div>
-          <p className="text-gray-400 text-sm font-medium mb-1">Faturamento Gerado</p>
-          <div className="flex items-end gap-3">
-            <h3 className="text-4xl font-bold text-white">R$ 14.5k</h3>
-            <span className="flex items-center text-emerald-400 text-sm font-bold bg-emerald-400/10 px-2 py-1 rounded-lg mb-1">
-              <ArrowUpRight className="w-4 h-4 mr-1" /> +8%
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-900/40 to-black border border-purple-500/20 p-6 rounded-3xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Users className="w-16 h-16 text-purple-500" />
-          </div>
-          <div className="w-12 h-12 bg-purple-500/20 rounded-2xl flex items-center justify-center mb-4 border border-purple-500/30">
-            <Users className="w-6 h-6 text-purple-400" />
-          </div>
-          <p className="text-gray-400 text-sm font-medium mb-1">Novos Leads</p>
-          <div className="flex items-end gap-3">
-            <h3 className="text-4xl font-bold text-white">342</h3>
-            <span className="flex items-center text-emerald-400 text-sm font-bold bg-emerald-400/10 px-2 py-1 rounded-lg mb-1">
-              <ArrowUpRight className="w-4 h-4 mr-1" /> +24%
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-amber-900/40 to-black border border-amber-500/20 p-6 rounded-3xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <MessageSquare className="w-16 h-16 text-amber-500" />
-          </div>
-          <div className="w-12 h-12 bg-amber-500/20 rounded-2xl flex items-center justify-center mb-4 border border-amber-500/30">
-            <MessageSquare className="w-6 h-6 text-amber-400" />
-          </div>
-          <p className="text-gray-400 text-sm font-medium mb-1">Conversas Ativas</p>
-          <div className="flex items-end gap-3">
-            <h3 className="text-4xl font-bold text-white">18</h3>
-            <span className="text-gray-500 text-sm mb-1">Neste momento</span>
-          </div>
+        <div className="flex gap-2">
+          {moduloLiberado(modulos, 'CRM') && (
+            <Link to="/app/mensagens">
+              <Button variant="secondary" icon={MessageCircle}>Inbox</Button>
+            </Link>
+          )}
+          {moduloLiberado(modulos, 'BOTS') && (
+            <Link to="/app/bots">
+              <Button variant="primary" icon={Bot}>Configurar bot</Button>
+            </Link>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-        {/* Placeholder para gráfico */}
-        <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-3xl p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-white">Evolução de Agendamentos</h3>
-            <button className="text-blue-400 text-sm hover:underline">Ver relatório completo</button>
-          </div>
-          <div className="h-64 flex items-center justify-center border border-dashed border-white/10 rounded-xl bg-black/20">
-            <p className="text-gray-500 flex items-center gap-2"><BarChart3 className="w-5 h-5" /> Gráfico de Barras em desenvolvimento</p>
-          </div>
-        </div>
-
-        {/* Próximos agendamentos */}
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-white">Próximos Horários</h3>
-            <button className="text-blue-400 text-sm hover:underline">Ver agenda</button>
-          </div>
-          <div className="space-y-4">
-            {[1, 2, 3].map((_, i) => (
-              <div key={i} className="flex items-start gap-4 p-3 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition-colors cursor-pointer">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex flex-col items-center justify-center border border-blue-500/30">
-                  <span className="text-xs font-bold text-blue-400">HOJE</span>
-                  <span className="text-sm font-black text-white">14:30</span>
+      {/* Status do bot — destaque no topo */}
+      {moduloLiberado(modulos, 'BOTS') && metricas.totalBots > 0 && (
+        <Card padding="lg" className={algumBotOffline ? 'border-[var(--warning-soft)]' : ''}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                algumBotOnline ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'
+              }`}>
+                {algumBotOnline ? <Wifi size={18} strokeWidth={2} /> : <WifiOff size={18} strokeWidth={2} />}
+              </div>
+              <div>
+                <div className="text-sm font-semibold tracking-tight text-[var(--text-main)]">
+                  {algumBotOnline ? `${metricas.botsOnline} de ${metricas.totalBots} bots online` : 'Nenhum bot online'}
                 </div>
-                <div>
-                  <h4 className="text-white font-medium text-sm">João Silva</h4>
-                  <p className="text-gray-400 text-xs mt-0.5">Corte + Barba</p>
-                  <p className="text-emerald-400 text-xs font-medium mt-1">R$ 80,00</p>
+                <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                  {algumBotOffline ? 'Verifique os bots offline para nao perder atendimentos.' : 'Tudo funcionando normalmente.'}
                 </div>
               </div>
-            ))}
+            </div>
+            <Link to="/app/bots">
+              <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                Gerenciar bots
+              </Button>
+            </Link>
           </div>
-        </div>
+        </Card>
+      )}
+
+      {/* KPIs - foco em BOT */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi
+          icon={MessageCircle}
+          label="Mensagens hoje"
+          valor={metricas.mensagensHoje}
+          sublabel={`${metricas.mensagensTotal} no total`}
+          loading={carregando}
+          accent
+        />
+        <Kpi
+          icon={Inbox}
+          label="Conversas ativas"
+          valor={metricas.conversasAtivas != null ? metricas.conversasAtivas : '—'}
+          sublabel="Modulo de Mensagens em breve"
+          loading={carregando}
+        />
+        <Kpi
+          icon={Sparkles}
+          label="Leads via bot"
+          valor={metricas.leadsBot.length}
+          sublabel={`${leads.length} leads totais`}
+          loading={carregando}
+        />
+        <Kpi
+          icon={ShoppingBag}
+          label="Vendas via bot"
+          valor={fmtBRL(metricas.valorVendasBot)}
+          sublabel={`${metricas.vendasBot.length} vendas atribuidas`}
+          loading={carregando}
+        />
       </div>
 
+      {/* Linha principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Conversas / atendimento humano necessario */}
+        <Card padding="lg" className="lg:col-span-2">
+          <CardHeader>
+            <div>
+              <CardTitle>Atendimento</CardTitle>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Conversas que precisam de atencao humana
+              </p>
+            </div>
+            <Link to="/app/mensagens">
+              <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                Ver inbox
+              </Button>
+            </Link>
+          </CardHeader>
+
+          <EmptyState
+            icon={MessageCircle}
+            title="Modulo de Mensagens em construcao"
+            description="Em breve voce vera aqui as conversas do bot em tempo real e podera intervir quando o cliente precisar de voce."
+            action={
+              <Link to="/app/mensagens">
+                <Button variant="secondary" size="sm">
+                  Saber mais
+                </Button>
+              </Link>
+            }
+          />
+        </Card>
+
+        {/* Performance do bot */}
+        {moduloLiberado(modulos, 'BOTS') && (
+          <Card padding="lg">
+            <CardHeader>
+              <div>
+                <CardTitle>Performance do bot</CardTitle>
+              </div>
+            </CardHeader>
+
+            {metricas.totalBots === 0 ? (
+              <EmptyState
+                icon={Bot}
+                title="Nenhum bot ainda"
+                description="Configure seu primeiro bot para comecar."
+                action={
+                  <Link to="/app/bots">
+                    <Button variant="primary" size="sm" icon={Bot}>Criar bot</Button>
+                  </Link>
+                }
+              />
+            ) : (
+              <div className="space-y-3">
+                {bots.slice(0, 4).map((b) => (
+                  <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-[var(--bg-subtle)]/50">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      b.status === 'ONLINE' ? 'bg-[var(--success)]' :
+                      b.status === 'ERROR' ? 'bg-[var(--danger)]' :
+                      'bg-[var(--text-muted)]'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                        {b.nome}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-muted)] truncate">
+                        {b.canal} · {b.totalMensagens || 0} msgs
+                      </div>
+                    </div>
+                    <div className="text-xs font-semibold text-[var(--text-secondary)] tabular-nums">
+                      +{b.mensagensHoje || 0}
+                    </div>
+                  </div>
+                ))}
+                {bots.length > 4 && (
+                  <Link
+                    to="/app/bots"
+                    className="block text-center text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors py-1"
+                  >
+                    + {bots.length - 4} bots
+                  </Link>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {/* Linha 2 - leads e vendas via bot */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Leads recentes via bot */}
+        {moduloLiberado(modulos, 'CRM') && (
+          <Card padding="lg">
+            <CardHeader>
+              <div>
+                <CardTitle>Leads gerados pelo bot</CardTitle>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Contatos que o bot trouxe pra voce
+                </p>
+              </div>
+              <Link to="/app/crm">
+                <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                  Ver CRM
+                </Button>
+              </Link>
+            </CardHeader>
+
+            {metricas.leadsBot.length === 0 ? (
+              <EmptyState
+                icon={Sparkles}
+                title="Nenhum lead pelo bot ainda"
+                description="Quando o bot conversar com clientes e capturar dados, eles aparecem aqui."
+              />
+            ) : (
+              <div className="space-y-1.5">
+                {metricas.leadsBot.slice(0, 5).map((l) => (
+                  <div key={l.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--bg-subtle)]/60 transition-colors">
+                    <Avatar name={l.nome} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                        {l.nome}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-muted)] flex items-center gap-1.5">
+                        <Badge variant="accent" size="sm">{l.origem}</Badge>
+                        <span>·</span>
+                        <Clock size={10} />
+                        {new Date(l.criadoEm).toLocaleDateString('pt-BR')}
+                      </div>
+                    </div>
+                    {l.valor > 0 && (
+                      <div className="text-xs font-semibold text-[var(--text-main)] tabular-nums">
+                        {fmtBRL(l.valor)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Agendamentos de hoje OU vendas via bot */}
+        {moduloLiberado(modulos, 'AGENDA') ? (
+          <Card padding="lg">
+            <CardHeader>
+              <div>
+                <CardTitle>Agenda de hoje</CardTitle>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Marcacoes confirmadas pelo bot
+                </p>
+              </div>
+              <Link to="/app/agenda">
+                <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">
+                  Agenda
+                </Button>
+              </Link>
+            </CardHeader>
+
+            {agendamentos.length === 0 ? (
+              <EmptyState
+                icon={Calendar}
+                title="Nada agendado"
+                description="Sem agendamentos para hoje."
+              />
+            ) : (
+              <div className="space-y-2">
+                {agendamentos.slice(0, 4).map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40">
+                    <div className="w-12 text-center flex-shrink-0">
+                      <div className="text-sm font-semibold tracking-tight text-[var(--text-main)]">
+                        {new Date(a.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <div className="w-px h-9 bg-[var(--border-main)]" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-[var(--text-main)] truncate">
+                        {a.servico || 'Servico'}
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)] truncate">
+                        {a.nomeCliente}
+                      </div>
+                    </div>
+                    {a.origem === 'AI' && (
+                      <Badge variant="accent" size="sm" icon={Sparkles}>Bot</Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        ) : moduloLiberado(modulos, 'VENDAS') && (
+          <Card padding="lg">
+            <CardHeader>
+              <div>
+                <CardTitle>Vendas via bot</CardTitle>
+              </div>
+              <Link to="/app/vendas">
+                <Button variant="ghost" size="sm" icon={ArrowUpRight} iconPosition="right">Vendas</Button>
+              </Link>
+            </CardHeader>
+            {metricas.vendasBot.length === 0 ? (
+              <EmptyState icon={ShoppingBag} title="Nenhuma venda atribuida ao bot ainda" />
+            ) : (
+              <div className="space-y-1.5">
+                {metricas.vendasBot.slice(0, 5).map((v) => (
+                  <div key={v.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-[var(--bg-subtle)]/60">
+                    <div className="text-sm text-[var(--text-secondary)] truncate">
+                      {v.descricao || 'Venda'}
+                    </div>
+                    <div className="text-sm font-semibold text-[var(--text-main)] tabular-nums">
+                      {fmtBRL(v.valor)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {/* Atalhos rapidos */}
+      <Card padding="lg">
+        <CardHeader>
+          <div>
+            <CardTitle>Atalhos rapidos</CardTitle>
+          </div>
+        </CardHeader>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {moduloLiberado(modulos, 'CRM') && <QuickAction to="/app/mensagens" icon={MessageCircle} label="Mensagens" desc="Atender clientes" />}
+          {moduloLiberado(modulos, 'BOTS') && <QuickAction to="/app/campanhas" icon={Send} label="Campanhas" desc="Disparar mensagens" />}
+          {moduloLiberado(modulos, 'BOTS') && <QuickAction to="/app/bots" icon={Bot} label="Configurar bot" desc="Prompt e canais" />}
+          {moduloLiberado(modulos, 'RELATORIOS') && <QuickAction to="/app/relatorios" icon={TrendingUp} label="Relatorios" desc="Performance" />}
+        </div>
+      </Card>
     </div>
+  );
+}
+
+function Kpi({ icon: Icon, label, valor, sublabel, accent, loading }) {
+  return (
+    <Card padding="lg">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${
+        accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
+      }`}>
+        <Icon size={16} strokeWidth={2} />
+      </div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        {label}
+      </div>
+      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">
+        {loading ? '—' : valor}
+      </div>
+      {sublabel && (
+        <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>
+      )}
+    </Card>
+  );
+}
+
+function QuickAction({ to, icon: Icon, label, desc }) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-start gap-3 p-4 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] hover:border-[var(--text-muted)] hover:shadow-[var(--shadow-xs)] transition-all"
+    >
+      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 group-hover:bg-[var(--accent-soft)] transition-colors">
+        <Icon size={16} strokeWidth={1.75} className="text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{label}</div>
+        <div className="text-xs text-[var(--text-muted)] mt-0.5">{desc}</div>
+      </div>
+      <ArrowUpRight size={14} className="text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors" />
+    </Link>
   );
 }

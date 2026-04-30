@@ -1,164 +1,157 @@
-import { useState } from 'react';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  DollarSign, 
-  Download,
-  Calendar
-} from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { useState, useEffect, useMemo } from 'react';
+import { BarChart3, TrendingUp, Users, Bot, DollarSign, AlertCircle } from 'lucide-react';
+import api from '../services/api';
+import { Card, CardHeader, CardTitle, Badge, EmptyState } from '../components/ui';
 
-const receitaData = [
-  { mes: 'Jan', valor: 4500 },
-  { mes: 'Fev', valor: 5200 },
-  { mes: 'Mar', valor: 6100 },
-  { mes: 'Abr', valor: 5800 },
-  { mes: 'Mai', valor: 7400 },
-  { mes: 'Jun', valor: 8900 },
-];
+const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const mensagensData = [
-  { plataforma: 'WhatsApp', qtde: 45000 },
-  { plataforma: 'Instagram', qtde: 32000 },
-  { plataforma: 'Website', qtde: 12000 },
-];
-
+/**
+ * Relatorios consolidados para o admin: visao agregada de todos os tenants.
+ */
 export default function ReportsPage() {
-  const [periodo, setPeriodo] = useState('30d');
+  const [stats, setStats] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => { carregar(); }, []);
+
+  const carregar = async () => {
+    setCarregando(true);
+    try {
+      const [c, b, a] = await Promise.all([
+        api.get('/clientes').catch(() => ({ data: [] })),
+        api.get('/bots').catch(() => ({ data: [] })),
+        api.get('/alertas').catch(() => ({ data: [] })),
+      ]);
+      const clientes = c.data || [];
+      const bots = b.data || [];
+      const alertas = a.data || [];
+
+      const ativos = clientes.filter((x) => x.status === 'ACTIVE');
+      setStats({
+        totalClientes: clientes.length,
+        clientesAtivos: ativos.length,
+        clientesPlanos: clientes.reduce((acc, x) => {
+          const p = x.plano || 'BASIC';
+          acc[p] = (acc[p] || 0) + 1;
+          return acc;
+        }, {}),
+        mrr: ativos.reduce((acc, x) => acc + Number(x.mensalidade || 0), 0),
+        totalBots: bots.length,
+        botsOnline: bots.filter((x) => x.status === 'ONLINE').length,
+        msgsHoje: bots.reduce((acc, x) => acc + Number(x.mensagensHoje || 0), 0),
+        msgsTotal: bots.reduce((acc, x) => acc + Number(x.totalMensagens || 0), 0),
+        alertasAbertos: alertas.filter((x) => x.status === 'OPEN').length,
+        alertasCriticos: alertas.filter((x) => x.status === 'OPEN' && x.severidade === 'CRITICAL').length,
+      });
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  if (carregando) {
+    return (
+      <Card padding="lg">
+        <div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando relatorios...</div>
+      </Card>
+    );
+  }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Relatórios Avançados</h2>
-          <p className="text-gray-400 text-sm mt-1">Visão geral financeira e consumo dos bots</p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <div className="bg-black/40 border border-white/10 rounded-xl p-1 flex items-center">
-            <button 
-              onClick={() => setPeriodo('7d')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${periodo === '7d' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-            >
-              7 Dias
-            </button>
-            <button 
-              onClick={() => setPeriodo('30d')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${periodo === '30d' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-            >
-              30 Dias
-            </button>
-            <button 
-              onClick={() => setPeriodo('1y')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${periodo === '1y' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}
-            >
-              1 Ano
-            </button>
+    <div className="space-y-5">
+      {/* Visao geral */}
+      <Card padding="lg">
+        <CardHeader>
+          <div>
+            <CardTitle>Visao geral consolidada</CardTitle>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Metricas agregadas de todos os tenants</p>
           </div>
-          
-          <button 
-            onClick={() => window.print()}
-            className="bg-white/5 border border-white/10 hover:bg-white/10 text-white p-2.5 rounded-xl transition-colors"
-            title="Salvar como PDF"
-          >
-            <Download className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+        </CardHeader>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <DollarSign className="w-5 h-5 text-emerald-400" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Kpi icon={Users} label="Clientes ativos" valor={stats.clientesAtivos} sublabel={`${stats.totalClientes} no total`} />
+          <Kpi icon={DollarSign} label="MRR" valor={fmtBRL(stats.mrr)} variant="accent" />
+          <Kpi icon={Bot} label="Bots online" valor={stats.botsOnline} sublabel={`${stats.totalBots} cadastrados`} />
+          <Kpi icon={AlertCircle} label="Alertas abertos" valor={stats.alertasAbertos} variant={stats.alertasAbertos > 0 ? 'warning' : 'neutral'} sublabel={`${stats.alertasCriticos} criticos`} />
+        </div>
+      </Card>
+
+      {/* Distribuicao por plano */}
+      <Card padding="lg">
+        <CardHeader>
+          <div>
+            <CardTitle>Distribuicao por plano</CardTitle>
+          </div>
+        </CardHeader>
+        <div className="grid grid-cols-3 gap-3">
+          {['BASIC', 'PRO', 'PREMIUM'].map((plano) => (
+            <div key={plano} className="border border-[var(--border-main)] rounded-xl p-4">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{plano}</div>
+              <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">
+                {stats.clientesPlanos[plano] || 0}
+              </div>
             </div>
-            <h3 className="text-gray-400 font-medium">Receita no Período</h3>
-          </div>
-          <div className="text-3xl font-bold text-white mb-1">R$ 37.900,00</div>
-          <p className="text-emerald-400 text-sm flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" /> +15.3% vs período anterior
-          </p>
+          ))}
         </div>
+      </Card>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-              <BarChart3 className="w-5 h-5 text-blue-400" />
-            </div>
-            <h3 className="text-gray-400 font-medium">Total de Interações</h3>
+      {/* Trafego do bot */}
+      <Card padding="lg">
+        <CardHeader>
+          <div>
+            <CardTitle>Trafego dos bots</CardTitle>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">89.000</div>
-          <p className="text-blue-400 text-sm flex items-center gap-1">
-            <TrendingUp className="w-3 h-3" /> +5.2% vs período anterior
-          </p>
+        </CardHeader>
+        <div className="grid grid-cols-2 gap-4">
+          <Kpi icon={TrendingUp} label="Mensagens hoje" valor={stats.msgsHoje.toLocaleString('pt-BR')} />
+          <Kpi icon={BarChart3} label="Total acumulado" valor={stats.msgsTotal.toLocaleString('pt-BR')} variant="accent" />
         </div>
+      </Card>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
-              <Calendar className="w-5 h-5 text-purple-400" />
-            </div>
-            <h3 className="text-gray-400 font-medium">Churn Rate (Cancelamentos)</h3>
+      {/* Em breve */}
+      <Card padding="lg">
+        <CardHeader>
+          <div>
+            <CardTitle>Em breve</CardTitle>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">Relatorios avancados no roadmap</p>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">1.2%</div>
-          <p className="text-gray-400 text-sm">2 clientes cancelaram</p>
+        </CardHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <FuturoCard titulo="Receita por mes" desc="Evolucao de MRR + churn + LTV" />
+          <FuturoCard titulo="Performance por bot" desc="Taxa de resposta automatica vs humana" />
+          <FuturoCard titulo="Conversao por funil" desc="Leads que viraram venda em cada etapa do CRM" />
+          <FuturoCard titulo="Saude do sistema" desc="Latencia, erros, disponibilidade dos webhooks" />
         </div>
+      </Card>
+    </div>
+  );
+}
+
+function Kpi({ icon: Icon, label, valor, sublabel, variant }) {
+  const cls = {
+    accent: 'bg-[var(--accent-soft)] text-[var(--accent)]',
+    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
+  };
+  return (
+    <Card padding="lg" variant="flat" className="border border-[var(--border-main)]">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${cls[variant] || cls.neutral}`}>
+        <Icon size={16} strokeWidth={2} />
       </div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">{valor}</div>
+      {sublabel && <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>}
+    </Card>
+  );
+}
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Crescimento de Receita */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-          <h3 className="text-lg font-semibold text-white mb-6">Crescimento de Receita Mensal</h3>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={receitaData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="mes" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `R$${val/1000}k`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                  itemStyle={{ color: '#fff' }}
-                  formatter={(value) => [`R$ ${value}`, 'Receita']}
-                />
-                <Area type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorReceita)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Consumo por Plataforma */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
-          <h3 className="text-lg font-semibold text-white mb-6">Consumo por Canal</h3>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mensagensData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="plataforma" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val/1000}k`} />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                  formatter={(value) => [`${value} msgs`, 'Consumo']}
-                />
-                <Bar dataKey="qtde" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
+function FuturoCard({ titulo, desc }) {
+  return (
+    <div className="border border-dashed border-[var(--border-main)] rounded-xl p-4 opacity-70">
+      <div className="flex items-center gap-2 mb-1">
+        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{titulo}</div>
+        <Badge variant="warning" size="sm">Em breve</Badge>
       </div>
-
+      <div className="text-xs text-[var(--text-muted)]">{desc}</div>
     </div>
   );
 }

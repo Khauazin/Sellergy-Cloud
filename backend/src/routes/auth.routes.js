@@ -85,6 +85,18 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Carrega modulosLiberados e branding se for usuario de tenant.
+    let modulosLiberados = null;
+    let branding = null;
+    if (usuario.clienteId) {
+      const cliente = await prisma.cliente.findUnique({
+        where: { id: usuario.clienteId },
+        select: { modulosLiberados: true, brandLogo: true, brandNome: true }
+      });
+      modulosLiberados = cliente?.modulosLiberados || {};
+      branding = { logo: cliente?.brandLogo || null, nome: cliente?.brandNome || null };
+    }
+
     res.json({
       usuario: {
         id: usuario.id,
@@ -93,6 +105,9 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
         perfil: usuario.perfil,
         clienteId: usuario.clienteId || null,
         deveTrocarSenha: usuario.deveTrocarSenha === true,
+        foto: usuario.foto || null,
+        modulosLiberados,
+        branding,
       },
       token
     });
@@ -114,24 +129,28 @@ roteador.get('/perfil', middlewareAutenticacao, async (req, res) => {
         clienteId: true,
         deveTrocarSenha: true,
         permissoes: true,
+        foto: true,
       }
     });
     if (!usuario) return res.status(404).json({ erro: 'Usuario nao encontrado' });
 
-    // Carrega modulos liberados do tenant para o frontend filtrar telas.
+    // Carrega modulos liberados e branding do tenant para o frontend.
     let modulosLiberados = null;
+    let branding = null;
     if (usuario.clienteId) {
       const cliente = await prisma.cliente.findUnique({
         where: { id: usuario.clienteId },
-        select: { modulosLiberados: true, status: true }
+        select: { modulosLiberados: true, status: true, brandLogo: true, brandNome: true }
       });
       modulosLiberados = cliente?.modulosLiberados || {};
+      branding = { logo: cliente?.brandLogo || null, nome: cliente?.brandNome || null };
     }
 
     res.json({
       ...usuario,
       clienteId: usuario.clienteId || null,
       modulosLiberados,
+      branding,
     });
   } catch (erro) {
     console.error('[auth/perfil]', erro);
@@ -179,6 +198,60 @@ roteador.post('/trocar-senha', middlewareAutenticacao, async (req, res) => {
   } catch (erro) {
     console.error('[auth/trocar-senha]', erro);
     res.status(500).json({ erro: 'Erro ao trocar senha.' });
+  }
+});
+
+// Atualiza dados pessoais do usuario logado (nome, email, foto).
+// Nao permite mudar perfil/permissoes/clienteId (proteger contra escalada).
+roteador.put('/perfil', middlewareAutenticacao, async (req, res) => {
+  try {
+    const { nome, email, foto } = req.body;
+    const dataUpdate = {};
+    if (nome !== undefined) dataUpdate.nome = nome;
+    if (email !== undefined) dataUpdate.email = email;
+    if (foto !== undefined) dataUpdate.foto = foto || null;
+
+    const usuario = await prisma.usuario.update({
+      where: { id: req.usuario.id },
+      data: dataUpdate,
+      select: { id: true, nome: true, email: true, perfil: true, foto: true, clienteId: true }
+    });
+
+    res.json(usuario);
+  } catch (erro) {
+    console.error('[auth/perfil-put]', erro);
+    if (erro.code === 'P2002') {
+      return res.status(400).json({ erro: 'Este e-mail ja esta em uso.' });
+    }
+    res.status(500).json({ erro: 'Erro ao atualizar perfil.' });
+  }
+});
+
+// Atualiza branding (logo + nome customizado) do tenant do usuario logado.
+// Apenas CLIENT (dono da conta) pode atualizar branding.
+roteador.put('/branding', middlewareAutenticacao, async (req, res) => {
+  try {
+    if (req.usuario.perfil !== 'CLIENT') {
+      return res.status(403).json({ erro: 'Apenas o dono da conta pode alterar a marca.' });
+    }
+    if (!req.usuario.clienteId) {
+      return res.status(400).json({ erro: 'Usuario sem tenant.' });
+    }
+
+    const { brandLogo, brandNome } = req.body;
+    const cliente = await prisma.cliente.update({
+      where: { id: req.usuario.clienteId },
+      data: {
+        brandLogo: brandLogo === undefined ? undefined : (brandLogo || null),
+        brandNome: brandNome === undefined ? undefined : (brandNome || null),
+      },
+      select: { id: true, brandLogo: true, brandNome: true }
+    });
+
+    res.json({ logo: cliente.brandLogo, nome: cliente.brandNome });
+  } catch (erro) {
+    console.error('[auth/branding]', erro);
+    res.status(500).json({ erro: 'Erro ao atualizar marca.' });
   }
 });
 

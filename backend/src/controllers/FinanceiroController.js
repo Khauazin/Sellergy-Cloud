@@ -97,7 +97,8 @@ class FinanceiroController {
       const { clienteId } = req.usuario;
       const {
         descricao, valor, tipo, dataVencimento,
-        categoriaId, leadId, vendaId, parcelas = 1
+        categoriaId, leadId, vendaId, parcelas = 1,
+        produto, metodoPagamento,
       } = req.body;
 
       let { status, dataPagamento } = req.body;
@@ -171,6 +172,8 @@ class FinanceiroController {
           leadId: leadId || null,
           vendaId: vendaId || null,
           idAgrupamento: idAgrupamento,
+          produto: produto || null,
+          metodoPagamento: metodoPagamento || null,
         });
       }
 
@@ -205,7 +208,9 @@ class FinanceiroController {
           dataVencimento: dados.dataVencimento ? new Date(dados.dataVencimento) : undefined,
           categoriaId: dados.categoriaId,
           leadId: dados.leadId,
-          vendaId: dados.vendaId
+          vendaId: dados.vendaId,
+          produto: dados.produto,
+          metodoPagamento: dados.metodoPagamento,
         }
       });
       res.json(lancamento);

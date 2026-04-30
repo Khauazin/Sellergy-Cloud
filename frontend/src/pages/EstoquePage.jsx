@@ -1,382 +1,664 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Box, RefreshCcw, ArrowDownRight, ArrowUpRight, History, Search, Plus, 
-  TrendingDown, DollarSign, AlertTriangle, PackageSearch, 
-  ChevronLeft, ChevronRight, Loader2, Filter, Tag, PieChart as PieChartIcon,
-  BarChart3
+import {
+  Box, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, TrendingUp,
+  Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag
 } from 'lucide-react';
-import clsx from 'clsx';
-import estoqueService from '../services/estoqueService';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import ModalMovimentarEstoque from '../components/Estoque/ModalMovimentarEstoque';
-import ModalCategorias from '../components/Financeiro/ModalCategorias';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Cell, Pie, Legend
-} from 'recharts';
+import api from '../services/api';
+import {
+  Card, CardHeader, CardTitle, Button, IconButton, Input, Textarea, Select, Badge,
+  EmptyState, SearchBar, useToast, Tabs, TabsList, TabsTrigger, TabsContent,
+  Dropdown, DropdownItem, DropdownDivider, Switch
+} from '../components/ui';
+import Modal from '../components/Modal';
 
-const fmt = (val) =>
-  Number(val ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const KpiCard = ({ label, value, loading, colorCls, icon: Icon, subLabel }) => (
-  <div className="bg-white dark:bg-white/5 border border-[var(--border-main)] p-8 rounded-[2.5rem] relative overflow-hidden group hover:border-amber-500/30 transition-all duration-500 shadow-sm hover:shadow-xl hover:shadow-amber-500/5">
-    <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700" />
-    
-    <div className="flex justify-between items-start mb-6 relative z-10">
-      <div className="flex flex-col gap-1">
-        <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.2em] opacity-60">{label}</p>
-        {subLabel && <p className="text-[var(--text-muted)] text-[9px] font-bold uppercase opacity-40">{subLabel}</p>}
-      </div>
-      <div className={clsx("p-3.5 rounded-2xl bg-current opacity-10", colorCls)}>
-         {Icon && <Icon className={clsx("w-5 h-5", colorCls)} style={{ opacity: 1 }} />}
-      </div>
-    </div>
-
-    <div className="flex items-end gap-3 relative z-10">
-      <h3 className={clsx('text-3xl font-black tracking-tighter transition-all duration-500 group-hover:translate-x-1', colorCls)}>
-        {loading ? <span className="opacity-20 animate-pulse">...</span> : value}
-      </h3>
-    </div>
-  </div>
-);
+const TIPO_MOV_LABELS = {
+  COMPRA_FORNECEDOR: { label: 'Compra', variant: 'info', sentido: 'in' },
+  VENDA: { label: 'Venda', variant: 'success', sentido: 'out' },
+  AJUSTE: { label: 'Ajuste', variant: 'warning', sentido: 'in' },
+  DEVOLUCAO: { label: 'Devolucao', variant: 'neutral', sentido: 'in' },
+  RESERVA: { label: 'Reserva', variant: 'neutral', sentido: 'out' },
+};
 
 export default function EstoquePage() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCatModalOpen, setIsCatModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const toast = useToast();
+  const [tab, setTab] = useState('dashboard');
+  const [stats, setStats] = useState(null);
   const [movimentacoes, setMovimentacoes] = useState([]);
-  const [dashboard, setDashboard] = useState(null);
   const [reposicao, setReposicao] = useState([]);
-  const [refresh, setRefresh] = useState(0);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [produtos, setProdutos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState('');
+
+  const [modalMov, setModalMov] = useState({ open: false });
+  const [modalProduto, setModalProduto] = useState({ open: false, data: null });
+  const [modalCategoria, setModalCategoria] = useState({ open: false, data: null });
 
   useEffect(() => {
-    let ignore = false;
-    const carregar = async () => {
-      try {
-        setLoading(true);
-        const [movs, dash, repo] = await Promise.all([
-          estoqueService.listarMovimentacoes(),
-          estoqueService.getDashboard(),
-          estoqueService.getReposicao()
-        ]);
-        if (!ignore) {
-          setMovimentacoes(movs);
-          setDashboard(dash);
-          setReposicao(repo);
-        }
-      } catch (err) {
-        if (!ignore) console.error('Erro ao carregar estoque', err);
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    };
     carregar();
-    return () => { ignore = true; };
-  }, [refresh]);
+  }, []);
 
-  const filteredMovs = movimentacoes.filter(m => 
-    m.variacao?.produto?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.motivo?.toLowerCase().includes(searchTerm.toLowerCase())
+  const carregar = async () => {
+    setCarregando(true);
+    try {
+      const [s, m, r, p, c] = await Promise.all([
+        api.get('/estoque/dashboard').catch(() => ({ data: null })),
+        api.get('/estoque/movimentacoes').catch(() => ({ data: [] })),
+        api.get('/estoque/reposicao').catch(() => ({ data: [] })),
+        api.get('/catalogo').catch(() => ({ data: [] })),
+        api.get('/financeiro/categorias').catch(() => ({ data: [] })),
+      ]);
+      setStats(s.data);
+      setMovimentacoes(m.data || []);
+      setReposicao(r.data || []);
+      setProdutos(p.data || []);
+      setCategorias(c.data || []);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  // Categorias do estoque = categorias financeiras de tipo RECEITA (produtos vendidos viram receita)
+  const categoriasProdutos = useMemo(
+    () => categorias.filter((c) => c.tipo === 'RECEITA'),
+    [categorias]
   );
 
-  const pieData = useMemo(() => {
-    if (!dashboard) return [];
-    return [
-      { name: 'Disponível', value: 100 - (dashboard.indiceRuptura || 0) },
-      { name: 'Em Ruptura', value: dashboard.indiceRuptura || 0 }
-    ];
-  }, [dashboard]);
+  const variacoesFlat = useMemo(() => {
+    const out = [];
+    produtos.forEach((p) => {
+      (p.variacoes || []).forEach((v) => out.push({ ...v, produto: p }));
+    });
+    return out;
+  }, [produtos]);
+
+  const variacoesFiltered = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return variacoesFlat;
+    return variacoesFlat.filter(
+      (v) => v.nome?.toLowerCase().includes(q) ||
+             v.produto?.nome?.toLowerCase().includes(q) ||
+             v.sku?.toLowerCase().includes(q)
+    );
+  }, [variacoesFlat, busca]);
+
+  const handleMovimentar = async (dados) => {
+    try {
+      await api.post('/estoque/movimentar', dados);
+      toast.success('Movimentacao registrada');
+      setModalMov({ open: false });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao movimentar');
+    }
+  };
+
+  const handleSalvarProduto = async (dados) => {
+    try {
+      // Cria produto + variacao em sequencia (uma chamada de catalogo POST com variacoes inline)
+      await api.post('/catalogo', dados);
+      toast.success('Produto criado');
+      setModalProduto({ open: false, data: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao criar produto');
+    }
+  };
+
+  const handleSalvarCategoria = async (dados) => {
+    try {
+      if (dados.id) {
+        await api.patch(`/financeiro/categorias/${dados.id}`, dados);
+        toast.success('Categoria atualizada');
+      } else {
+        await api.post('/financeiro/categorias', { ...dados, tipo: 'RECEITA' });
+        toast.success('Categoria criada');
+      }
+      setModalCategoria({ open: false, data: null });
+      carregar();
+    } catch {
+      toast.error('Erro ao salvar categoria');
+    }
+  };
+
+  const handleExcluirCategoria = async (c) => {
+    if (!confirm(`Excluir categoria "${c.nome}"?`)) return;
+    try {
+      await api.delete(`/financeiro/categorias/${c.id}`);
+      toast.success('Categoria excluida');
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao excluir');
+    }
+  };
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-700">
-
-      {/* Header Profissional */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8">
-        <div className="flex items-center gap-6">
-          <div className="w-20 h-20 bg-gradient-to-tr from-amber-600 to-orange-400 rounded-3xl flex items-center justify-center shadow-2xl shadow-amber-500/20 rotate-3 hover:rotate-0 transition-all duration-500 group">
-            <Box className="w-10 h-10 text-white group-hover:scale-110 transition-transform" />
-          </div>
-          <div>
-            <h2 className="text-4xl font-black text-[var(--text-main)] tracking-tighter uppercase italic leading-none">Centro de Distribuição</h2>
-            <div className="flex items-center gap-3 mt-1.5 opacity-60">
-               <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-               <p className="text-[var(--text-muted)] text-[11px] font-black uppercase tracking-[0.3em]">Logística e Inventário em Tempo Real</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 w-full lg:w-auto">
-          <button
-            onClick={() => setIsCatModalOpen(true)}
-            className="p-4 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-2xl border border-[var(--border-main)] transition-all shadow-sm active:scale-95"
-            title="Gerenciar Categorias"
-          >
-            <Tag className="w-6 h-6" />
-          </button>
-          <button
-            onClick={() => setRefresh(r => r + 1)}
-            className="p-4 bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-2xl border border-[var(--border-main)] transition-all shadow-sm active:scale-95"
-          >
-            <RefreshCcw className={clsx("w-6 h-6", loading && "animate-spin")} />
-          </button>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex-1 lg:flex-none bg-black dark:bg-white text-white dark:text-black px-10 py-4 rounded-2xl flex items-center justify-center gap-3 text-[11px] font-black uppercase tracking-[0.2em] transition-all shadow-2xl hover:scale-[1.02] active:scale-95 group"
-          >
-            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" /> Nova Movimentação
-          </button>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList variant="pills">
+            <TabsTrigger value="dashboard" variant="pills" icon={Activity}>Visao geral</TabsTrigger>
+            <TabsTrigger value="estoque" variant="pills" icon={Box}>Produtos</TabsTrigger>
+            <TabsTrigger value="movimentacoes" variant="pills" icon={TrendingUp}>Movimentacoes</TabsTrigger>
+            <TabsTrigger value="reposicao" variant="pills" icon={AlertTriangle}>Reposicao ({reposicao.length})</TabsTrigger>
+            <TabsTrigger value="categorias" variant="pills" icon={Tag}>Categorias ({categoriasProdutos.length})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="flex gap-2">
+          <Button variant="secondary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>
+            Novo produto
+          </Button>
+          <Button variant="primary" icon={Plus} onClick={() => setModalMov({ open: true })}>
+            Nova movimentacao
+          </Button>
         </div>
       </div>
 
-      {/* KPIs Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-        <KpiCard 
-          label="Patrimônio Físico" 
-          value={fmt(dashboard?.valorTotalInventario)} 
-          loading={loading} 
-          colorCls="text-blue-500" 
-          icon={DollarSign} 
-          subLabel="Total investido em produtos"
-        />
-        <KpiCard 
-          label="Índice de Ruptura" 
-          value={`${dashboard?.indiceRuptura || 0}%`} 
-          loading={loading} 
-          colorCls={(dashboard?.indiceRuptura || 0) > 5 ? "text-red-400" : "text-emerald-500"} 
-          icon={TrendingDown} 
-          subLabel="Produtos com estoque zerado"
-        />
-        <KpiCard 
-          label="Reposição Urgente" 
-          value={reposicao.length} 
-          loading={loading} 
-          colorCls="text-amber-400" 
-          icon={AlertTriangle} 
-          subLabel="Itens abaixo do mínimo"
-        />
-        <KpiCard 
-          label="Auditoria de Log" 
-          value={movimentacoes.length > 100 ? "99+" : movimentacoes.length} 
-          loading={loading} 
-          colorCls="text-purple-400" 
-          icon={History} 
-          subLabel="Registros identificados"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Gráfico de Saúde */}
-        <div className="lg:col-span-1 space-y-8">
-           <div className="bg-white dark:bg-white/5 border border-[var(--border-main)] rounded-[2.5rem] p-10 shadow-sm relative group overflow-hidden">
-              <div className="mb-10 text-center relative z-10">
-                <h3 className="text-xl font-black text-[var(--text-main)] uppercase tracking-tighter italic">Saúde do Inventário</h3>
-                <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1 opacity-60">Disponibilidade de SKU</p>
-              </div>
-
-              <div className="h-[300px] w-full relative z-10">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      innerRadius={80}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      <Cell fill="#10b981" />
-                      <Cell fill="#ef4444" />
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                   <span className="text-[10px] font-black uppercase text-[var(--text-muted)] opacity-50">SKUs Ativos</span>
-                   <span className="text-3xl font-black text-[var(--text-main)]">{dashboard?.totalProdutos || 0}</span>
-                </div>
-              </div>
-
-              <div className="mt-8 space-y-4 relative z-10">
-                <div className="flex justify-between items-center p-5 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-[10px] font-black uppercase text-[var(--text-muted)]">Itens Disponíveis</span>
-                  </div>
-                  <span className="text-sm font-black text-emerald-500">{100 - (dashboard?.indiceRuptura || 0)}%</span>
-                </div>
-                <div className="flex justify-between items-center p-5 bg-red-500/5 rounded-2xl border border-red-500/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-red-500" />
-                    <span className="text-[10px] font-black uppercase text-[var(--text-muted)]">Em Ruptura</span>
-                  </div>
-                  <span className="text-sm font-black text-red-500">{dashboard?.indiceRuptura || 0}%</span>
-                </div>
-              </div>
-           </div>
-
-           <div className="bg-white dark:bg-white/5 border border-[var(--border-main)] rounded-[2.5rem] overflow-hidden shadow-sm">
-              <div className="p-8 border-b border-[var(--border-main)] bg-gray-50/50 dark:bg-black/20 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                   <div className="w-2 h-6 bg-amber-500 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.4)]" />
-                   <h3 className="text-[var(--text-main)] text-[11px] font-black uppercase tracking-[0.2em]">Reposição Sugerida</h3>
-                </div>
-                <span className="bg-amber-500/10 text-amber-600 dark:text-amber-500 text-[9px] px-3 py-1 rounded-full border border-amber-200 dark:border-amber-500/20 font-black uppercase tracking-widest shadow-sm">
-                  {reposicao.length} ALERTAS
-                </span>
-              </div>
-              <div className="p-8 space-y-5 max-h-[500px] overflow-y-auto custom-scrollbar">
-                {reposicao.length === 0 ? (
-                  <div className="py-24 text-center flex flex-col items-center">
-                     <div className="w-20 h-20 bg-emerald-500/5 rounded-full flex items-center justify-center mb-6">
-                        <PackageSearch className="w-10 h-10 text-emerald-500 opacity-20" />
-                     </div>
-                     <p className="text-gray-500 dark:text-gray-600 text-[11px] font-black uppercase tracking-widest italic opacity-50">Logística em conformidade</p>
-                  </div>
-                ) : (
-                  reposicao.map(item => (
-                    <div key={item.id} className="p-5 bg-gray-50 dark:bg-black/40 border border-[var(--border-main)] rounded-2xl group hover:border-amber-500/30 transition-all hover:translate-x-1 shadow-sm">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-sm text-[var(--text-main)] font-black uppercase tracking-tight italic group-hover:text-amber-600 transition-colors">{item.produto}</p>
-                          <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mt-1 opacity-60 tracking-widest">{item.variacao}</p>
-                        </div>
-                        <span className={clsx(
-                          "text-[9px] px-2 py-1 rounded-lg font-black tracking-widest shadow-sm",
-                          item.urgencia === 'ALTA' ? "bg-red-500 text-white" : "bg-amber-500 text-black"
-                        )}>
-                          {item.urgencia}
-                        </span>
-                      </div>
-                      <div className="mt-5 flex items-center justify-between border-t border-[var(--border-main)]/50 pt-4">
-                         <div className="flex gap-6">
-                            <div className="flex flex-col">
-                              <p className="text-[9px] text-[var(--text-muted)] uppercase font-black tracking-tighter opacity-50 text-center">Atual</p>
-                              <p className="text-sm font-black text-[var(--text-main)] text-center">{item.estoqueAtual}</p>
-                            </div>
-                            <div className="flex flex-col">
-                              <p className="text-[9px] text-[var(--text-muted)] uppercase font-black tracking-tighter opacity-50 text-center">Ideal</p>
-                              <p className="text-sm font-black text-gray-400 dark:text-gray-500 text-center">{item.estoqueIdeal}</p>
-                            </div>
-                         </div>
-                         <div className="text-right">
-                            <p className="text-[9px] text-amber-600 dark:text-amber-500 uppercase font-black tracking-widest leading-none">Necessidade</p>
-                            <p className="text-2xl font-black text-amber-600 dark:text-amber-500 tracking-tighter mt-1">+{item.necessidade}</p>
-                         </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-           </div>
-        </div>
-
-        {/* Histórico de Movimentações */}
-        <div className="lg:col-span-2 bg-white dark:bg-white/5 border border-[var(--border-main)] rounded-[2.5rem] flex flex-col overflow-hidden shadow-sm">
-          <div className="p-8 border-b border-[var(--border-main)] flex flex-col lg:flex-row gap-6 items-center bg-gray-50/50 dark:bg-black/20">
-            <div className="relative flex-1 w-full">
-              <Search className="w-5 h-5 text-gray-400 absolute left-5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Localizar movimentação no histórico..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white dark:bg-black/40 border border-[var(--border-main)] text-[var(--text-main)] rounded-2xl py-4 pl-14 pr-6 text-sm focus:outline-none focus:border-amber-500 transition-all placeholder:text-gray-400 font-medium shadow-sm"
-              />
-            </div>
-            <button className="flex items-center gap-3 px-8 py-4 bg-white dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-2xl border border-[var(--border-main)] text-[11px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95">
-              <Filter className="w-4 h-4" /> Filtrar Lista
-            </button>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsContent value="dashboard">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <Kpi icon={TrendingUp} label="Valor inventario" valor={stats ? fmtBRL(stats.valorTotalInventario) : '—'} accent />
+            <Kpi icon={Box} label="Total variacoes" valor={stats?.totalProdutos ?? '—'} />
+            <Kpi icon={AlertTriangle} label="Abaixo do minimo" valor={stats?.itensAbaixoMinimo ?? '—'} tone={stats?.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} />
+            <Kpi icon={Activity} label="Indice ruptura" valor={stats ? `${stats.indiceRuptura}%` : '—'} tone={(stats?.indiceRuptura || 0) > 5 ? 'danger' : 'neutral'} />
           </div>
 
-          <div className="overflow-x-auto min-h-[600px]">
-            {loading ? (
-              <div className="flex flex-col items-center justify-center p-40">
-                <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-6" />
-                <p className="text-[var(--text-muted)] text-[11px] font-black uppercase tracking-[0.3em]">Auditoria do banco...</p>
-              </div>
-            ) : filteredMovs.length === 0 ? (
-              <div className="p-40 text-center text-gray-400 dark:text-gray-600 italic font-medium uppercase tracking-widest opacity-50">
-                Nenhum registro de movimentação encontrado.
-              </div>
+          <Card padding="lg">
+            <CardHeader>
+              <div><CardTitle>Movimentacoes recentes</CardTitle></div>
+            </CardHeader>
+            {movimentacoes.length === 0 ? (
+              <EmptyState icon={TrendingUp} title="Nenhuma movimentacao" description="Registre entradas e saidas." />
             ) : (
-              <table className="w-full text-left border-collapse">
+              <ListaMovimentacoes movimentacoes={movimentacoes.slice(0, 10)} />
+            )}
+          </Card>
+        </TabsContent>
+
+        {/* Produtos */}
+        <TabsContent value="estoque">
+          <div className="mb-4">
+            <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, variacao, SKU..." />
+          </div>
+
+          {variacoesFiltered.length === 0 ? (
+            <Card padding="lg">
+              <EmptyState
+                icon={Box}
+                title="Nenhum produto"
+                description="Cadastre seus produtos pra controlar estoque."
+                action={<Button variant="primary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>Novo produto</Button>}
+              />
+            </Card>
+          ) : (
+            <Card padding="none">
+              <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-50/50 dark:bg-black/40 text-[var(--text-muted)] text-[10px] uppercase font-black tracking-[0.2em]">
-                    <th className="p-8">Data & Hora</th>
-                    <th className="p-8">Produto / Variação</th>
-                    <th className="p-8 text-center">Operação</th>
-                    <th className="p-8">Motivo / Justificativa</th>
-                    <th className="p-8 text-right">Qtd</th>
+                  <tr className="border-b border-[var(--border-main)]">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Categoria</th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Variacao / SKU</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Estoque</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor total</th>
                   </tr>
                 </thead>
-                <tbody className="text-sm divide-y divide-[var(--border-main)]/50">
-                  {filteredMovs.map(m => (
-                    <tr key={m.id} className="hover:bg-gray-50/50 dark:hover:bg-white/5 transition-all group">
-                      <td className="p-8 whitespace-nowrap">
-                        <div className="text-[var(--text-main)] font-black text-sm tracking-tight">{format(new Date(m.data), 'dd/MM/yyyy')}</div>
-                        <div className="text-[10px] text-[var(--text-muted)] font-bold uppercase mt-1 opacity-50">{format(new Date(m.data), 'HH:mm')}</div>
+                <tbody>
+                  {variacoesFiltered.map((v) => {
+                    const abaixo = v.estoqueAtual < (v.estoqueMinimo || 0);
+                    const cat = categorias.find((c) => c.id === v.produto?.categoriaId);
+                    return (
+                      <tr key={v.id} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50">
+                        <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)] tracking-tight">{v.produto?.nome}</td>
+                        <td className="py-3 px-5 text-xs">{cat ? <Badge variant="neutral" size="sm">{cat.nome}</Badge> : '—'}</td>
+                        <td className="py-3 px-5 text-xs">
+                          <div className="text-[var(--text-secondary)]">{v.nome}</div>
+                          {v.sku && <div className="text-[var(--text-muted)]">SKU: {v.sku}</div>}
+                        </td>
+                        <td className={`py-3 px-5 text-right text-sm font-semibold tabular-nums ${abaixo ? 'text-[var(--danger)]' : 'text-[var(--text-main)]'}`}>
+                          {v.estoqueAtual}
+                          {abaixo && <AlertTriangle size={12} className="inline ml-1 -mt-0.5" />}
+                        </td>
+                        <td className="py-3 px-5 text-right text-sm text-[var(--text-secondary)] tabular-nums">{fmtBRL(v.precoCusto)}</td>
+                        <td className="py-3 px-5 text-right text-sm text-[var(--text-main)] tabular-nums">{fmtBRL(v.preco)}</td>
+                        <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(v.estoqueAtual * (v.precoCusto || 0))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Movimentacoes */}
+        <TabsContent value="movimentacoes">
+          {movimentacoes.length === 0 ? (
+            <Card padding="lg"><EmptyState icon={TrendingUp} title="Nenhuma movimentacao" /></Card>
+          ) : (
+            <Card padding="none"><ListaMovimentacoes movimentacoes={movimentacoes} /></Card>
+          )}
+        </TabsContent>
+
+        {/* Reposicao */}
+        <TabsContent value="reposicao">
+          {reposicao.length === 0 ? (
+            <Card padding="lg"><EmptyState icon={AlertTriangle} title="Nada para repor" description="Tudo acima do minimo." /></Card>
+          ) : (
+            <Card padding="none">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[var(--border-main)]">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto / Variacao</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Atual</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Min</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Ideal</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Repor</th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Urgencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reposicao.map((r) => (
+                    <tr key={r.id} className="border-b border-[var(--border-subtle)]">
+                      <td className="py-3 px-5">
+                        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{r.produto}</div>
+                        <div className="text-xs text-[var(--text-muted)]">{r.variacao}</div>
                       </td>
-                      <td className="p-8">
-                        <div className="flex flex-col">
-                          <span className="text-[var(--text-main)] font-black text-sm tracking-tight italic uppercase opacity-90 group-hover:text-amber-600 transition-colors">{m.variacao?.produto?.nome}</span>
-                          <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1 opacity-60">{m.variacao?.nome}</span>
-                        </div>
-                      </td>
-                      <td className="p-8">
-                        <div className="flex justify-center">
-                           <span className={clsx(
-                            "text-[9px] font-black px-3 py-1.5 rounded-full border uppercase tracking-[0.1em] shadow-sm",
-                            m.tipo === 'VENDA' || m.tipo === 'RESERVA' ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20" :
-                              m.tipo === 'COMPRA_FORNECEDOR' || m.tipo === 'DEVOLUCAO' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20" :
-                                "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20"
-                          )}>
-                            {m.tipo}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-8 text-[var(--text-muted)] text-xs font-bold max-w-xs truncate italic opacity-80">
-                        {m.motivo || 'Ajuste Automático'}
-                      </td>
-                      <td className={clsx(
-                        "p-8 text-right font-black whitespace-nowrap text-xl tracking-tighter",
-                        m.quantidade > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-                      )}>
-                        <div className="flex items-center justify-end gap-2">
-                          {m.quantidade > 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                          {Math.abs(m.quantidade)}
-                        </div>
-                      </td>
+                      <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums text-[var(--danger)]">{r.estoqueAtual}</td>
+                      <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">{r.estoqueMinimo || 0}</td>
+                      <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">{r.estoqueIdeal || 0}</td>
+                      <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums text-[var(--text-main)]">{r.necessidade}</td>
+                      <td className="py-3 px-5"><Badge variant={r.urgencia === 'ALTA' ? 'danger' : 'warning'} size="sm">{r.urgencia}</Badge></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </Card>
+          )}
+        </TabsContent>
 
-          <div className="p-8 border-t border-[var(--border-main)] bg-gray-50/50 dark:bg-black/40 flex items-center justify-between">
-             <p className="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-[0.3em] opacity-50">Sincronização de logs completa</p>
-             <div className="flex gap-4">
-                <button className="p-4 bg-white dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-[var(--border-main)] rounded-2xl disabled:opacity-20 transition-all shadow-sm active:scale-95">
-                   <ChevronLeft className="w-5 h-5 text-[var(--text-main)]" />
-                </button>
-                <button className="p-4 bg-white dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-[var(--border-main)] rounded-2xl disabled:opacity-20 transition-all shadow-sm active:scale-95">
-                   <ChevronRight className="w-5 h-5 text-[var(--text-main)]" />
-                </button>
-             </div>
+        {/* Categorias */}
+        <TabsContent value="categorias">
+          <div className="flex justify-end mb-4">
+            <Button variant="primary" icon={Plus} onClick={() => setModalCategoria({ open: true, data: null })}>
+              Nova categoria
+            </Button>
           </div>
-        </div>
-      </div>
+          {categoriasProdutos.length === 0 ? (
+            <Card padding="lg">
+              <EmptyState
+                icon={Tag}
+                title="Nenhuma categoria"
+                description="Categorias agrupam seus produtos (ex: Bebidas, Roupas, Cabelo, Equipamentos). Vincule cada produto a uma categoria pra organizar relatorios e CMV."
+                action={<Button variant="primary" icon={Plus} onClick={() => setModalCategoria({ open: true, data: null })}>Criar primeira categoria</Button>}
+              />
+            </Card>
+          ) : (
+            <Card padding="none">
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {categoriasProdutos.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 px-5 py-3">
+                    <div className="w-9 h-9 rounded-lg bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center">
+                      <Tag size={14} strokeWidth={1.75} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{c.nome}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {variacoesFlat.filter((v) => v.produto?.categoriaId === c.id).length} variacoes vinculadas
+                      </div>
+                    </div>
+                    <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
+                      <DropdownItem icon={Edit2} onClick={() => setModalCategoria({ open: true, data: c })}>Editar</DropdownItem>
+                      <DropdownDivider />
+                      <DropdownItem icon={Trash2} variant="danger" onClick={() => handleExcluirCategoria(c)}>Excluir</DropdownItem>
+                    </Dropdown>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
-      <ModalMovimentarEstoque
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={() => setRefresh(r => r + 1)}
+      <ModalMovimentacao
+        isOpen={modalMov.open}
+        onClose={() => setModalMov({ open: false })}
+        variacoes={variacoesFlat}
+        onSalvar={handleMovimentar}
       />
-      
-      <ModalCategorias 
-        isOpen={isCatModalOpen} 
-        onClose={() => setIsCatModalOpen(false)} 
+      <ModalProduto
+        isOpen={modalProduto.open}
+        onClose={() => setModalProduto({ open: false, data: null })}
+        categorias={categoriasProdutos}
+        onSalvar={handleSalvarProduto}
+      />
+      <ModalCategoria
+        isOpen={modalCategoria.open}
+        onClose={() => setModalCategoria({ open: false, data: null })}
+        cat={modalCategoria.data}
+        onSalvar={handleSalvarCategoria}
       />
     </div>
+  );
+}
+
+function ListaMovimentacoes({ movimentacoes }) {
+  return (
+    <div className="divide-y divide-[var(--border-subtle)]">
+      {movimentacoes.map((m) => {
+        const tipo = TIPO_MOV_LABELS[m.tipo] || { label: m.tipo, variant: 'neutral', sentido: 'in' };
+        const Icon = tipo.sentido === 'in' ? ArrowDownToLine : ArrowUpFromLine;
+        return (
+          <div key={m.id} className="flex items-center gap-4 px-5 py-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+              tipo.sentido === 'in' ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'
+            }`}>
+              <Icon size={16} strokeWidth={2} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                {m.variacao?.produto?.nome} · {m.variacao?.nome}
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">
+                {m.motivo || 'Sem motivo'} · {new Date(m.data).toLocaleString('pt-BR')}
+              </div>
+            </div>
+            <Badge variant={tipo.variant} size="sm">{tipo.label}</Badge>
+            <div className={`text-sm font-semibold tabular-nums w-16 text-right ${
+              m.quantidade > 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'
+            }`}>
+              {m.quantidade > 0 ? '+' : ''}{m.quantidade}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Kpi({ icon: Icon, label, valor, accent, tone }) {
+  const toneCls = {
+    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
+    success: 'bg-[var(--success-soft)] text-[var(--success)]',
+    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+    danger: 'bg-[var(--danger-soft)] text-[var(--danger)]',
+  };
+  return (
+    <Card padding="lg">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${
+        accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : (toneCls[tone] || toneCls.neutral)
+      }`}>
+        <Icon size={16} strokeWidth={2} />
+      </div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">{valor}</div>
+    </Card>
+  );
+}
+
+function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
+  const [form, setForm] = useState({
+    variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '',
+    precoCusto: '', precoVenda: '',
+  });
+
+  useEffect(() => {
+    if (isOpen) setForm({ variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '', precoCusto: '', precoVenda: '' });
+  }, [isOpen]);
+
+  // Variacao selecionada para travar quantidade no estoque atual quando for VENDA
+  const variacaoSel = variacoes.find((v) => v.id === form.variacaoId);
+  const ehSaida = ['VENDA', 'RESERVA'].includes(form.tipo);
+  const maxQtd = ehSaida && variacaoSel ? variacaoSel.estoqueAtual : null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.variacaoId) { alert('Selecione uma variacao'); return; }
+
+    let quantidade = parseInt(form.quantidade);
+    if (isNaN(quantidade) || quantidade < 1) {
+      alert('Quantidade deve ser maior que zero');
+      return;
+    }
+
+    if (ehSaida) {
+      if (maxQtd !== null && quantidade > maxQtd) {
+        alert(`Estoque insuficiente. Disponivel: ${maxQtd}`);
+        return;
+      }
+      quantidade = -Math.abs(quantidade);
+    } else {
+      quantidade = Math.abs(quantidade);
+    }
+
+    onSalvar({
+      variacaoId: form.variacaoId,
+      tipo: form.tipo,
+      quantidade,
+      motivo: form.motivo,
+      precoCusto: form.precoCusto || undefined,
+      precoVenda: form.precoVenda || undefined,
+    });
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Nova movimentacao" description="Entrada, saida ou ajuste de estoque." size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Select
+          label="Variacao"
+          value={form.variacaoId}
+          onChange={(e) => setForm({ ...form, variacaoId: e.target.value })}
+          placeholder="Selecione..."
+          options={variacoes.map((v) => ({
+            value: v.id,
+            label: `${v.produto?.nome} - ${v.nome} (${v.estoqueAtual} em estoque)`
+          }))}
+          required
+        />
+
+        <Select
+          label="Tipo"
+          value={form.tipo}
+          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+          options={[
+            { value: 'COMPRA_FORNECEDOR', label: 'Compra fornecedor (entrada)' },
+            { value: 'AJUSTE', label: 'Ajuste positivo' },
+            { value: 'DEVOLUCAO', label: 'Devolucao (entrada)' },
+            { value: 'VENDA', label: 'Venda (saida)' },
+          ]}
+          placeholder=""
+        />
+
+        <Input
+          label="Quantidade"
+          type="number"
+          min="1"
+          max={maxQtd ?? undefined}
+          value={form.quantidade}
+          onChange={(e) => setForm({ ...form, quantidade: e.target.value })}
+          required
+          hint={ehSaida && maxQtd !== null ? `Disponivel: ${maxQtd}` : undefined}
+        />
+
+        {form.tipo === 'COMPRA_FORNECEDOR' && (
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Preco custo (atualizar)" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} hint="Opcional" />
+            <Input label="Preco venda (atualizar)" type="number" step="0.01" min="0" value={form.precoVenda} onChange={(e) => setForm({ ...form, precoVenda: e.target.value })} hint="Opcional" />
+          </div>
+        )}
+
+        <Textarea label="Motivo / observacao" value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} rows={2} />
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">Registrar</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
+  const [form, setForm] = useState({
+    nome: '', descricao: '', categoriaId: '', tipo: 'FISICO',
+    nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
+    precoCatalogo: '', usarPrecoCatalogo: false,
+    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
+  });
+
+  useEffect(() => {
+    if (isOpen) setForm({
+      nome: '', descricao: '', categoriaId: '', tipo: 'FISICO',
+      nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
+      precoCatalogo: '', usarPrecoCatalogo: false,
+      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
+    });
+  }, [isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.categoriaId) {
+      alert('Selecione uma categoria. Crie uma na aba Categorias se ainda nao tiver.');
+      return;
+    }
+
+    onSalvar({
+      nome: form.nome,
+      descricao: form.descricao,
+      categoriaId: form.categoriaId,
+      tipo: form.tipo,
+      visibilidade: 'ATIVO',
+      variacoes: [{
+        nome: form.nomeVariacao || 'Padrao',
+        sku: form.sku || null,
+        preco: parseFloat(form.preco) || 0,
+        precoCusto: parseFloat(form.precoCusto) || 0,
+        precoCatalogo: form.precoCatalogo === '' ? null : (parseFloat(form.precoCatalogo) || null),
+        usarPrecoCatalogo: !!form.usarPrecoCatalogo,
+        estoqueAtual: parseInt(form.estoqueAtual) || 0,
+        estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
+        estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
+      }],
+    });
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Novo produto" description="Cadastra produto + primeira variacao em uma operacao." size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input label="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
+          <Select
+            label="Categoria"
+            value={form.categoriaId}
+            onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
+            placeholder="Selecione..."
+            options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
+            required
+            hint={categorias.length === 0 ? 'Crie uma categoria na aba "Categorias" antes' : null}
+          />
+        </div>
+
+        <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={2} />
+
+        <Select
+          label="Tipo"
+          value={form.tipo}
+          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+          options={[
+            { value: 'FISICO', label: 'Fisico (controla estoque)' },
+            { value: 'SERVICO', label: 'Servico' },
+          ]}
+          placeholder=""
+        />
+
+        <div className="border-t border-[var(--border-main)] pt-4">
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Detalhes da variacao</div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input label="Nome da variacao" value={form.nomeVariacao} onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })} placeholder="Padrao, Tamanho M, Cor azul..." required />
+            <Input label="SKU (opcional)" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+            <Input label="Preco de venda (R$)" type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required hint="Preco padrao do estoque" />
+            <Input label="Preco de custo (R$) - CMV" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
+          </div>
+
+          {/* Preco para catalogo */}
+          <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40 mt-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[var(--text-main)]">Preco diferenciado para catalogo</div>
+                <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Use quando o preco do catalogo (publico) for diferente do estoque.
+                </div>
+              </div>
+              <Switch
+                checked={form.usarPrecoCatalogo}
+                onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
+                ariaLabel="Usar preco de catalogo como principal"
+              />
+            </div>
+            <Input
+              label="Preco catalogo (R$)"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.precoCatalogo}
+              onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
+              disabled={!form.usarPrecoCatalogo}
+              placeholder="Em branco = usa o do estoque"
+            />
+          </div>
+
+          {form.tipo === 'FISICO' && (
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              <Input label="Estoque atual" type="number" min="0" value={form.estoqueAtual} onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })} />
+              <Input label="Estoque minimo" type="number" min="0" value={form.estoqueMinimo} onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })} hint="Alerta de falta" />
+              <Input label="Estoque ideal" type="number" min="0" value={form.estoqueIdeal} onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })} hint="Alvo de reposicao" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">Criar produto</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ModalCategoria({ isOpen, onClose, cat, onSalvar }) {
+  const [nome, setNome] = useState('');
+
+  useEffect(() => {
+    if (cat) setNome(cat.nome);
+    else setNome('');
+  }, [cat, isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSalvar({ id: cat?.id, nome });
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={cat ? 'Editar categoria' : 'Nova categoria de produto'} description="Agrupa seus produtos para organizar relatorios e CMV." size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Nome"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="Ex: Bebidas, Roupas, Cabelo, Equipamentos..."
+          required
+          autoFocus
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit">{cat ? 'Salvar' : 'Criar'}</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
