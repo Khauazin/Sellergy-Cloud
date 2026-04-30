@@ -13,17 +13,18 @@ datasource db {
 // ==========================================
 
 model Usuario {
-  id           String   @id @default(uuid())
-  nome         String
-  email        String   @unique
-  senha        String
-  perfil       Perfil   @default(ADMIN)
-  permissoes   Json?    @default("{}")
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
-  clienteId    String?
-  alertas      Alerta[]
-  cliente      Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  id              String   @id @default(uuid())
+  nome            String
+  email           String   @unique
+  senha           String
+  perfil          Perfil   @default(ADMIN)
+  permissoes      Json?    @default("{}")
+  deveTrocarSenha Boolean  @default(false)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+  clienteId       String?
+  alertas         Alerta[]
+  cliente         Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 
   @@map("usuarios")
 }
@@ -38,6 +39,7 @@ model Cliente {
   status                StatusCliente         @default(ACTIVE)
   mensalidade           Float                 @default(0)
   observacoes           String?
+  modulosLiberados      Json                  @default("{}")
   criadoEm              DateTime              @default(now())
   atualizadoEm          DateTime              @updatedAt
   alertas               Alerta[]
@@ -393,6 +395,8 @@ enum Perfil {
   ADMIN
   VIEWER
   CLIENT
+  ADMINISTRADOR
+  VENDEDOR
 }
 
 enum Plano {

@@ -41,6 +41,7 @@ export default function AdminLayout() {
   const navItems = [
     { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/admin/clientes', label: 'Clientes', icon: Users },
+    { path: '/admin/clientes/permissoes', label: 'Permissões', icon: ShieldCheck },
     { path: '/admin/bots', label: 'Bots (IA)', icon: Bot },
     { path: '/admin/alertas', label: 'Alertas', icon: BellRing },
     { path: '/admin/relatorios', label: 'Relatórios', icon: Workflow },

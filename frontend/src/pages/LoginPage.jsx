@@ -15,11 +15,11 @@ export default function LoginPage({ isAdmin = true }) {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.perfil === 'CLIENT') {
-        // Força logout se um Cliente tentar acessar login de Admin
-        logout();
-      } else if (user.perfil === 'ADMIN') {
+      if (user.perfil === 'ADMIN') {
         navigate('/admin/dashboard');
+      } else {
+        // Qualquer perfil de tenant (CLIENT, ADMINISTRADOR, VENDEDOR) sai do login admin.
+        logout();
       }
     }
   }, [isAuthenticated, user, navigate, logout]);

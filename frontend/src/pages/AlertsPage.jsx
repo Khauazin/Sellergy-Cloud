@@ -11,8 +11,11 @@ export default function AlertsPage() {
   useEffect(() => {
     carregarAlertas();
 
-    // Conecta no Socket.io para real-time
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333');
+    // Conecta no Socket.io para real-time (autenticado via JWT)
+    const token = localStorage.getItem('@botmanager:token');
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333', {
+      auth: { token },
+    });
 
     socket.on('novo_alerta', (novoAlerta) => {
       setAlertas((prev) => [novoAlerta, ...prev]);

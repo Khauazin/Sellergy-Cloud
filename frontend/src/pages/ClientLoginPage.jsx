@@ -16,9 +16,10 @@ export default function ClientLoginPage() {
   useEffect(() => {
     if (isAuthenticated && user) {
       if (user.perfil === 'ADMIN') {
-        // Força logout se um Admin tentar acessar login de Cliente
+        // Forca logout se um Admin tentar acessar login de Cliente
         logout();
-      } else if (user.perfil === 'CLIENT') {
+      } else if (['CLIENT', 'ADMINISTRADOR', 'VENDEDOR'].includes(user.perfil)) {
+        // Se precisa trocar senha, o TrocaSenhaGate intercepta automaticamente.
         navigate('/app/dashboard');
       }
     }

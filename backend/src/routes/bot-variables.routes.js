@@ -1,63 +1,110 @@
 const express = require('express');
 const prisma = require('../prisma');
 const middlewareAutenticacao = require('../middlewares/auth.middleware');
+const {
+  ehAdmin,
+  requerModuloLiberado,
+  requerPermissao,
+} = require('../middlewares/permissoes.middleware');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
+roteador.use(requerModuloLiberado('BOTS'));
 
-// Lista as variáveis de um bot
-roteador.get('/:botId', async (req, res) => {
+async function botPertenceAoTenant(botId, usuario) {
+  if (ehAdmin(usuario)) {
+    const bot = await prisma.bot.findUnique({ where: { id: botId }, select: { id: true } });
+    return !!bot;
+  }
+  const bot = await prisma.bot.findFirst({
+    where: { id: botId, clienteId: usuario.clienteId },
+    select: { id: true }
+  });
+  return !!bot;
+}
+
+async function variavelPertenceAoTenant(varId, usuario) {
+  if (ehAdmin(usuario)) {
+    const v = await prisma.botVariable.findUnique({ where: { id: varId }, select: { id: true } });
+    return !!v;
+  }
+  const v = await prisma.botVariable.findFirst({
+    where: { id: varId, bot: { clienteId: usuario.clienteId } },
+    select: { id: true }
+  });
+  return !!v;
+}
+
+roteador.get('/:botId', requerPermissao('BOTS', 'visualizar'), async (req, res) => {
   try {
     const { botId } = req.params;
+
+    if (!(await botPertenceAoTenant(botId, req.usuario))) {
+      return res.status(404).json({ error: 'Bot nao encontrado' });
+    }
+
     const variables = await prisma.botVariable.findMany({
       where: { botId },
       orderBy: { key: 'asc' }
     });
     res.json(variables);
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar variáveis' });
+    console.error('[bot-variables/list]', error);
+    res.status(500).json({ error: 'Erro ao buscar variaveis' });
   }
 });
 
-// Admin pode criar uma nova variável para o cliente editar
-roteador.post('/', async (req, res) => {
+roteador.post('/', requerPermissao('BOTS', 'criar'), async (req, res) => {
   try {
     const { botId, key, value, description, type } = req.body;
+
+    if (!(await botPertenceAoTenant(botId, req.usuario))) {
+      return res.status(403).json({ error: 'Bot nao pertence a este tenant.' });
+    }
+
     const variable = await prisma.botVariable.create({
       data: { botId, key, value, description, type }
     });
     res.status(201).json(variable);
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao criar variável' });
+    console.error('[bot-variables/create]', error);
+    res.status(500).json({ error: 'Erro ao criar variavel' });
   }
 });
 
-// Cliente (ou Admin) pode atualizar o valor da variável
-roteador.put('/:id', async (req, res) => {
+roteador.put('/:id', requerPermissao('BOTS', 'editar'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { value } = req.body; // Cliente normalmente só pode mudar o valor
+
+    if (!(await variavelPertenceAoTenant(id, req.usuario))) {
+      return res.status(404).json({ error: 'Variavel nao encontrada' });
+    }
+
+    const { value } = req.body;
     const variable = await prisma.botVariable.update({
       where: { id },
       data: { value }
     });
-    
-    // Opcional: avisar o motor de bot via Socket ou internal event
-    // req.io.emit('bot_variable_updated', variable);
-    
     res.json(variable);
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao atualizar variável' });
+    console.error('[bot-variables/update]', error);
+    res.status(500).json({ error: 'Erro ao atualizar variavel' });
   }
 });
 
-roteador.delete('/:id', async (req, res) => {
+roteador.delete('/:id', requerPermissao('BOTS', 'excluir'), async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!(await variavelPertenceAoTenant(id, req.usuario))) {
+      return res.status(404).json({ error: 'Variavel nao encontrada' });
+    }
+
     await prisma.botVariable.delete({ where: { id } });
-    res.json({ message: 'Variável excluída com sucesso' });
+    res.json({ message: 'Variavel excluida com sucesso' });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao excluir variável' });
+    console.error('[bot-variables/delete]', error);
+    res.status(500).json({ error: 'Erro ao excluir variavel' });
   }
 });
 

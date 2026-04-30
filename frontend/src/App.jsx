@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from './store/auth.store';
 import { useUiStore } from './store/ui.store';
@@ -24,14 +24,15 @@ import CatalogoPage from './pages/CatalogoPage';
 import EstoquePage from './pages/EstoquePage';
 import CrmUsersPage from './pages/CrmUsersPage';
 import VendasPage from './pages/VendasPage';
+import TrocaSenhaPage from './pages/TrocaSenhaPage';
+import AdminPermissoesClientePage from './pages/AdminPermissoesClientePage';
 import clsx from 'clsx';
 
-// Placeholder para as páginas que ainda vamos criar
 const EmConstrucao = ({ titulo }) => (
   <div className="h-full flex items-center justify-center bg-white/5 border border-white/10 rounded-2xl p-12">
     <div className="text-center">
       <h2 className="text-2xl font-bold text-white mb-2">{titulo}</h2>
-      <p className="text-gray-400">Página em construção... Estaremos trabalhando nisso já já!</p>
+      <p className="text-gray-400">Pagina em construcao... Estaremos trabalhando nisso ja ja!</p>
     </div>
   </div>
 );
@@ -43,17 +44,28 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+// Forca usuario com deveTrocarSenha=true a passar pela tela de troca antes de qualquer coisa.
+const TrocaSenhaGate = ({ children }) => {
+  const user = useAuthStore((state) => state.user);
+  const location = useLocation();
+
+  if (user?.deveTrocarSenha && location.pathname !== '/trocar-senha') {
+    return <Navigate to="/trocar-senha" replace />;
+  }
+  return children;
+};
+
 // Wrapper para rotas estritas do Cliente
 const ClientRoute = ({ children }) => {
   const user = useAuthStore((state) => state.user);
-  if (user?.perfil === 'ADMIN') return <Navigate to="/app/login" replace />;
+  if (user?.perfil === 'ADMIN') return <Navigate to="/admin/dashboard" replace />;
   return children;
 };
 
 // Wrapper para rotas estritas do Admin
 const AdminRoute = ({ children }) => {
   const user = useAuthStore((state) => state.user);
-  if (user?.perfil === 'CLIENT') return <Navigate to="/admin/login" replace />;
+  if (user?.perfil !== 'ADMIN') return <Navigate to="/app/dashboard" replace />;
   return children;
 };
 
@@ -93,18 +105,38 @@ export default function App() {
           <Route path="/app/login" element={<ClientLoginPage />} />
           <Route path="/" element={<LandingPage />} />
 
-          {/* Redirecionamentos de conveniência e legados */}
+          {/* Redirecionamentos de conveniencia e legados */}
           <Route path="/login" element={<Navigate to="/admin/login" replace />} />
           <Route path="/builder/:botId" element={<Navigate to="/admin/builder/:botId" replace />} />
 
+          {/* Rota de troca de senha forcada (acessivel mesmo com flag) */}
+          <Route
+            path="/trocar-senha"
+            element={
+              <ProtectedRoute>
+                <TrocaSenhaPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Ecossistema ADMIN */}
-          <Route element={<ProtectedRoute><AdminRoute><AdminLayout /></AdminRoute></ProtectedRoute>}>
-            {/* Se entrar só em /admin, joga pro dashboard */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <TrocaSenhaGate>
+                  <AdminRoute>
+                    <AdminLayout />
+                  </AdminRoute>
+                </TrocaSenhaGate>
+              </ProtectedRoute>
+            }
+          >
             <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
 
             <Route path="/admin/dashboard" element={<DashboardPage />} />
             <Route path="/admin/clientes" element={<ClientsPage />} />
             <Route path="/admin/clientes/:id" element={<ClientProfilePage />} />
+            <Route path="/admin/clientes/permissoes" element={<AdminPermissoesClientePage />} />
             <Route path="/admin/bots" element={<BotsPage />} />
             <Route path="/admin/alertas" element={<AlertsPage />} />
             <Route path="/admin/usuarios" element={<UsersPage />} />
@@ -113,7 +145,17 @@ export default function App() {
           </Route>
 
           {/* Ecossistema CLIENT (CRM) */}
-          <Route element={<ProtectedRoute><ClientRoute><ClientLayout /></ClientRoute></ProtectedRoute>}>
+          <Route
+            element={
+              <ProtectedRoute>
+                <TrocaSenhaGate>
+                  <ClientRoute>
+                    <ClientLayout />
+                  </ClientRoute>
+                </TrocaSenhaGate>
+              </ProtectedRoute>
+            }
+          >
             <Route path="/app" element={<Navigate to="/app/dashboard" replace />} />
 
             <Route path="/app/dashboard" element={<ClientDashboardPage />} />

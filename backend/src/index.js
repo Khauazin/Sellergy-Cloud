@@ -1,7 +1,10 @@
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const http = require('http');
+const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 
 const rotasAutenticacao = require('./routes/auth.routes');
@@ -20,19 +23,54 @@ const rotasVendas = require('./routes/vendas.routes');
 const rotasCmv = require('./routes/cmv.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
+const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
+
+// Origens permitidas por CORS. Em desenvolvimento, libera localhost.
+// Em producao, exige a variavel CORS_ORIGINS (lista separada por virgula).
+const origensPermitidas = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+  .split(',')
+  .map((origem) => origem.trim())
+  .filter(Boolean);
+
+const opcoesCors = {
+  origin: (origem, callback) => {
+    // Requisicoes sem origem (ex.: curl, mobile, server-to-server) sao permitidas.
+    if (!origem) return callback(null, true);
+    if (origensPermitidas.includes(origem)) return callback(null, true);
+    return callback(new Error(`Origem nao permitida pelo CORS: ${origem}`));
+  },
+  credentials: true,
+};
 
 const app = express();
 const servidor = http.createServer(app);
 const io = new Server(servidor, {
-  cors: {
-    origin: '*',
+  cors: opcoesCors,
+});
+
+// Autenticacao do Socket.IO via JWT no handshake.
+io.use((socket, next) => {
+  const token = socket.handshake?.auth?.token
+    || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
+
+  if (!token) {
+    return next(new Error('Token nao fornecido'));
+  }
+
+  try {
+    const dados = jwt.verify(token, SEGREDO_JWT);
+    socket.usuario = dados;
+    return next();
+  } catch (erro) {
+    return next(new Error('Token invalido ou expirado'));
   }
 });
 
-app.use(cors());
-app.use(express.json());
+app.use(helmet());
+app.use(cors(opcoesCors));
+app.use(express.json({ limit: '1mb' }));
 
-// Injeção do Socket.io nas requisições
+// Injecao do Socket.io nas requisicoes
 app.use((req, res, next) => {
   req.io = io;
   next();
@@ -42,7 +80,7 @@ app.use((req, res, next) => {
 app.use('/autenticacao', rotasAutenticacao);
 app.use('/usuarios', rotasUsuarios);
 
-// Gerenciamento de Usuários do Cliente (CRM)
+// Gerenciamento de Usuarios do Cliente (CRM)
 const routerCrmUsuarios = express.Router();
 routerCrmUsuarios.use(middlewareAutenticacao);
 routerCrmUsuarios.get('/', (req, res) => CrmUsuariosController.listar(req, res));
@@ -63,13 +101,13 @@ app.use('/estoque', rotasEstoque);
 app.use('/financeiro', rotasFinanceiro);
 app.use('/vendas', rotasVendas);
 
-// Rota de Teste de Saúde (Health Check)
+// Rota de Teste de Saude (Health Check)
 app.get('/saude', (req, res) => {
   res.json({ status: 'ok', data: new Date() });
 });
 
 io.on('connection', (socket) => {
-  console.log('Novo cliente conectado:', socket.id);
+  console.log('Novo cliente conectado:', socket.id, 'usuario:', socket.usuario?.id);
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
   });
@@ -78,5 +116,5 @@ io.on('connection', (socket) => {
 const PORTA = process.env.BACKEND_PORT || 3333;
 
 servidor.listen(PORTA, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORTA}`);
+  console.log(`Servidor rodando na porta ${PORTA}`);
 });
