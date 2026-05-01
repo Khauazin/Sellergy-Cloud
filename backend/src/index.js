@@ -13,6 +13,10 @@ const rotasBots = require('./routes/bots.routes');
 const rotasAlertas = require('./routes/alertas.routes');
 const rotasCRM = require('./routes/crm.routes');
 const rotasBuilder = require('./routes/builder.routes');
+const rotasExecucoes = require('./routes/execucoes.routes');
+const rotasWebhooksAdmin = require('./routes/webhooks-admin.routes');
+const rotasWebhooksPublico = require('./routes/webhooks-publico.routes');
+const rotasAgendamentosAdmin = require('./routes/agendamentos-admin.routes');
 const rotasBotVariables = require('./routes/bot-variables.routes');
 const rotasUsuarios = require('./routes/usuarios.routes');
 const rotasAgenda = require('./routes/agenda.routes');
@@ -68,6 +72,11 @@ io.use((socket, next) => {
 
 app.use(helmet());
 app.use(cors(opcoesCors));
+
+// Webhooks publicos: registrados ANTES do express.json para que possam
+// validar HMAC sobre o byte-stream original.
+app.use('/webhooks', rotasWebhooksPublico);
+
 app.use(express.json({ limit: '1mb' }));
 
 // Injecao do Socket.io nas requisicoes
@@ -94,6 +103,9 @@ app.use('/bots', rotasBots);
 app.use('/alertas', rotasAlertas);
 app.use('/crm', rotasCRM);
 app.use('/builder', rotasBuilder);
+app.use('/execucoes', rotasExecucoes);
+app.use('/webhooks-admin', rotasWebhooksAdmin);
+app.use('/agendamentos-admin', rotasAgendamentosAdmin);
 app.use('/bot-variables', rotasBotVariables);
 app.use('/agenda', rotasAgenda);
 app.use('/catalogo', rotasCatalogo);
@@ -118,3 +130,19 @@ const PORTA = process.env.BACKEND_PORT || 3333;
 servidor.listen(PORTA, () => {
   console.log(`Servidor rodando na porta ${PORTA}`);
 });
+
+const { fecharFilas } = require('./filas');
+
+async function encerrar(sinal) {
+  console.log(`Sinal ${sinal} recebido, encerrando servidor...`);
+  servidor.close(() => console.log('HTTP fechado.'));
+  try {
+    await fecharFilas();
+  } catch (erro) {
+    console.error('Erro ao fechar filas:', erro);
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => encerrar('SIGTERM'));
+process.on('SIGINT', () => encerrar('SIGINT'));

@@ -201,7 +201,7 @@ function BlocoBranding({ user, refreshUser, toast }) {
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             placeholder="Ex: Boutique Bella, Barbearia do Joao"
-            hint="Substitui 'BotManager' no menu lateral. Deixe em branco para usar o padrao."
+            hint="Substitui 'Sellergy Cloud' no menu lateral. Deixe em branco para usar o padrao."
           />
 
           <div className="bg-[var(--bg-subtle)] rounded-xl p-3">
@@ -215,7 +215,7 @@ function BlocoBranding({ user, refreshUser, toast }) {
                 )}
               </div>
               <div>
-                <div className="text-sm font-semibold text-[var(--text-main)]">{nome || 'BotManager'}</div>
+                <div className="text-sm font-semibold text-[var(--text-main)]">{nome || 'Sellergy Cloud'}</div>
                 <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Plataforma</div>
               </div>
             </div>

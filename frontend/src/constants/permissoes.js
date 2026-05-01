@@ -1,4 +1,4 @@
-// Catalogo de modulos do sistema BotManager.
+// Catalogo de modulos do sistema Sellergy Cloud.
 // Mantem em sync com backend/src/controllers/CrmUsuariosController.js (MODULOS_CRM)
 // e backend/src/middlewares/permissoes.middleware.js.
 

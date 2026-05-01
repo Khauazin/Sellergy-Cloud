@@ -12,7 +12,7 @@ export default function LandingPage() {
             <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
           </div>
           <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
-            BotManager
+            Sellergy Cloud
           </span>
         </Link>
         <div className="flex items-center gap-2">
@@ -83,7 +83,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-[var(--border-main)] px-6 lg:px-12 py-8">
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--text-muted)]">
-          <div>© {new Date().getFullYear()} BotManager — Todos os direitos reservados</div>
+          <div>© {new Date().getFullYear()} Sellergy Cloud — Todos os direitos reservados</div>
           <div className="flex gap-4">
             <Link to="/app/login" className="hover:text-[var(--text-main)] transition-colors">Acessar</Link>
           </div>

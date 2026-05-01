@@ -1,327 +1,428 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
-  Workflow, ArrowLeft, Construction, Sparkles, Webhook, Clock, MousePointerClick,
-  GitBranch, Code as CodeIcon, MessageSquare, Bot, Database, Filter,
-  Layers, AlertTriangle, CheckCircle2, Globe
+  ArrowLeft, Bot, Plus, Save, Trash2, Workflow,
+  CircleAlert, Play,
 } from 'lucide-react';
 import api from '../services/api';
-import { Card, CardHeader, CardTitle, CardDescription, Button, Badge, useToast } from '../components/ui';
+import {
+  Badge, Button, Card, IconButton, Input, Select, Switch, useToast,
+  Drawer,
+} from '../components/ui';
+import CanvasFluxo from '../components/Builder/CanvasFluxo';
+import PaletaNos from '../components/Builder/PaletaNos';
+import PainelPropriedades from '../components/Builder/PainelPropriedades';
+import DrawerExecucao from '../components/Builder/DrawerExecucao';
+import { CATALOGO_NOS } from '../components/Builder/catalogoNos';
+import { reactFlowParaApi } from '../components/Builder/utilCanvas';
 
-/**
- * Builder placeholder — preparacao para o engine completo (escopo tecnico
- * inspirado no n8n com engine proprio).
- *
- * Esta tela mostra o que ja existe (Bot atual, Fluxos cadastrados) e
- * apresenta o roadmap do construtor visual completo.
- */
+const ESTADO_INICIAL_CANVAS = { nos: [], conexoes: [] };
+
 export default function BuilderPage() {
   const { botId } = useParams();
   const toast = useToast();
+
   const [bot, setBot] = useState(null);
   const [fluxos, setFluxos] = useState([]);
+  const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
+  const [canvasInicial, setCanvasInicial] = useState(ESTADO_INICIAL_CANVAS);
   const [carregando, setCarregando] = useState(true);
+  const [carregandoCanvas, setCarregandoCanvas] = useState(false);
+
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const [noSelecionadoId, setNoSelecionadoId] = useState(null);
+  const [sujo, setSujo] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  const [drawerNovoAberto, setDrawerNovoAberto] = useState(false);
+  const [executando, setExecutando] = useState(false);
+  const [execucaoVisivelId, setExecucaoVisivelId] = useState(null);
+
+  const fluxoAtivo = useMemo(
+    () => fluxos.find((f) => f.id === fluxoAtivoId) || null,
+    [fluxos, fluxoAtivoId]
+  );
+
+  const noSelecionado = useMemo(
+    () => nodes.find((n) => n.id === noSelecionadoId) || null,
+    [nodes, noSelecionadoId]
+  );
 
   useEffect(() => {
-    carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let ativo = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-when-param-changes
+    setCarregando(true);
+    Promise.all([
+      api.get(`/bots/${botId}`).catch(() => ({ data: null })),
+      api.get(`/builder/fluxos/${botId}`).catch(() => ({ data: [] })),
+    ])
+      .then(([respBot, respFluxos]) => {
+        if (!ativo) return;
+        setBot(respBot.data);
+        const lista = Array.isArray(respFluxos.data) ? respFluxos.data : [];
+        setFluxos(lista);
+        setFluxoAtivoId((atual) => atual ?? lista[0]?.id ?? null);
+      })
+      .finally(() => ativo && setCarregando(false));
+    return () => { ativo = false; };
   }, [botId]);
 
-  const carregar = async () => {
-    setCarregando(true);
+  useEffect(() => {
+    if (!fluxoAtivoId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on dep change
+      setCanvasInicial(ESTADO_INICIAL_CANVAS);
+      setSujo(false);
+      return;
+    }
+    let ativo = true;
+    setCarregandoCanvas(true);
+    api
+      .get(`/builder/fluxos/${fluxoAtivoId}/canvas`)
+      .then((resp) => {
+        if (!ativo) return;
+        setCanvasInicial({
+          nos: resp.data?.nos || [],
+          conexoes: resp.data?.conexoes || [],
+        });
+        setSujo(false);
+        setNoSelecionadoId(null);
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setCanvasInicial(ESTADO_INICIAL_CANVAS);
+        toast.error('Falha ao carregar o canvas.');
+      })
+      .finally(() => ativo && setCarregandoCanvas(false));
+    return () => { ativo = false; };
+  }, [fluxoAtivoId, toast]);
+
+  const trocarFluxo = (novoId) => {
+    if (sujo && !window.confirm('Ha mudancas nao salvas. Trocar de fluxo mesmo assim?')) return;
+    setFluxoAtivoId(novoId);
+  };
+
+  const criarFluxo = async (nome) => {
     try {
-      const [b, f] = await Promise.all([
-        api.get(`/bots/${botId}`).catch(() => ({ data: null })),
-        api.get(`/builder/flows/${botId}`).catch(() => ({ data: [] })),
-      ]);
-      setBot(b.data);
-      setFluxos(f.data || []);
-    } finally {
-      setCarregando(false);
+      const resp = await api.post('/builder/fluxos', { botId, nome });
+      setFluxos((atual) => [resp.data, ...atual]);
+      setFluxoAtivoId(resp.data.id);
+      setDrawerNovoAberto(false);
+      toast.success('Fluxo criado.');
+    } catch (erro) {
+      toast.error(erro.response?.data?.erro || 'Falha ao criar fluxo.');
     }
   };
 
+  const alterarMetaFluxo = async (mudancas) => {
+    if (!fluxoAtivoId) return;
+    try {
+      const resp = await api.put(`/builder/fluxos/${fluxoAtivoId}`, mudancas);
+      setFluxos((atual) =>
+        atual.map((f) => (f.id === fluxoAtivoId ? { ...f, ...resp.data } : f))
+      );
+    } catch (erro) {
+      toast.error(erro.response?.data?.erro || 'Falha ao atualizar fluxo.');
+    }
+  };
+
+  const excluirFluxo = async () => {
+    if (!fluxoAtivoId) return;
+    if (!window.confirm(`Excluir o fluxo "${fluxoAtivo?.nome}"? Esta acao nao pode ser desfeita.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/builder/fluxos/${fluxoAtivoId}`);
+      setFluxos((atual) => {
+        const novos = atual.filter((f) => f.id !== fluxoAtivoId);
+        setFluxoAtivoId(novos[0]?.id ?? null);
+        return novos;
+      });
+      toast.success('Fluxo excluido.');
+    } catch (erro) {
+      toast.error(erro.response?.data?.erro || 'Falha ao excluir fluxo.');
+    }
+  };
+
+  const salvarCanvas = useCallback(async () => {
+    if (!fluxoAtivoId) return;
+    setSalvando(true);
+    try {
+      const payload = reactFlowParaApi({ nodes, edges });
+      await api.put(`/builder/fluxos/${fluxoAtivoId}/canvas`, payload);
+      setSujo(false);
+      toast.success('Canvas salvo.');
+    } catch (erro) {
+      toast.error(erro.response?.data?.erro || 'Falha ao salvar canvas.');
+    } finally {
+      setSalvando(false);
+    }
+  }, [fluxoAtivoId, nodes, edges, toast]);
+
+  const executar = useCallback(async () => {
+    if (!fluxoAtivoId) return;
+    if (sujo && !window.confirm('Ha mudancas nao salvas. Executar com a versao salva mesmo assim?')) {
+      return;
+    }
+    setExecutando(true);
+    try {
+      const resp = await api.post(`/execucoes/fluxo/${fluxoAtivoId}`);
+      setExecucaoVisivelId(resp.data.execucaoId);
+      toast.info('Execucao enfileirada. O log atualiza ao vivo.');
+    } catch (erro) {
+      toast.error(erro.response?.data?.erro || 'Falha ao enfileirar execucao.');
+    } finally {
+      setExecutando(false);
+    }
+  }, [fluxoAtivoId, sujo, toast]);
+
+  const atualizarNo = useCallback((noAtualizado) => {
+    setNodes((ns) => ns.map((n) => (n.id === noAtualizado.id ? noAtualizado : n)));
+    setSujo(true);
+  }, []);
+
+  const excluirNo = useCallback((idNo) => {
+    setNodes((ns) => ns.filter((n) => n.id !== idNo));
+    setEdges((es) => es.filter((e) => e.source !== idNo && e.target !== idNo));
+    setNoSelecionadoId(null);
+    setSujo(true);
+  }, []);
+
+  if (carregando) {
+    return <div className="text-sm text-[var(--text-muted)]">Carregando...</div>;
+  }
+
   return (
-    <div className="space-y-5 max-w-[1200px]">
-      {/* Header com volta */}
+    <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Link to="/admin/bots">
           <Button variant="ghost" icon={ArrowLeft} size="sm">Voltar para bots</Button>
         </Link>
-      </div>
-
-      {/* Bot atual */}
-      <Card padding="lg">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
-            <Bot size={20} strokeWidth={1.75} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-semibold tracking-tight text-[var(--text-main)]">
-                {carregando ? 'Carregando...' : (bot?.nome || 'Bot nao encontrado')}
-              </h1>
-              {bot && <Badge variant="neutral">{bot.canal}</Badge>}
-            </div>
-            <p className="text-sm text-[var(--text-muted)] mt-1">
-              Construtor visual de fluxo de atendimento
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Aviso de roadmap */}
-      <Card padding="lg" className="border-[var(--accent-border)] bg-[var(--accent-soft)]/30">
-        <div className="flex items-start gap-3">
-          <Construction size={20} className="text-[var(--accent)] flex-shrink-0 mt-1" strokeWidth={1.75} />
-          <div className="flex-1">
-            <h2 className="text-base font-semibold tracking-tight text-[var(--text-main)]">
-              Construtor visual em desenvolvimento
-            </h2>
-            <p className="text-sm text-[var(--text-secondary)] mt-1.5 leading-relaxed">
-              A tela de canvas drag-and-drop completa (estilo n8n) esta no roadmap.
-              O engine proprio sera construido em 4 fases conforme escopo tecnico aprovado.
-              Por enquanto, a estrutura de fluxos abaixo ja esta no banco e pode ser
-              consumida pelo motor do bot.
-            </p>
-            <div className="flex gap-2 mt-3">
-              <Badge variant="success" size="sm" icon={CheckCircle2}>Backend pronto</Badge>
-              <Badge variant="warning" size="sm">Canvas: Fase 1</Badge>
-              <Badge variant="neutral" size="sm">Engine BullMQ: Fase 2</Badge>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Roadmap de Fases */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <FaseCard
-          numero="Fase 1"
-          duracao="4-6 semanas"
-          status="next"
-          titulo="MVP do canvas"
-          itens={[
-            'Auth + RBAC + Projects',
-            'CRUD de Workflow',
-            'Engine sincrono single-process',
-            '5 nos basicos: Manual, HTTP, IF, Set, Code',
-            'Canvas React Flow basico',
-          ]}
-        />
-        <FaseCard
-          numero="Fase 2"
-          duracao="3-4 semanas"
-          status="planned"
-          titulo="Execucao distribuida"
-          itens={[
-            'BullMQ + Worker separado',
-            'Webhook e Schedule triggers',
-            'Execution log com WebSocket',
-            'Sistema de credenciais com criptografia AES-256',
-          ]}
-        />
-        <FaseCard
-          numero="Fase 3"
-          duracao="4-6 semanas"
-          status="planned"
-          titulo="IA e integracoes"
-          itens={[
-            'Nos proprietarios do CRM',
-            'AI Agent + vector store (pgvector)',
-            'Chat trigger',
-            'WhatsApp (Meta Cloud API), Telegram',
-          ]}
-        />
-        <FaseCard
-          numero="Fase 4"
-          duracao="Continuo"
-          status="planned"
-          titulo="Recursos avancados"
-          itens={[
-            'Sub-workflows e error workflows',
-            'Retry policies avancadas',
-            'Versionamento + Git sync',
-            'Evaluations de IA',
-            'MCP server/client',
-          ]}
-        />
-      </div>
-
-      {/* Catalogo de nos do MVP */}
-      <Card padding="lg">
-        <CardHeader>
-          <div>
-            <CardTitle>Catalogo de nos do MVP</CardTitle>
-            <CardDescription>~27 nos + pacote proprietario do CRM</CardDescription>
-          </div>
-        </CardHeader>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          <CategoriaCard
-            icon={Webhook}
-            titulo="Triggers"
-            count={5}
-            cor="info"
-            nos={['Webhook', 'Schedule', 'Manual', 'Form', 'Chat']}
-          />
-          <CategoriaCard
-            icon={GitBranch}
-            titulo="Logica e Controle"
-            count={10}
-            cor="primary"
-            nos={['HTTP Request', 'IF', 'Switch', 'Merge', 'Loop', 'Set', 'Code', 'Wait', 'Respond', 'Sub-workflow']}
-          />
-          <CategoriaCard
-            icon={Filter}
-            titulo="Dados"
-            count={4}
-            cor="neutral"
-            nos={['Filter', 'Aggregate', 'Sort', 'Limit']}
-          />
-          <CategoriaCard
-            icon={MessageSquare}
-            titulo="Comunicacao"
-            count={4}
-            cor="success"
-            nos={['Email SMTP', 'WhatsApp', 'Telegram', 'Slack']}
-          />
-          <CategoriaCard
-            icon={Sparkles}
-            titulo="IA (LangChain)"
-            count={4}
-            cor="accent"
-            nos={['AI Agent', 'LLM Chain', 'Vector Store', 'Embeddings']}
-          />
-          <CategoriaCard
-            icon={Database}
-            titulo="CRM (custom)"
-            count="—"
-            cor="warning"
-            nos={['Nos proprietarios — diferencial competitivo']}
-          />
-        </div>
-      </Card>
-
-      {/* Fluxos ja cadastrados (do backend atual) */}
-      <Card padding="lg">
-        <CardHeader>
-          <div>
-            <CardTitle>Fluxos cadastrados</CardTitle>
-            <CardDescription>Estrutura ja existente no banco (modelo simples atual)</CardDescription>
-          </div>
-        </CardHeader>
-
-        {fluxos.length === 0 ? (
-          <div className="text-center py-8 border border-dashed border-[var(--border-main)] rounded-xl">
-            <Layers size={28} className="mx-auto text-[var(--text-muted)] opacity-50" strokeWidth={1.5} />
-            <p className="text-sm text-[var(--text-muted)] mt-3">Nenhum fluxo cadastrado para este bot</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {fluxos.map((f) => (
-              <div key={f.id} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border-main)]">
-                <Workflow size={16} className="text-[var(--text-secondary)]" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{f.name || f.nome}</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    {f.nodes?.length || 0} nos · {f.edges?.length || 0} conexoes · Gatilho: {f.triggerType || f.tipoGatilho}
-                  </div>
-                </div>
-                <Badge variant={f.isActive || f.ativo ? 'success' : 'neutral'} size="sm">
-                  {f.isActive || f.ativo ? 'Ativo' : 'Inativo'}
-                </Badge>
-              </div>
-            ))}
-          </div>
+        <div className="flex-1" />
+        {sujo && (
+          <Badge variant="warning" size="sm" icon={CircleAlert}>
+            Mudancas nao salvas
+          </Badge>
         )}
-      </Card>
+      </div>
 
-      {/* Stack proposta */}
-      <Card padding="lg">
-        <CardHeader>
-          <div>
-            <CardTitle>Stack proposta</CardTitle>
-            <CardDescription>Tecnologias do engine proprio</CardDescription>
-          </div>
-        </CardHeader>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-          <StackChip label="NestJS + Fastify" desc="HTTP + WS" />
-          <StackChip label="PostgreSQL 16" desc="JSONB + pgvector" />
-          <StackChip label="Redis 7 + BullMQ" desc="Filas e cache" />
-          <StackChip label="React 18 + React Flow" desc="Canvas" />
-          <StackChip label="isolated-vm" desc="Sandbox Code node" />
-          <StackChip label="OpenTelemetry + Pino" desc="Observabilidade" />
+      <CabecalhoBuilder
+        bot={bot}
+        fluxos={fluxos}
+        fluxoAtivo={fluxoAtivo}
+        sujo={sujo}
+        salvando={salvando}
+        executando={executando}
+        onTrocarFluxo={trocarFluxo}
+        onAbrirNovoFluxo={() => setDrawerNovoAberto(true)}
+        onSalvar={salvarCanvas}
+        onExecutar={executar}
+        onAlterarMeta={alterarMetaFluxo}
+        onExcluir={excluirFluxo}
+      />
+
+      {!fluxoAtivoId ? (
+        <Card padding="lg">
+          <EstadoSemFluxo onCriar={() => setDrawerNovoAberto(true)} />
+        </Card>
+      ) : (
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: '220px 1fr 320px', height: 'calc(100vh - 280px)', minHeight: 540 }}
+        >
+          <Card padding="sm" className="overflow-y-auto">
+            <PaletaNos />
+          </Card>
+
+          <Card padding="none" className="overflow-hidden relative">
+            {carregandoCanvas ? (
+              <div className="h-full flex items-center justify-center text-sm text-[var(--text-muted)]">
+                Carregando canvas...
+              </div>
+            ) : (
+              <CanvasFluxo
+                fluxoId={fluxoAtivoId}
+                canvasInicial={canvasInicial}
+                noSelecionadoId={noSelecionadoId}
+                onSelecionarNo={setNoSelecionadoId}
+                onAlterarNos={setNodes}
+                onAlterarConexoes={setEdges}
+                onSujo={() => setSujo(true)}
+              />
+            )}
+          </Card>
+
+          <Card padding="md" className="overflow-y-auto">
+            <PainelPropriedades
+              no={noSelecionado}
+              fluxoId={fluxoAtivoId}
+              onAlterar={atualizarNo}
+              onExcluir={excluirNo}
+            />
+          </Card>
         </div>
-      </Card>
+      )}
+
+      <DrawerNovoFluxo
+        isOpen={drawerNovoAberto}
+        onClose={() => setDrawerNovoAberto(false)}
+        onCriar={criarFluxo}
+      />
+
+      <DrawerExecucao
+        isOpen={!!execucaoVisivelId}
+        onClose={() => setExecucaoVisivelId(null)}
+        execucaoId={execucaoVisivelId}
+      />
     </div>
   );
 }
 
-function FaseCard({ numero, duracao, status, titulo, itens }) {
-  const statusCfg = {
-    next: { label: 'Proxima', variant: 'accent' },
-    planned: { label: 'Planejado', variant: 'neutral' },
-    done: { label: 'Concluida', variant: 'success' },
-  };
-  const s = statusCfg[status] || statusCfg.planned;
-
+function CabecalhoBuilder({
+  bot, fluxos, fluxoAtivo, sujo, salvando, executando,
+  onTrocarFluxo, onAbrirNovoFluxo, onSalvar, onExecutar, onAlterarMeta, onExcluir,
+}) {
   return (
-    <Card padding="lg">
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{numero}</div>
-          <h3 className="text-base font-semibold tracking-tight text-[var(--text-main)] mt-0.5">{titulo}</h3>
-          <div className="text-xs text-[var(--text-muted)] mt-0.5">{duracao}</div>
+    <Card padding="md">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+          <Bot size={18} strokeWidth={1.75} />
         </div>
-        <Badge variant={s.variant} size="sm">{s.label}</Badge>
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+            Bot
+          </div>
+          <div className="text-sm font-semibold text-[var(--text-main)] truncate">
+            {bot?.nome || '—'}
+          </div>
+        </div>
+
+        <div className="w-px h-8 bg-[var(--border-main)] mx-2" />
+
+        <div className="min-w-[240px] flex-1 max-w-sm">
+          <Select
+            size="sm"
+            value={fluxoAtivo?.id || ''}
+            onChange={(e) => onTrocarFluxo(e.target.value)}
+            options={fluxos.map((f) => ({
+              value: f.id,
+              label: `${f.nome}${f.ativo ? ' · ativo' : ''}`,
+            }))}
+            placeholder={fluxos.length ? 'Selecione um fluxo' : 'Nenhum fluxo'}
+          />
+        </div>
+
+        <Button variant="secondary" size="sm" icon={Plus} onClick={onAbrirNovoFluxo}>
+          Novo fluxo
+        </Button>
+
+        <div className="flex-1" />
+
+        {fluxoAtivo && (
+          <>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--border-main)]">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Ativo</span>
+              <Switch
+                checked={!!fluxoAtivo.ativo}
+                onChange={(v) => onAlterarMeta({ ativo: v })}
+              />
+            </div>
+            <Button
+              variant="accent"
+              size="sm"
+              icon={Play}
+              loading={executando}
+              onClick={onExecutar}
+            >
+              Executar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Save}
+              loading={salvando}
+              disabled={!sujo}
+              onClick={onSalvar}
+            >
+              Salvar
+            </Button>
+            <IconButton
+              icon={Trash2}
+              variant="danger"
+              size="sm"
+              ariaLabel="Excluir fluxo"
+              onClick={onExcluir}
+            />
+          </>
+        )}
       </div>
-      <ul className="space-y-1.5">
-        {itens.map((item) => (
-          <li key={item} className="flex items-start gap-2 text-xs text-[var(--text-secondary)]">
-            <div className="w-1 h-1 rounded-full bg-[var(--text-muted)] mt-1.5 flex-shrink-0" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
     </Card>
   );
 }
 
-function CategoriaCard({ icon: Icon, titulo, count, nos, cor }) {
-  const corMap = {
-    info: 'bg-[var(--info-soft)] text-[var(--info)]',
-    primary: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-    success: 'bg-[var(--success-soft)] text-[var(--success)]',
-    accent: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
-  };
-
+function EstadoSemFluxo({ onCriar }) {
   return (
-    <div className="border border-[var(--border-main)] rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${corMap[cor]}`}>
-          <Icon size={14} strokeWidth={1.75} />
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{titulo}</div>
-          <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{count} {typeof count === 'number' ? 'nos' : ''}</div>
-        </div>
-      </div>
-      <div className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-        {nos.join(' · ')}
+    <div className="text-center py-12">
+      <Workflow size={36} strokeWidth={1.5} className="mx-auto text-[var(--text-muted)] opacity-50" />
+      <h3 className="text-base font-semibold tracking-tight text-[var(--text-main)] mt-4">
+        Nenhum fluxo cadastrado
+      </h3>
+      <p className="text-sm text-[var(--text-muted)] mt-1.5 max-w-md mx-auto">
+        Crie o primeiro fluxo deste bot para comecar a montar o canvas com {Object.keys(CATALOGO_NOS).length} tipos de no.
+      </p>
+      <div className="mt-5">
+        <Button variant="accent" icon={Plus} onClick={onCriar}>
+          Criar fluxo
+        </Button>
       </div>
     </div>
   );
 }
 
-function StackChip({ label, desc }) {
+function DrawerNovoFluxo({ isOpen, onClose, onCriar }) {
+  const [nome, setNome] = useState('');
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa form ao fechar
+    if (!isOpen) setNome('');
+  }, [isOpen]);
+
+  const submeter = (e) => {
+    e.preventDefault();
+    const limpo = nome.trim();
+    if (limpo.length < 2) return;
+    onCriar(limpo);
+  };
+
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-subtle)]">
-      <div>
-        <div className="text-xs font-semibold text-[var(--text-main)]">{label}</div>
-        <div className="text-[10px] text-[var(--text-muted)]">{desc}</div>
-      </div>
-    </div>
+    <Drawer
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Novo fluxo"
+      description="Cada fluxo e disparado por um gatilho proprio do bot."
+      size="md"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="accent" onClick={submeter} disabled={nome.trim().length < 2}>
+            Criar
+          </Button>
+        </div>
+      }
+    >
+      <form onSubmit={submeter} className="space-y-4">
+        <Input
+          label="Nome do fluxo"
+          autoFocus
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="ex.: Atendimento inicial"
+          maxLength={200}
+        />
+        <p className="text-xs text-[var(--text-muted)]">
+          Voce podera ajustar o gatilho e ativar o fluxo apos criado.
+        </p>
+      </form>
+    </Drawer>
   );
 }

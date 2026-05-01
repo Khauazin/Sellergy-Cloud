@@ -41,7 +41,7 @@ export default function LoginPage({ isAdmin = true }) {
               <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
             </div>
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
-              BotManager
+              Sellergy Cloud
             </span>
           </Link>
 
@@ -66,7 +66,7 @@ export default function LoginPage({ isAdmin = true }) {
               label="E-mail"
               type="email"
               icon={Mail}
-              placeholder="admin@botmanager.com"
+              placeholder="admin@sellergy.cloud"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"

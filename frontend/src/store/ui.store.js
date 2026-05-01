@@ -11,7 +11,7 @@ export const useUiStore = create(
       setTheme: (theme) => set({ theme }),
     }),
     {
-      name: 'botmanager-ui-storage',
+      name: 'sellergy-ui-storage',
     }
   )
 );

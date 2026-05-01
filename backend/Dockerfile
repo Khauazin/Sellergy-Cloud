@@ -2,8 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Instala OpenSSL (necessário para o Prisma funcionar no Alpine)
-RUN apk add --no-cache openssl
+# OpenSSL (Prisma) + toolchain para compilar isolated-vm e outros addons nativos.
+RUN apk add --no-cache openssl python3 make g++ linux-headers
 
 # Copia package.json e package-lock.json (se existir)
 COPY package*.json ./

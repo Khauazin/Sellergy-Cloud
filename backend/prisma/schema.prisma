@@ -13,49 +13,50 @@ datasource db {
 // ==========================================
 
 model Usuario {
-  id              String   @id @default(uuid())
+  id              String     @id @default(uuid())
   nome            String
-  email           String   @unique
+  email           String     @unique
   senha           String
-  perfil          Perfil   @default(ADMIN)
-  permissoes      Json?    @default("{}")
-  deveTrocarSenha Boolean  @default(false)
-  foto            String?  // URL ou data-URL base64 da foto pessoal
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
+  perfil          Perfil     @default(ADMIN)
+  permissoes      Json?      @default("{}")
+  deveTrocarSenha Boolean    @default(false)
+  foto            String? // URL ou data-URL base64 da foto pessoal
+  criadoEm        DateTime   @default(now())
+  atualizadoEm    DateTime   @updatedAt
   clienteId       String?
   alertas         Alerta[]
-  cliente         Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  cliente         Cliente?   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  execucoes       Execucao[]
 
   @@map("usuarios")
 }
 
 model Cliente {
-  id                    String                @id @default(uuid())
-  nome                  String
-  email                 String?               @unique
-  telefone              String?
-  segmento              String?
-  plano                 Plano                 @default(BASIC)
-  status                StatusCliente         @default(ACTIVE)
-  mensalidade           Float                 @default(0)
-  observacoes           String?
-  modulosLiberados      Json                  @default("{}")
-  brandLogo             String?               // URL ou data-URL base64 do logo
-  brandNome             String?               // Nome customizado que substitui "BotManager" no menu
-  criadoEm              DateTime              @default(now())
-  atualizadoEm          DateTime              @updatedAt
-  alertas               Alerta[]
-  agendamentos          Agendamento[]
-  bots                  Bot[]
-  etapasLead            EtapaLead[]
-  leads                 Lead[]
-  vendas                Venda[]
-  usuarios              Usuario[]
-  produtos              Produto[]
+  id                     String                 @id @default(uuid())
+  nome                   String
+  email                  String?                @unique
+  telefone               String?
+  segmento               String?
+  plano                  Plano                  @default(BASIC)
+  status                 StatusCliente          @default(ACTIVE)
+  mensalidade            Float                  @default(0)
+  observacoes            String?
+  modulosLiberados       Json                   @default("{}")
+  brandLogo              String? // URL ou data-URL base64 do logo
+  brandNome              String? // Nome customizado que substitui "Sellergy Cloud" no menu
+  criadoEm               DateTime               @default(now())
+  atualizadoEm           DateTime               @updatedAt
+  alertas                Alerta[]
+  agendamentos           Agendamento[]
+  bots                   Bot[]
+  etapasLead             EtapaLead[]
+  leads                  Lead[]
+  vendas                 Venda[]
+  usuarios               Usuario[]
+  produtos               Produto[]
   lancamentosFinanceiros LancamentoFinanceiro[]
-  categoriasFinanceiras CategoriaFinanceira[]
-  saldosHistorico       SaldoHistorico[]
+  categoriasFinanceiras  CategoriaFinanceira[]
+  saldosHistorico        SaldoHistorico[]
 
   @@map("clientes")
 }
@@ -77,58 +78,62 @@ model SaldoHistorico {
 // ==========================================
 
 model Bot {
-  id                String         @id @default(uuid())
+  id                String        @id @default(uuid())
   clienteId         String
   nome              String
-  canal             Canal          @default(WHATSAPP)
-  status            StatusBot      @default(OFFLINE)
+  canal             Canal         @default(WHATSAPP)
+  status            StatusBot     @default(OFFLINE)
   telefone          String?
-  totalMensagens    Int            @default(0)
-  mensagensHoje     Int            @default(0)
+  totalMensagens    Int           @default(0)
+  mensagensHoje     Int           @default(0)
   ultimaAtividadeEm DateTime?
-  criadoEm          DateTime       @default(now())
-  atualizadoEm      DateTime       @updatedAt
+  criadoEm          DateTime      @default(now())
+  atualizadoEm      DateTime      @updatedAt
   modeloIa          String?
   provedorIa        ProvedorIA?
   promptSistemaIa   String?
-  temperaturaIa     Float?         @default(0.7)
+  temperaturaIa     Float?        @default(0.7)
   apiKeyIa          String?
   alertas           Alerta[]
   variaveis         VariavelBot[]
-  cliente           Cliente        @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  cliente           Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   fluxos            Fluxo[]
 
   @@map("bots")
 }
 
 model VariavelBot {
-  id           String   @id @default(uuid())
+  id           String       @id @default(uuid())
   botId        String
   chave        String
   valor        String
   descricao    String?
   tipo         TipoVariavel @default(TEXT)
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
-  bot          Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   @@unique([botId, chave])
   @@map("bot_variaveis")
 }
 
 model Fluxo {
-  id                  String      @id @default(uuid())
+  id                  String             @id @default(uuid())
   botId               String
   nome                String
-  ativo               Boolean     @default(false)
-  tipoGatilho         TipoGatilho @default(KEYWORD)
+  ativo               Boolean            @default(false)
+  tipoGatilho         TipoGatilho        @default(KEYWORD)
   palavraChaveGatilho String?
-  criadoEm            DateTime    @default(now())
-  atualizadoEm        DateTime    @updatedAt
+  criadoEm            DateTime           @default(now())
+  atualizadoEm        DateTime           @updatedAt
   conexoes            Conexao[]
-  bot                 Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                 Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
   nos                 No[]
+  execucoes           Execucao[]
+  webhooks            Webhook[]
+  agendamentosFluxo   AgendamentoFluxo[]
 
+  @@index([botId])
   @@map("fluxos")
 }
 
@@ -143,19 +148,104 @@ model No {
   atualizadoEm DateTime @updatedAt
   fluxo        Fluxo    @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
 
+  @@index([fluxoId])
   @@map("nos")
 }
 
 model Conexao {
-  id              String   @id
-  fluxoId         String
-  noOrigemId      String
-  noDestinoId     String
-  pontoOrigem     String?
-  criadoEm        DateTime @default(now())
-  fluxo           Fluxo    @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+  id          String   @id
+  fluxoId     String
+  noOrigemId  String
+  noDestinoId String
+  pontoOrigem String?
+  criadoEm    DateTime @default(now())
+  fluxo       Fluxo    @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
 
+  @@index([fluxoId])
   @@map("conexoes")
+}
+
+// ==========================================
+// EXECUCAO DE FLUXOS (Engine)
+// ==========================================
+
+model Execucao {
+  id            String         @id @default(uuid())
+  fluxoId       String
+  status        StatusExecucao @default(PENDENTE)
+  modo          ModoExecucao   @default(MANUAL)
+  iniciadaEm    DateTime       @default(now())
+  finalizadaEm  DateTime?
+  duracaoMs     Int?
+  dadosGatilho  Json?
+  erro          String?
+  iniciadaPorId String?
+  noTriggerId   String?
+
+  fluxo       Fluxo        @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+  iniciadaPor Usuario?     @relation(fields: [iniciadaPorId], references: [id], onDelete: SetNull)
+  nos         ExecucaoNo[]
+
+  @@index([fluxoId, iniciadaEm(sort: Desc)])
+  @@index([status])
+  @@map("execucoes")
+}
+
+model Webhook {
+  id              String    @id @default(uuid())
+  fluxoId         String
+  noId            String    @unique
+  segredo         String
+  ativo           Boolean   @default(true)
+  exigirHmac      Boolean   @default(false)
+  descricao       String?
+  ultimaChamadaEm DateTime?
+  totalChamadas   Int       @default(0)
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+
+  fluxo Fluxo @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+
+  @@index([fluxoId])
+  @@map("webhooks")
+}
+
+model AgendamentoFluxo {
+  id               String    @id @default(uuid())
+  fluxoId          String
+  noId             String    @unique
+  expressaoCron    String
+  fusoHorario      String    @default("America/Sao_Paulo")
+  ativo            Boolean   @default(true)
+  ultimoDisparoEm  DateTime?
+  proximoDisparoEm DateTime?
+  totalDisparos    Int       @default(0)
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  fluxo Fluxo @relation(fields: [fluxoId], references: [id], onDelete: Cascade)
+
+  @@index([fluxoId])
+  @@map("agendamentos_fluxo")
+}
+
+model ExecucaoNo {
+  id           String         @id @default(uuid())
+  execucaoId   String
+  noId         String
+  tipo         TipoNo
+  status       StatusExecucao @default(PENDENTE)
+  iniciadoEm   DateTime       @default(now())
+  finalizadoEm DateTime?
+  duracaoMs    Int?
+  entrada      Json?
+  saida        Json?
+  erro         String?
+
+  execucao Execucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+
+  @@index([execucaoId])
+  @@map("execucoes_nos")
 }
 
 // ==========================================
@@ -177,51 +267,51 @@ model EtapaLead {
 }
 
 model Lead {
-  id                    String                 @id @default(uuid())
-  clienteId             String
-  etapaId               String?
-  nome                  String
-  telefone              String?
-  email                 String?
-  valor                 Float?
-  observacoes           String?
-  ultimoContato         DateTime?
-  criadoEm              DateTime               @default(now())
-  atualizadoEm          DateTime               @updatedAt
-  tags                  String?
-  prioridade            Prioridade             @default(MEDIUM)
-  origem                String?
-  agendamentos          Agendamento[]
-  historico             HistoricoLead[]
-  cliente               Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  etapa                 EtapaLead?             @relation(fields: [etapaId], references: [id])
-  mensagens             Mensagem[]
-  vendas                Venda[]
+  id                     String                 @id @default(uuid())
+  clienteId              String
+  etapaId                String?
+  nome                   String
+  telefone               String?
+  email                  String?
+  valor                  Float?
+  observacoes            String?
+  ultimoContato          DateTime?
+  criadoEm               DateTime               @default(now())
+  atualizadoEm           DateTime               @updatedAt
+  tags                   String?
+  prioridade             Prioridade             @default(MEDIUM)
+  origem                 String?
+  agendamentos           Agendamento[]
+  historico              HistoricoLead[]
+  cliente                Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  etapa                  EtapaLead?             @relation(fields: [etapaId], references: [id])
+  mensagens              Mensagem[]
+  vendas                 Venda[]
   lancamentosFinanceiros LancamentoFinanceiro[]
 
   @@map("leads")
 }
 
 model HistoricoLead {
-  id           String   @id @default(uuid())
-  leadId       String
-  acao         String
-  deEtapa      String?
-  paraEtapa    String?
-  observacoes  String?
-  criadoEm     DateTime @default(now())
-  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  leadId      String
+  acao        String
+  deEtapa     String?
+  paraEtapa   String?
+  observacoes String?
+  criadoEm    DateTime @default(now())
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("lead_historico")
 }
 
 model Mensagem {
-  id        String   @id @default(uuid())
-  leadId    String
-  conteudo  String
-  doBot     Boolean  @default(false)
-  criadoEm  DateTime @default(now())
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id       String   @id @default(uuid())
+  leadId   String
+  conteudo String
+  doBot    Boolean  @default(false)
+  criadoEm DateTime @default(now())
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("mensagens")
 }
@@ -249,20 +339,20 @@ model Agendamento {
 }
 
 model Venda {
-  id                    String                @id @default(uuid())
-  clienteId             String
-  leadId                String?
-  valor                 Float
-  metodoPagamento       String?
-  status                StatusVenda           @default(COMPLETED)
-  descricao             String?
-  data                  DateTime              @default(now())
-  criadoEm              DateTime              @default(now())
-  atualizadoEm          DateTime              @updatedAt
-  cliente               Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  lead                  Lead?                 @relation(fields: [leadId], references: [id])
+  id                     String                 @id @default(uuid())
+  clienteId              String
+  leadId                 String?
+  valor                  Float
+  metodoPagamento        String?
+  status                 StatusVenda            @default(COMPLETED)
+  descricao              String?
+  data                   DateTime               @default(now())
+  criadoEm               DateTime               @default(now())
+  atualizadoEm           DateTime               @updatedAt
+  cliente                Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead                   Lead?                  @relation(fields: [leadId], references: [id])
   lancamentosFinanceiros LancamentoFinanceiro[]
-  movimentacoesEstoque  MovimentacaoEstoque[]
+  movimentacoesEstoque   MovimentacaoEstoque[]
 
   @@map("vendas")
 }
@@ -272,15 +362,15 @@ model Venda {
 // ==========================================
 
 model Produto {
-  id            String              @id @default(uuid())
-  clienteId     String
-  categoriaId   String?
-  nome          String
-  descricao     String?
-  tipo          TipoProduto         @default(FISICO)
-  visibilidade  VisibilidadeProduto @default(ATIVO)
-  criadoEm      DateTime            @default(now())
-  atualizadoEm  DateTime            @updatedAt
+  id           String              @id @default(uuid())
+  clienteId    String
+  categoriaId  String?
+  nome         String
+  descricao    String?
+  tipo         TipoProduto         @default(FISICO)
+  visibilidade VisibilidadeProduto @default(ATIVO)
+  criadoEm     DateTime            @default(now())
+  atualizadoEm DateTime            @updatedAt
 
   cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   categoria CategoriaFinanceira? @relation(fields: [categoriaId], references: [id])
@@ -290,20 +380,20 @@ model Produto {
 }
 
 model VariacaoProduto {
-  id                 String   @id @default(uuid())
-  produtoId          String
-  nome               String // Ex: "Tamanho P", "Cor Azul"
-  sku                String?  @unique
-  preco              Float // Preço de Venda (estoque)
-  precoCatalogo      Float?   // Preço alternativo exibido no catálogo público
-  usarPrecoCatalogo  Boolean  @default(false) // Quando true, vendas/agenda usam precoCatalogo
-  precoCusto         Float?   @default(0) // Preço de Compra
-  estoqueAtual       Int      @default(0)
-  estoqueMinimo      Int?     @default(0)
-  estoqueIdeal       Int?     @default(0)
-  localizacao        String?
-  criadoEm           DateTime @default(now())
-  atualizadoEm       DateTime @updatedAt
+  id                String   @id @default(uuid())
+  produtoId         String
+  nome              String // Ex: "Tamanho P", "Cor Azul"
+  sku               String?  @unique
+  preco             Float // Preço de Venda (estoque)
+  precoCatalogo     Float? // Preço alternativo exibido no catálogo público
+  usarPrecoCatalogo Boolean  @default(false) // Quando true, vendas/agenda usam precoCatalogo
+  precoCusto        Float?   @default(0) // Preço de Compra
+  estoqueAtual      Int      @default(0)
+  estoqueMinimo     Int?     @default(0)
+  estoqueIdeal      Int?     @default(0)
+  localizacao       String?
+  criadoEm          DateTime @default(now())
+  atualizadoEm      DateTime @updatedAt
 
   produto       Produto               @relation(fields: [produtoId], references: [id], onDelete: Cascade)
   movimentacoes MovimentacaoEstoque[]
@@ -325,7 +415,7 @@ model MovimentacaoEstoque {
   data       DateTime         @default(now())
 
   variacao VariacaoProduto @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
-  venda    Venda?           @relation(fields: [vendaId], references: [id])
+  venda    Venda?          @relation(fields: [vendaId], references: [id])
 
   @@map("movimentacoes_estoque")
 }
@@ -376,20 +466,20 @@ model CategoriaFinanceira {
 }
 
 model Alerta {
-  id           String      @id @default(uuid())
+  id           String       @id @default(uuid())
   botId        String
   clienteId    String
   usuarioId    String?
-  severidade   Severidade  @default(ERROR)
+  severidade   Severidade   @default(ERROR)
   titulo       String
   mensagem     String
   status       StatusAlerta @default(OPEN)
   resolvidoEm  DateTime?
-  criadoEm     DateTime    @default(now())
-  atualizadoEm DateTime    @updatedAt
-  bot          Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
-  cliente      Cliente     @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  usuario      Usuario?    @relation(fields: [usuarioId], references: [id])
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  cliente      Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  usuario      Usuario?     @relation(fields: [usuarioId], references: [id])
 
   @@map("alertas")
 }
@@ -457,6 +547,28 @@ enum TipoNo {
   DELAY
   HTTP_REQUEST
   UPDATE_LEAD
+  // Nos do MVP do engine de workflows (Fase 1)
+  MANUAL
+  IF
+  SET
+  CODE
+  // Triggers da Fase 2
+  WEBHOOK
+  SCHEDULE
+}
+
+enum StatusExecucao {
+  PENDENTE
+  EM_EXECUCAO
+  SUCESSO
+  ERRO
+  CANCELADA
+}
+
+enum ModoExecucao {
+  MANUAL
+  WEBHOOK
+  SCHEDULE
 }
 
 enum TipoVariavel {

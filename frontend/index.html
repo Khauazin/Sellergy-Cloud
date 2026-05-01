@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BotManager — Painel de Controle</title>
+    <title>Sellergy Cloud — Painel de Controle</title>
 
     <!-- Desabilita extensoes que injetam overlay (Grammarly, LanguageTool, etc.) -->
     <meta name="grammarly" content="false" />
@@ -20,7 +20,7 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem('botmanager-ui-storage');
+          var stored = localStorage.getItem('sellergy-ui-storage');
           var parsed = stored ? JSON.parse(stored) : null;
           var theme = parsed?.state?.theme ?? 'light';
           if (theme === 'dark') {

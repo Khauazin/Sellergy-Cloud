@@ -34,7 +34,7 @@ export default function AlertsPage() {
 
   // Socket.IO real-time
   useEffect(() => {
-    const token = localStorage.getItem('@botmanager:token');
+    const token = localStorage.getItem('@sellergy:token');
     const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333', { auth: { token } });
 
     socket.on('novo_alerta', (a) => {
