@@ -1,4 +1,4 @@
-// Filas BullMQ do BotManager (Sub-fase 2.1).
+// Filas BullMQ do Sellergy Cloud (Sub-fase 2.1).
 // O backend HTTP enfileira jobs aqui; o processo `worker.js` os processa.
 
 const { Queue } = require('bullmq');

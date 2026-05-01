@@ -1,5 +1,5 @@
 /**
- * Middlewares de autorizacao do BotManager.
+ * Middlewares de autorizacao do Sellergy Cloud.
  *
  * Hierarquia:
  *   ADMIN          -> dono do sistema, acesso global, ignora modulosLiberados.

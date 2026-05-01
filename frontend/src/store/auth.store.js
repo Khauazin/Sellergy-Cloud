@@ -3,8 +3,8 @@ import api from '../services/api';
 
 export const useAuthStore = create((set, get) => ({
   user: null,
-  token: localStorage.getItem('@botmanager:token') || null,
-  isAuthenticated: !!localStorage.getItem('@botmanager:token'),
+  token: localStorage.getItem('@sellergy:token') || null,
+  isAuthenticated: !!localStorage.getItem('@sellergy:token'),
   isLoading: false,
   isCheckingAuth: true,
   error: null,
@@ -15,7 +15,7 @@ export const useAuthStore = create((set, get) => ({
       const response = await api.post('/autenticacao/login', { email, senha });
       const { usuario, token } = response.data;
 
-      localStorage.setItem('@botmanager:token', token);
+      localStorage.setItem('@sellergy:token', token);
       set({ user: usuario, token, isAuthenticated: true, isLoading: false });
 
       // Reforca o estado com /perfil para garantir modulosLiberados, branding, foto etc.
@@ -35,12 +35,12 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('@botmanager:token');
+    localStorage.removeItem('@sellergy:token');
     set({ user: null, token: null, isAuthenticated: false });
   },
 
   checkAuth: async () => {
-    const token = localStorage.getItem('@botmanager:token');
+    const token = localStorage.getItem('@sellergy:token');
     if (!token) {
       set({ isAuthenticated: false, isCheckingAuth: false });
       return;
@@ -50,7 +50,7 @@ export const useAuthStore = create((set, get) => ({
       const response = await api.get('/autenticacao/perfil');
       set({ user: response.data, isAuthenticated: true, isCheckingAuth: false });
     } catch (error) {
-      localStorage.removeItem('@botmanager:token');
+      localStorage.removeItem('@sellergy:token');
       set({ user: null, token: null, isAuthenticated: false, isCheckingAuth: false });
     }
   },

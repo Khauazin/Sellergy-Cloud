@@ -1,7 +1,7 @@
 {
-  "name": "botmanager-backend",
+  "name": "sellergy-backend",
   "version": "1.0.0",
-  "description": "API do BotManager",
+  "description": "API do Sellergy Cloud",
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",

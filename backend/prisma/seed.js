@@ -10,11 +10,11 @@ async function main() {
   const senhaHash = await bcrypt.hash('admin123', 10);
 
   const admin = await prisma.usuario.upsert({
-    where: { email: 'admin@botmanager.com' },
+    where: { email: 'admin@sellergy.cloud' },
     update: { senha: senhaHash },
     create: {
       nome: 'Administrador',
-      email: 'admin@botmanager.com',
+      email: 'admin@sellergy.cloud',
       senha: senhaHash,
       perfil: 'ADMIN'
     }

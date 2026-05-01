@@ -41,7 +41,7 @@ export default function ClientLoginPage() {
               <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
             </div>
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
-              BotManager
+              Sellergy Cloud
             </span>
           </Link>
 
@@ -73,7 +73,7 @@ export default function ClientLoginPage() {
               <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
             </div>
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
-              BotManager
+              Sellergy Cloud
             </span>
           </Link>
 

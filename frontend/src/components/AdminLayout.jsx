@@ -91,5 +91,5 @@ export default function AdminLayout() {
 function resolveDinamico(path) {
   if (path.startsWith('/admin/clientes/')) return { titulo: 'Detalhes do cliente', breadcrumb: 'Clientes' };
   if (path.startsWith('/admin/builder/')) return { titulo: 'Construtor de fluxo', breadcrumb: 'Bots' };
-  return { titulo: 'BotManager', breadcrumb: 'Admin' };
+  return { titulo: 'Sellergy Cloud', breadcrumb: 'Admin' };
 }

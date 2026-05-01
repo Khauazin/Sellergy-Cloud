@@ -35,7 +35,7 @@ export default function Sidebar({ sections = [], mobileOpen = false, onClose, fo
         </div>
         <div className="overflow-hidden flex-1 min-w-0 opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 delay-75">
           <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight leading-tight whitespace-nowrap">
-            {branding?.nome || 'BotManager'}
+            {branding?.nome || 'Sellergy Cloud'}
           </div>
           <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider leading-tight whitespace-nowrap">
             Plataforma

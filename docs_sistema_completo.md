@@ -1,12 +1,12 @@
-# Documentação Completa do Sistema - BotManager
+# Documentação Completa do Sistema - Sellergy Cloud
 
-Este documento detalha as funcionalidades, APIs e a estrutura do frontend do sistema BotManager, servindo como guia para a profissionalização e otimização da plataforma.
+Este documento detalha as funcionalidades, APIs e a estrutura do frontend do sistema Sellergy Cloud, servindo como guia para a profissionalização e otimização da plataforma.
 
 ---
 
 ## 1. Visão Geral do Sistema
 
-O **BotManager** é uma plataforma integrada de gestão empresarial e automação de atendimento. Ele une um CRM inteligente, automação de bots com IA, gestão de estoque e um módulo financeiro robusto.
+O **Sellergy Cloud** é uma plataforma integrada de gestão empresarial e automação de atendimento. Ele une um CRM inteligente, automação de bots com IA, gestão de estoque e um módulo financeiro robusto.
 
 ---
 

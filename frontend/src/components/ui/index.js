@@ -1,4 +1,4 @@
-// Barrel exports do design system BotManager v2.
+// Barrel exports do design system Sellergy Cloud v2.
 // Importe assim:
 //   import { Button, Input, Card, useToast } from '../components/ui';
 

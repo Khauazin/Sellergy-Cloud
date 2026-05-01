@@ -34,7 +34,7 @@ export default function DesignShowcasePage() {
             Design System
           </h1>
           <p className="text-sm text-[var(--text-muted)] mt-1.5 max-w-xl leading-relaxed">
-            Catalogo de tokens e primitivos do BotManager. Use esta pagina para revisar consistencia visual, contraste e comportamento em light e dark.
+            Catalogo de tokens e primitivos do Sellergy Cloud. Use esta pagina para revisar consistencia visual, contraste e comportamento em light e dark.
           </p>
         </div>
         <div className="flex items-center gap-2">

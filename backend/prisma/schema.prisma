@@ -43,7 +43,7 @@ model Cliente {
   observacoes            String?
   modulosLiberados       Json                   @default("{}")
   brandLogo              String? // URL ou data-URL base64 do logo
-  brandNome              String? // Nome customizado que substitui "BotManager" no menu
+  brandNome              String? // Nome customizado que substitui "Sellergy Cloud" no menu
   criadoEm               DateTime               @default(now())
   atualizadoEm           DateTime               @updatedAt
   alertas                Alerta[]

@@ -60,7 +60,7 @@ export default function ClientLayout() {
     return result;
   }, [modulosLiberados]);
 
-  const meta = TITULOS[location.pathname] || { titulo: 'BotManager', breadcrumb: '' };
+  const meta = TITULOS[location.pathname] || { titulo: 'Sellergy Cloud', breadcrumb: '' };
 
   return (
     <div className="min-h-screen bg-[var(--bg-app)]">
