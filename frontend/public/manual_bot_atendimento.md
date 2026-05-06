@@ -255,23 +255,67 @@ A "memória" do bot (saber em qual etapa está) fica salva numa "ficha" da conve
                 └─ default  → [Enviar "ja cadastrei voce!"]
 ```
 
-#### Configurando o nó Switch
+#### O que é um "caso" no Switch?
 
-Clica no nó **Switch** e preenche:
+Pensa no Switch como um **porteiro de prédio**. Quando alguém chega, ele olha um crachá da pessoa e decide: "vai pro 1º andar", "vai pro 2º", "vai pro 3º". Cada andar é um **caso**.
 
-| Campo | Valor |
-|---|---|
-| Expressão | `{{dadosGatilho.estado.passo}}` |
-| Casos | adiciona 4 casos: |
+No nosso bot:
+- A "expressão" é o crachá da conversa: `{{dadosGatilho.estado.passo}}` — ou seja, **em qual etapa essa conversa está**.
+- Cada **caso** é um valor possível desse crachá, e cada um leva pra um caminho diferente do fluxo.
 
-| valor | label (opcional) |
-|---|---|
-| *(deixa vazio)* | `inicio` |
-| `NOME` | |
-| `CPF` | |
-| `EMAIL` | |
+Pra esse fluxo de pré-cadastro, a "etapa" pode estar em **5 estados possíveis**:
 
-> Quando você adiciona/remove casos, **as bolinhas de saída do nó no canvas mudam automaticamente**. Cada caso vira uma saída labelada — você liga ela ao próximo bloco do caminho dela. A saída `default` aparece sempre no fim — é pra "nenhum caso bateu" (ex.: cliente já está em `passo=PRONTO`).
+| Estado da conversa | Significado | O bot deve fazer |
+|---|---|---|
+| *vazio* (cliente novo) | acabou de chegar | pedir o nome |
+| `NOME` | pediu o nome, espera resposta | salvar resposta como nome, pedir CPF |
+| `CPF` | pediu o CPF, espera resposta | salvar como CPF, pedir email |
+| `EMAIL` | pediu o email, espera resposta | salvar, criar lead, agradecer |
+| qualquer outro (ex.: `PRONTO`) | já cadastrado | mandar mensagem de "já está cadastrado" |
+
+Esses 5 estados viram **4 casos + 1 default** no Switch (o último vira o default porque cobre "qualquer outro valor").
+
+#### Como preencher o painel do Switch
+
+1. [ ] **Clica no nó Switch** no canvas pra abrir o painel direito.
+2. [ ] **Expressão**: cola `{{dadosGatilho.estado.passo}}` (já vem preenchido por padrão).
+3. [ ] Já tem um caso vazio inicial. **Mantém ele** — é o caso da primeira mensagem do cliente:
+   - **valor:** *(deixa em branco — sim, vazio mesmo)*
+   - **label (opcional):** `inicio`
+4. [ ] Clica **+ Adicionar**, e preenche o segundo caso:
+   - **valor:** `NOME`
+   - **label:** *(pode deixar vazio)*
+5. [ ] **+ Adicionar** de novo:
+   - **valor:** `CPF`
+6. [ ] **+ Adicionar** de novo:
+   - **valor:** `EMAIL`
+7. [ ] Pronto. Você tem **4 casos**.
+
+> ⚠️ **No campo "valor" você coloca o que vai ser comparado, NÃO um nome amigável.** O Switch pega o valor da expressão (ex.: `NOME`) e compara igualzinho com o que você digitou no caso. Se digitar `Nome` em vez de `NOME`, **não vai bater** (o `===` é case-sensitive).
+
+#### Por que existe a saída "default"?
+
+A saída **default** aparece sozinha no nó, depois dos seus casos. Ela é usada **quando o crachá tem um valor que não bate com NENHUM caso**.
+
+No nosso fluxo, depois que o cliente é cadastrado, salvamos `passo = PRONTO`. Como `PRONTO` não está nos 4 casos, qualquer mensagem futura cai no **default** — que vai mostrar "você já está cadastrado".
+
+> 🚨 **Você NÃO cria o caso default no painel.** Ele é gerado automaticamente pelo sistema — sempre vai ter uma saída chamada `default` no fim do nó, não importa quantos casos você criou. Se você adicionar um caso "default" na lista, vai virar uma duplicata e atrapalhar.
+
+> 🚨 **Não deixe casos vazios extras.** Se você clicar **+ Adicionar** sem querer e ficar com uma linha em branco no fim, **clica na 🗑️ pra remover**. Caso com `valor` vazio é diferente de "default" — é o caso `(vazio)` (string vazia), normalmente usado pro estado inicial. Se tiver dois casos vazios, o segundo nunca vai ser usado.
+
+#### O que aparece no canvas depois de configurar
+
+Olhando seu nó Switch pelo canvas, ele vai ter **5 bolinhas de saída** do lado direito:
+
+```
+[Switch passo]●─── inicio
+              ●─── NOME
+              ●─── CPF
+              ●─── EMAIL
+              ●─── default
+```
+
+**Cada bolinha você arrasta pro próximo bloco do caminho dela.** É isso que liga "estou na etapa NOME" → "salva o nome e pergunta CPF".
 
 #### Cada caminho do Switch faz
 
