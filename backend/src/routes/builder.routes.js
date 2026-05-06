@@ -32,6 +32,10 @@ const TIPOS_NO_VALIDOS = new Set([
   'AI_AGENT',
   // Canais — envio direto pelo canal externo (WhatsApp/Telegram)
   'ENVIAR_MENSAGEM',
+  // Conversa — manipulacao de estado pra fluxos multi-turno deterministicos
+  'SET_ESTADO_CONVERSA',
+  // Acao programatica — invoca uma tool do agente direto do builder
+  'TOOL',
 ]);
 
 const TIPOS_GATILHO_VALIDOS = new Set(['KEYWORD', 'DEFAULT', 'ALWAYS']);
