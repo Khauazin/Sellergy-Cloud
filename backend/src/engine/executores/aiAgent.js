@@ -20,6 +20,7 @@ const axios = require('axios');
 const prisma = require('../../prisma');
 const { interpolar } = require('../expressoes');
 const { carregarCredencialDecifrada } = require('../../credenciais');
+const { decifrar } = require('../../cripto/cofreMensagens');
 const { listarTools } = require('../../agente/tools');
 const { invocarTool } = require('../../agente/executor');
 const {
@@ -35,6 +36,7 @@ const MAX_TOKENS_HARD_CAP = 4096;
 const TIMEOUT_MS = 60_000;
 const TAMANHO_MAX_MENSAGEM = 100_000;
 const MAX_ITERACOES_TOOL_LOOP = 10;
+const HISTORICO_MAX_MENSAGENS = 20;
 
 const PROVEDORES_VALIDOS = new Set(['OPENAI', 'ANTHROPIC', 'GEMINI']);
 
@@ -69,9 +71,23 @@ async function executar({ no, contexto }) {
   }
 
   const promptSistema = interpolar(dados.prompt || '', contexto);
-  const mensagemUsuario = interpolar(dados.mensagemUsuario || '{{entrada}}', contexto);
 
-  if (promptSistema.length + mensagemUsuario.length > TAMANHO_MAX_MENSAGEM) {
+  // Quando a execucao foi disparada por uma conversa de canal (Telegram/WhatsApp),
+  // o LLM precisa do historico pra fazer multi-turno (ex.: pergunta nome -> espera
+  // resposta -> pergunta CPF). Sem isso ele nao lembra o que perguntou antes.
+  // Fora desse caso (fluxo sem canal), usa apenas a mensagem do no como antes.
+  const conversaId = contexto?.dadosGatilho?.conversaId || null;
+  const historico = conversaId
+    ? await carregarHistoricoConversa({ conversaId, clienteId: contexto.clienteId })
+    : [];
+
+  const mensagemUsuario = historico.length === 0
+    ? interpolar(dados.mensagemUsuario || '{{entrada}}', contexto)
+    : '';
+
+  const tamanhoEstimado = promptSistema.length + mensagemUsuario.length
+    + historico.reduce((soma, m) => soma + (m.content?.length || 0), 0);
+  if (tamanhoEstimado > TAMANHO_MAX_MENSAGEM) {
     throw new Error(`AI_AGENT: mensagem excede ${TAMANHO_MAX_MENSAGEM} caracteres apos interpolacao.`);
   }
 
@@ -93,7 +109,7 @@ async function executar({ no, contexto }) {
   };
 
   const params = {
-    modelo, promptSistema, mensagemUsuario, temperatura, maxTokens,
+    modelo, promptSistema, mensagemUsuario, historico, temperatura, maxTokens,
     credencial, toolsDisponiveis, contextoTool,
   };
 
@@ -101,6 +117,49 @@ async function executar({ no, contexto }) {
     case 'OPENAI': return loopOpenAI(params);
     case 'ANTHROPIC': return loopAnthropic(params);
     case 'GEMINI': return loopGemini(params);
+  }
+}
+
+// ===========================================================
+// Historico da conversa (decifra mensagens TEXTO em ordem cronologica)
+// ===========================================================
+// Retorna [{ role: 'user'|'assistant', content: string }] ja na ordem em
+// que devem ir pro LLM. A ultima mensagem normalmente eh a do usuario que
+// disparou o fluxo agora (o dispatcher persiste antes de enfileirar).
+async function carregarHistoricoConversa({ conversaId, clienteId }) {
+  if (!conversaId || !clienteId) return [];
+  try {
+    const linhas = await prisma.mensagemConversa.findMany({
+      where: { conversaId, clienteId, tipo: 'TEXTO' },
+      orderBy: { criadoEm: 'desc' },
+      take: HISTORICO_MAX_MENSAGENS,
+      select: {
+        sentido: true,
+        conteudoCifrado: true,
+        iv: true,
+        tag: true,
+        versaoChave: true,
+      },
+    });
+
+    const out = [];
+    for (const m of linhas.reverse()) {
+      let texto;
+      try {
+        texto = decifrar(clienteId, m);
+      } catch {
+        continue; // mensagem com chave incompativel — ignora
+      }
+      if (typeof texto !== 'string' || texto.trim() === '') continue;
+      out.push({
+        role: m.sentido === 'ENTRADA' ? 'user' : 'assistant',
+        content: texto,
+      });
+    }
+    return out;
+  } catch (e) {
+    console.error('[aiAgent/historico]', e?.message || e);
+    return [];
   }
 }
 
@@ -126,7 +185,7 @@ async function carregarToolsDoBot({ botId, clienteId }) {
 // ===========================================================
 // LOOP OpenAI
 // ===========================================================
-async function loopOpenAI({ modelo, promptSistema, mensagemUsuario, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
+async function loopOpenAI({ modelo, promptSistema, mensagemUsuario, historico, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
   const headers = {
     'Authorization': `Bearer ${credencial.dados.apiKey}`,
     'Content-Type': 'application/json',
@@ -135,7 +194,11 @@ async function loopOpenAI({ modelo, promptSistema, mensagemUsuario, temperatura,
 
   const messages = [];
   if (promptSistema) messages.push({ role: 'system', content: promptSistema });
-  messages.push({ role: 'user', content: mensagemUsuario });
+  if (historico && historico.length > 0) {
+    for (const h of historico) messages.push({ role: h.role, content: h.content });
+  } else {
+    messages.push({ role: 'user', content: mensagemUsuario });
+  }
 
   let totalTokens = 0;
   const chamadasTools = [];
@@ -201,14 +264,28 @@ async function loopOpenAI({ modelo, promptSistema, mensagemUsuario, temperatura,
 // ===========================================================
 // LOOP Anthropic
 // ===========================================================
-async function loopAnthropic({ modelo, promptSistema, mensagemUsuario, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
+async function loopAnthropic({ modelo, promptSistema, mensagemUsuario, historico, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
   const headers = {
     'x-api-key': credencial.dados.apiKey,
     'anthropic-version': '2023-06-01',
     'Content-Type': 'application/json',
   };
 
-  const messages = [{ role: 'user', content: mensagemUsuario }];
+  // Anthropic nao aceita 2 mensagens consecutivas com mesmo role. Garante
+  // alternancia user/assistant — se o historico vier de um canal que iniciou
+  // com bot, a primeira pode ser assistant; a API reclama. Solucao: se a
+  // primeira do historico for assistant, descarta-a.
+  let mensagensIniciais;
+  if (historico && historico.length > 0) {
+    const inicio = historico[0]?.role === 'assistant' ? 1 : 0;
+    mensagensIniciais = historico.slice(inicio).map((h) => ({ role: h.role, content: h.content }));
+    if (mensagensIniciais.length === 0) {
+      mensagensIniciais = [{ role: 'user', content: mensagemUsuario || '...' }];
+    }
+  } else {
+    mensagensIniciais = [{ role: 'user', content: mensagemUsuario }];
+  }
+  const messages = [...mensagensIniciais];
   let totalTokens = 0;
   const chamadasTools = [];
 
@@ -269,9 +346,15 @@ async function loopAnthropic({ modelo, promptSistema, mensagemUsuario, temperatu
 // ===========================================================
 // LOOP Gemini
 // ===========================================================
-async function loopGemini({ modelo, promptSistema, mensagemUsuario, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
+async function loopGemini({ modelo, promptSistema, mensagemUsuario, historico, temperatura, maxTokens, credencial, toolsDisponiveis, contextoTool }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent?key=${encodeURIComponent(credencial.dados.apiKey)}`;
-  const contents = [{ role: 'user', parts: [{ text: mensagemUsuario }] }];
+  // Gemini usa role 'model' no lugar de 'assistant'.
+  const contents = (historico && historico.length > 0)
+    ? historico.map((h) => ({
+        role: h.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: h.content }],
+      }))
+    : [{ role: 'user', parts: [{ text: mensagemUsuario }] }];
 
   let totalTokens = 0;
   const chamadasTools = [];
