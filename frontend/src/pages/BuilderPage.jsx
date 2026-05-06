@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Bot, Plus, Save, Trash2, Workflow,
-  CircleAlert, Play,
+  CircleAlert, Play, BookOpen,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -14,6 +14,7 @@ import CanvasFluxo from '../components/Builder/CanvasFluxo';
 import PaletaNos from '../components/Builder/PaletaNos';
 import PainelPropriedades from '../components/Builder/PainelPropriedades';
 import DrawerExecucao from '../components/Builder/DrawerExecucao';
+import DrawerManual from '../components/Builder/DrawerManual';
 import CatalogoModal from '../components/Builder/CatalogoModal';
 import { CATALOGO_NOS } from '../components/Builder/catalogoNos';
 import {
@@ -46,6 +47,7 @@ export default function BuilderPage() {
   const [catalogoAberto, setCatalogoAberto] = useState(false);
   const [executando, setExecutando] = useState(false);
   const [execucaoVisivelId, setExecucaoVisivelId] = useState(null);
+  const [manualAberto, setManualAberto] = useState(false);
 
   const fluxoAtivo = useMemo(
     () => fluxos.find((f) => f.id === fluxoAtivoId) || null,
@@ -291,6 +293,15 @@ export default function BuilderPage() {
             Mudancas nao salvas
           </Badge>
         )}
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={BookOpen}
+          onClick={() => setManualAberto(true)}
+          title="Abrir manual interativo"
+        >
+          Manual
+        </Button>
       </div>
 
       <CabecalhoBuilder
@@ -394,6 +405,11 @@ export default function BuilderPage() {
         isOpen={!!execucaoVisivelId}
         onClose={() => setExecucaoVisivelId(null)}
         execucaoId={execucaoVisivelId}
+      />
+
+      <DrawerManual
+        isOpen={manualAberto}
+        onClose={() => setManualAberto(false)}
       />
 
       <CatalogoModal
