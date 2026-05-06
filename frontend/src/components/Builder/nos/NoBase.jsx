@@ -11,8 +11,8 @@ const CLASSES_COR = {
   neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-main)]',
 };
 
-const ALTURA_HANDLE_SAIDA = 22;
-const OFFSET_INICIAL_HANDLE = 14;
+// (Os handles individuais sao centrados pelo Position.Right + a row ter
+// position:relative com altura fixa — sem precisar calcular top manualmente.)
 
 function NoBase({ data, selected }) {
   const cfg = configDoTipo(data?.tipo);
@@ -71,7 +71,7 @@ function NoBase({ data, selected }) {
 
       {multiplasSaidas && (
         <div className="py-2">
-          {saidas.map((s, i) => (
+          {saidas.map((s) => (
             <div key={s} className="flex items-center justify-end gap-2 pr-3 relative h-[22px]">
               <span className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-muted)]">
                 {rotuloSaida(s, data)}
@@ -81,7 +81,6 @@ function NoBase({ data, selected }) {
                 type="source"
                 position={Position.Right}
                 style={{
-                  top: OFFSET_INICIAL_HANDLE + i * ALTURA_HANDLE_SAIDA,
                   background: 'var(--accent)',
                   border: 0,
                   width: 12,
