@@ -1,23 +1,9 @@
-// Dispatcher de mensagens recebidas por canal.
-//
-// Quando uma mensagem chega via WhatsApp/Telegram/etc:
-//   1. Acha ou cria a Conversa (chave: clienteId + canal + identificadorRemetente)
-//   2. Cria MensagemConversa SAIDA cifrada (sentido ENTRADA — cliente -> bot)
-//   3. Atualiza Conversa.ultimaMsgEm
-//   4. Se o bot tem fluxoPadraoId, cria Execucao em PENDENTE com dadosGatilho
-//      contendo o resumo (telefone, texto, conversaId) e enfileira no BullMQ
-//
-// O fluxo padrao deve comecar com um no MANUAL ou WEBHOOK — o engine ja
-// aceita os dois como trigger.
-
 const prisma = require('../prisma');
 const { cifrar } = require('../cripto/cofreMensagens');
 const { criarExecucaoPendente } = require('../engine');
 const { enfileirarExecucao } = require('../filas');
 
 async function acharOuCriarConversa({ clienteId, botId, canal, identificadorRemetente }) {
-  // Busca conversa existente (matching por canal + identificador). Sem unique
-  // composto pra nao travar futuras evolucoes — usamos findFirst.
   const existente = await prisma.conversa.findFirst({
     where: { clienteId, botId, canal, identificador: identificadorRemetente },
     orderBy: { criadoEm: 'desc' },
@@ -90,7 +76,11 @@ async function processarMensagemEntrante({ bot, canal, identificadorRemetente, t
           conversaId: conversa.id,
           mensagemId: mensagem.id,
           telefone: identificadorRemetente,
+          nome: metadata?.nomeRemetente || null,
           texto,
+          // Estado livre persistido na conversa — fluxo determinístico usa pra
+          // saber em que passo está (ex.: { passo: 'AGUARDANDO_CPF' }).
+          estado: conversa.estado && typeof conversa.estado === 'object' ? conversa.estado : {},
           recebidoEm: new Date().toISOString(),
         },
       });

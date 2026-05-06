@@ -82,6 +82,8 @@ export default function PainelPropriedades({ no, fluxoId, onAlterar, onExcluir }
       {no.data?.tipo === 'SCHEDULE' && <FormSchedule noId={no.id} fluxoId={fluxoId} />}
       {no.data?.tipo === 'AI_AGENT' && <FormAiAgent data={no.data} setData={setData} />}
       {no.data?.tipo === 'ENVIAR_MENSAGEM' && <FormEnviarMensagem data={no.data} setData={setData} />}
+      {no.data?.tipo === 'SET_ESTADO_CONVERSA' && <FormSetEstadoConversa data={no.data} setData={setData} />}
+      {no.data?.tipo === 'TOOL' && <FormTool data={no.data} setData={setData} />}
     </div>
   );
 }
@@ -96,7 +98,7 @@ function FormEnviarMensagem({ data, setData }) {
         value={data?.texto || ''}
         onChange={(e) => setData({ texto: e.target.value })}
         placeholder="Recebi sua mensagem: {{dadosGatilho.texto}}"
-        hint='Suporta {{caminho.dot}}. Exemplos: {{dadosGatilho.texto}}, {{dadosGatilho.telefone}}, {{entrada.qualquerCoisa}}.'
+        hint='Suporta {{caminho.dot}}. Exemplos: {{dadosGatilho.texto}}, {{dadosGatilho.nome}}, {{dadosGatilho.telefone}}, {{entrada.qualquerCoisa}}.'
       />
       <Input
         size="sm"
@@ -318,6 +320,154 @@ function FormCode({ data, setData }) {
       hint="Sandbox via isolated-vm (Sub-fase 1.3). Use a variavel `entrada`."
       className="font-mono"
     />
+  );
+}
+
+function FormSetEstadoConversa({ data, setData }) {
+  const ats = data?.atribuicoes || [];
+  const setAtr = (i, campo, valor) => {
+    setData({
+      atribuicoes: ats.map((x, idx) => (idx === i ? { ...x, [campo]: valor } : x)),
+    });
+  };
+
+  return (
+    <>
+      <div className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded-lg p-2.5 leading-snug border border-[var(--border-main)]">
+        Salva variaveis na conversa pra fluxos multi-turno. O proximo disparo
+        do fluxo (proxima mensagem do usuario) recebe esse estado em
+        <code className="ml-1">{`{{dadosGatilho.estado.*}}`}</code>.
+      </div>
+
+      <Select
+        size="sm"
+        label="Estrategia"
+        value={data?.estrategia || 'MERGE'}
+        onChange={(e) => setData({ estrategia: e.target.value })}
+        options={[
+          { value: 'MERGE', label: 'Merge (sobrescreve so as chaves passadas)' },
+          { value: 'SUBSTITUIR', label: 'Substituir (descarta estado anterior)' },
+        ]}
+      />
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)]">
+            Atribuicoes
+          </label>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Plus}
+            onClick={() => setData({ atribuicoes: [...ats, { chave: '', valor: '' }] })}
+          >
+            Adicionar
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          {ats.length === 0 && (
+            <p className="text-[11px] text-[var(--text-muted)]">Nenhuma atribuicao.</p>
+          )}
+          {ats.map((a, i) => (
+            <div key={i} className="flex gap-1.5">
+              <Input
+                size="sm"
+                placeholder="chave (ex.: passo, nome, cpf)"
+                value={a.chave || ''}
+                onChange={(e) => setAtr(i, 'chave', e.target.value)}
+              />
+              <Input
+                size="sm"
+                placeholder="valor (ex.: AGUARDANDO_CPF, {{dadosGatilho.texto}})"
+                value={a.valor || ''}
+                onChange={(e) => setAtr(i, 'valor', e.target.value)}
+              />
+              <IconButton
+                icon={Trash2}
+                variant="danger"
+                size="sm"
+                ariaLabel="Remover atribuicao"
+                onClick={() => setData({ atribuicoes: ats.filter((_, idx) => idx !== i) })}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const TOOLS_SUGERIDAS = [
+  'crm.criarLead',
+  'crm.buscarLead',
+  'crm.moverEtapaLead',
+  'agenda.criarAgendamento',
+  'agenda.listarAgendamentosDoDia',
+  'catalogo.buscarProduto',
+  'catalogo.listarProdutos',
+  'mensagens.enviar',
+  'vendas.lancarVenda',
+];
+
+function FormTool({ data, setData }) {
+  const argsTexto = (() => {
+    if (typeof data?.args === 'string') return data.args;
+    try { return JSON.stringify(data?.args || {}, null, 2); }
+    catch { return '{}'; }
+  })();
+
+  const onArgsChange = (texto) => {
+    // Salva sempre como objeto se parseavel; senao, deixa string pra o usuario
+    // continuar editando sem perder o texto.
+    try {
+      const obj = JSON.parse(texto);
+      setData({ args: obj });
+    } catch {
+      setData({ args: texto });
+    }
+  };
+
+  return (
+    <>
+      <div className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded-lg p-2.5 leading-snug border border-[var(--border-main)]">
+        Invoca uma tool do agente diretamente. Mesma camada de permissao do
+        AI Agent (modulo liberado + tool habilitada no bot + auditoria).
+      </div>
+
+      <Input
+        size="sm"
+        label="Nome da tool"
+        list="tools-sugeridas"
+        value={data?.toolNome || ''}
+        onChange={(e) => setData({ toolNome: e.target.value })}
+        placeholder="ex.: crm.criarLead"
+        hint="Habilite em Bots > Ferramentas do agente."
+      />
+      <datalist id="tools-sugeridas">
+        {TOOLS_SUGERIDAS.map((t) => <option key={t} value={t} />)}
+      </datalist>
+
+      <Textarea
+        label="Argumentos (JSON)"
+        rows={6}
+        value={argsTexto}
+        onChange={(e) => onArgsChange(e.target.value)}
+        placeholder={'{\n  "nome": "{{dadosGatilho.estado.nome}}",\n  "telefone": "{{dadosGatilho.telefone}}"\n}'}
+        hint="Suporta {{interpolacao}} em strings (recursivo em arrays/objetos)."
+        className="font-mono"
+      />
+
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <Switch
+          checked={!!data?.permitirFalha}
+          onChange={(v) => setData({ permitirFalha: v })}
+          ariaLabel="Permitir falha"
+        />
+        <span className="text-xs text-[var(--text-secondary)]">
+          Permitir falha (continua o fluxo se a tool falhar)
+        </span>
+      </label>
+    </>
   );
 }
 
