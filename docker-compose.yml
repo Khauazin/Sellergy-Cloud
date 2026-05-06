@@ -1,3 +1,5 @@
+name: sellergy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -134,6 +136,20 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+    networks:
+      - sellergy-network
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: sellergy-ngrok
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: http host.docker.internal:${BACKEND_PORT} --url=${NGROK_DOMAIN}
+    ports:
+      - "4040:4040"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - sellergy-network
 

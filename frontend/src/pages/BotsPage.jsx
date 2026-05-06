@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Bot, Edit2, Trash2, MoreHorizontal, Wifi, WifiOff, AlertCircle,
-  Sparkles, Workflow, Copy, MessageCircle
+  Sparkles, Workflow, Copy, MessageCircle, Wrench
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -201,6 +201,12 @@ export default function BotsPage() {
                         <DropdownItem icon={Edit2} onClick={() => setModal({ open: true, data: b })}>Editar</DropdownItem>
                         <DropdownItem icon={Workflow}>
                           <Link to={`/admin/builder/${b.id}`}>Construtor de fluxo</Link>
+                        </DropdownItem>
+                        <DropdownItem icon={Wrench}>
+                          <Link to={`/admin/bots/${b.id}/tools`}>Ferramentas do agente</Link>
+                        </DropdownItem>
+                        <DropdownItem icon={MessageCircle}>
+                          <Link to={`/admin/bots/${b.id}/canal`}>Canal externo</Link>
                         </DropdownItem>
                         <DropdownItem icon={Copy} onClick={() => handleDuplicar(b)}>Duplicar</DropdownItem>
                         <DropdownDivider />

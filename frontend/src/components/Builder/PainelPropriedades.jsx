@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Trash2, Plus, MousePointer2, Copy, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Trash2, Plus, MousePointer2, Copy, Eye, EyeOff, RefreshCw, Lock } from 'lucide-react';
 import { Input, Select, Textarea, Button, IconButton, Switch, useToast } from '../ui';
-import api from '../../services/api';
+import api, { urlPublica } from '../../services/api';
+import credenciaisService from '../../services/credenciaisService';
 import { configDoTipo } from './catalogoNos';
+
+// Credenciais que fazem sentido em HTTP Request — HTTP_* genericas + LLMs
+// (que tambem injetam Authorization). Canais (WhatsApp/Telegram) tem fluxo
+// proprio em outros nos.
+const TIPOS_CREDENCIAL_HTTP = new Set([
+  'HTTP_BEARER',
+  'HTTP_BASIC',
+  'HTTP_API_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'GEMINI_API_KEY',
+]);
 
 const METODOS_HTTP = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -67,12 +80,54 @@ export default function PainelPropriedades({ no, fluxoId, onAlterar, onExcluir }
       )}
       {no.data?.tipo === 'WEBHOOK' && <FormWebhook noId={no.id} fluxoId={fluxoId} />}
       {no.data?.tipo === 'SCHEDULE' && <FormSchedule noId={no.id} fluxoId={fluxoId} />}
+      {no.data?.tipo === 'AI_AGENT' && <FormAiAgent data={no.data} setData={setData} />}
+      {no.data?.tipo === 'ENVIAR_MENSAGEM' && <FormEnviarMensagem data={no.data} setData={setData} />}
     </div>
+  );
+}
+
+function FormEnviarMensagem({ data, setData }) {
+  return (
+    <>
+      <Textarea
+        size="sm"
+        label="Texto da mensagem"
+        rows={4}
+        value={data?.texto || ''}
+        onChange={(e) => setData({ texto: e.target.value })}
+        placeholder="Recebi sua mensagem: {{dadosGatilho.texto}}"
+        hint='Suporta {{caminho.dot}}. Exemplos: {{dadosGatilho.texto}}, {{dadosGatilho.telefone}}, {{entrada.qualquerCoisa}}.'
+      />
+      <Input
+        size="sm"
+        label="Conversa ID (opcional)"
+        value={data?.conversaId || ''}
+        onChange={(e) => setData({ conversaId: e.target.value })}
+        placeholder="Deixe vazio pra usar o gatilho do webhook"
+        hint="Por padrao usa a conversa que disparou o fluxo. So preencha se quiser mandar pra outra."
+      />
+      <p className="text-[10px] text-[var(--text-muted)] leading-snug">
+        Envia pelo canal vinculado ao bot (WhatsApp/Telegram). A credencial e o destinatario sao resolvidos automaticamente a partir da conversa.
+      </p>
+    </>
   );
 }
 
 function FormHttp({ data, setData }) {
   const cabecalhos = data?.cabecalhos || [];
+  const [credenciais, setCredenciais] = useState([]);
+
+  useEffect(() => {
+    let ativo = true;
+    credenciaisService
+      .listar()
+      .then((lista) => {
+        if (!ativo) return;
+        setCredenciais((lista || []).filter((c) => TIPOS_CREDENCIAL_HTTP.has(c.tipo)));
+      })
+      .catch(() => ativo && setCredenciais([]));
+    return () => { ativo = false; };
+  }, []);
 
   const setCab = (i, campo, valor) => {
     setData({
@@ -96,6 +151,20 @@ function FormHttp({ data, setData }) {
         placeholder="https://api.exemplo.com/recurso"
         value={data?.url || ''}
         onChange={(e) => setData({ url: e.target.value })}
+      />
+
+      <Select
+        size="sm"
+        label="Credencial (opcional)"
+        value={data?.credencialId || ''}
+        onChange={(e) => setData({ credencialId: e.target.value || null })}
+        options={credenciais.map((c) => ({ value: c.id, label: `${c.nome} · ${c.tipo}` }))}
+        placeholder="— Sem credencial —"
+        hint={
+          credenciais.length === 0
+            ? 'Nenhuma credencial HTTP cadastrada. Crie em Configuracoes > Credenciais.'
+            : 'Injetada como header Authorization no momento da execucao (cifragem just-in-time).'
+        }
       />
 
       <div>
@@ -249,6 +318,146 @@ function FormCode({ data, setData }) {
       hint="Sandbox via isolated-vm (Sub-fase 1.3). Use a variavel `entrada`."
       className="font-mono"
     />
+  );
+}
+
+// =====================================================================
+// FORM: AI_AGENT (Sub-fase 3.4)
+// =====================================================================
+
+const PROVEDORES_LLM = [
+  { value: 'OPENAI', label: 'OpenAI', tipoCredencial: 'OPENAI_API_KEY' },
+  { value: 'ANTHROPIC', label: 'Anthropic Claude', tipoCredencial: 'ANTHROPIC_API_KEY' },
+  { value: 'GEMINI', label: 'Google Gemini', tipoCredencial: 'GEMINI_API_KEY' },
+];
+
+const MODELOS_SUGERIDOS = {
+  OPENAI: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  ANTHROPIC: ['claude-sonnet-4-5', 'claude-sonnet-4', 'claude-haiku-4-5', 'claude-opus-4-1'],
+  GEMINI: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'],
+};
+
+function FormAiAgent({ data, setData }) {
+  const [credenciais, setCredenciais] = useState([]);
+
+  useEffect(() => {
+    let ativo = true;
+    credenciaisService
+      .listar()
+      .then((lista) => { if (ativo) setCredenciais(lista || []); })
+      .catch(() => ativo && setCredenciais([]));
+    return () => { ativo = false; };
+  }, []);
+
+  const provedor = data?.provedor || 'OPENAI';
+  const tipoEsperado = PROVEDORES_LLM.find((p) => p.value === provedor)?.tipoCredencial;
+  const credenciaisCompativeis = credenciais.filter((c) => c.tipo === tipoEsperado);
+
+  const trocarProvedor = (novo) => {
+    const sugerido = MODELOS_SUGERIDOS[novo]?.[0] || '';
+    setData({
+      provedor: novo,
+      modelo: sugerido,
+      credencialId: '', // limpa credencial ao trocar provedor
+    });
+  };
+
+  return (
+    <>
+      <div className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded-lg p-2.5 leading-snug border border-[var(--border-main)]">
+        <strong className="text-[var(--text-secondary)]">Function calling:</strong> as tools que o agente
+        pode invocar saem do bot deste fluxo (configurado em <em>Bots → Ferramentas do agente</em>).
+        Sem tools habilitadas, o agente só responde texto.
+      </div>
+
+      <Select
+        size="sm"
+        label="Provedor"
+        value={provedor}
+        onChange={(e) => trocarProvedor(e.target.value)}
+        options={PROVEDORES_LLM.map((p) => ({ value: p.value, label: p.label }))}
+        placeholder=""
+      />
+
+      <Select
+        size="sm"
+        label="Modelo"
+        value={data?.modelo || ''}
+        onChange={(e) => setData({ modelo: e.target.value })}
+        options={(MODELOS_SUGERIDOS[provedor] || []).map((m) => ({ value: m, label: m }))}
+        placeholder="— Selecione um modelo —"
+        hint="Lista de sugeridos. Se quiser um modelo especifico, edite o campo abaixo."
+      />
+      <Input
+        size="sm"
+        label="Modelo (manual)"
+        placeholder="Ex.: gpt-4o, claude-sonnet-4-5, gemini-1.5-flash"
+        value={data?.modelo || ''}
+        onChange={(e) => setData({ modelo: e.target.value })}
+      />
+
+      <Select
+        size="sm"
+        label="Credencial"
+        value={data?.credencialId || ''}
+        onChange={(e) => setData({ credencialId: e.target.value || null })}
+        options={credenciaisCompativeis.map((c) => ({ value: c.id, label: c.nome }))}
+        placeholder={
+          credenciaisCompativeis.length === 0
+            ? `— Nenhuma credencial ${tipoEsperado} cadastrada —`
+            : '— Selecione uma credencial —'
+        }
+        hint={
+          credenciaisCompativeis.length === 0
+            ? `Crie em Configuracoes > Credenciais (tipo ${tipoEsperado}).`
+            : 'Decifrada apenas no momento da execucao no worker.'
+        }
+      />
+
+      <Textarea
+        label="Prompt do sistema"
+        rows={4}
+        value={data?.prompt || ''}
+        onChange={(e) => setData({ prompt: e.target.value })}
+        placeholder="Voce e um assistente prestativo. Responda em portugues..."
+        hint="Define a persona/regras do agente. Suporta {{interpolacao}}."
+      />
+
+      <Textarea
+        label="Mensagem do usuario"
+        rows={3}
+        value={data?.mensagemUsuario || ''}
+        onChange={(e) => setData({ mensagemUsuario: e.target.value })}
+        placeholder="{{entrada}}"
+        hint="Conteudo enviado como mensagem do usuario. Geralmente {{entrada}} ou {{entrada.texto}}."
+        className="font-mono"
+      />
+
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          size="sm"
+          label="Temperatura"
+          type="number"
+          min={0}
+          max={2}
+          step={0.1}
+          value={data?.temperatura ?? 0.7}
+          onChange={(e) => setData({ temperatura: parseFloat(e.target.value) || 0 })}
+          hint="0 = deterministico, 2 = bem criativo"
+        />
+        <Input
+          size="sm"
+          label="Max tokens"
+          type="number"
+          min={1}
+          max={4096}
+          step={1}
+          value={data?.maxTokens ?? 1024}
+          onChange={(e) => setData({ maxTokens: parseInt(e.target.value, 10) || 1024 })}
+          hint="Limite duro: 4096"
+        />
+      </div>
+    </>
   );
 }
 
@@ -459,8 +668,8 @@ function FormWebhook({ noId, fluxoId }) {
     return () => { ativo = false; };
   }, [noId]);
 
-  const urlPublica = webhook
-    ? `${api.defaults.baseURL?.replace(/\/$/, '') || ''}/webhooks/${webhook.id}`
+  const urlWebhook = webhook
+    ? `${urlPublica()}/webhooks/${webhook.id}`
     : '';
 
   const gerar = async () => {
@@ -536,8 +745,8 @@ function FormWebhook({ noId, fluxoId }) {
           URL publica (POST)
         </label>
         <div className="flex gap-1.5">
-          <Input size="sm" value={urlPublica} readOnly />
-          <IconButton icon={Copy} variant="secondary" size="sm" ariaLabel="Copiar URL" onClick={() => copiar(urlPublica, 'URL')} />
+          <Input size="sm" value={urlWebhook} readOnly />
+          <IconButton icon={Copy} variant="secondary" size="sm" ariaLabel="Copiar URL" onClick={() => copiar(urlWebhook, 'URL')} />
         </div>
       </div>
 

@@ -6,15 +6,23 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import {
-  Badge, Button, Card, IconButton, Input, Select, Switch, useToast,
+  Badge, Button, Card, Input, Select, Switch, useToast,
   Drawer,
 } from '../components/ui';
+import { applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/react';
 import CanvasFluxo from '../components/Builder/CanvasFluxo';
 import PaletaNos from '../components/Builder/PaletaNos';
 import PainelPropriedades from '../components/Builder/PainelPropriedades';
 import DrawerExecucao from '../components/Builder/DrawerExecucao';
+import CatalogoModal from '../components/Builder/CatalogoModal';
 import { CATALOGO_NOS } from '../components/Builder/catalogoNos';
-import { reactFlowParaApi } from '../components/Builder/utilCanvas';
+import {
+  reactFlowParaApi,
+  apiParaReactFlow,
+  criarNoDoTipo,
+  novoIdConexao,
+} from '../components/Builder/utilCanvas';
+import { TEMPLATES, obterTemplate } from '../components/Builder/templates';
 
 const ESTADO_INICIAL_CANVAS = { nos: [], conexoes: [] };
 
@@ -25,7 +33,6 @@ export default function BuilderPage() {
   const [bot, setBot] = useState(null);
   const [fluxos, setFluxos] = useState([]);
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
-  const [canvasInicial, setCanvasInicial] = useState(ESTADO_INICIAL_CANVAS);
   const [carregando, setCarregando] = useState(true);
   const [carregandoCanvas, setCarregandoCanvas] = useState(false);
 
@@ -36,6 +43,7 @@ export default function BuilderPage() {
   const [salvando, setSalvando] = useState(false);
 
   const [drawerNovoAberto, setDrawerNovoAberto] = useState(false);
+  const [catalogoAberto, setCatalogoAberto] = useState(false);
   const [executando, setExecutando] = useState(false);
   const [execucaoVisivelId, setExecucaoVisivelId] = useState(null);
 
@@ -71,7 +79,9 @@ export default function BuilderPage() {
   useEffect(() => {
     if (!fluxoAtivoId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on dep change
-      setCanvasInicial(ESTADO_INICIAL_CANVAS);
+      setNodes([]);
+      setEdges([]);
+      setNoSelecionadoId(null);
       setSujo(false);
       return;
     }
@@ -81,16 +91,20 @@ export default function BuilderPage() {
       .get(`/builder/fluxos/${fluxoAtivoId}/canvas`)
       .then((resp) => {
         if (!ativo) return;
-        setCanvasInicial({
+        const dados = {
           nos: resp.data?.nos || [],
           conexoes: resp.data?.conexoes || [],
-        });
+        };
+        const rf = apiParaReactFlow(dados);
+        setNodes(rf.nodes);
+        setEdges(rf.edges);
         setSujo(false);
         setNoSelecionadoId(null);
       })
       .catch(() => {
         if (!ativo) return;
-        setCanvasInicial(ESTADO_INICIAL_CANVAS);
+        setNodes([]);
+        setEdges([]);
         toast.error('Falha ao carregar o canvas.');
       })
       .finally(() => ativo && setCarregandoCanvas(false));
@@ -102,13 +116,44 @@ export default function BuilderPage() {
     setFluxoAtivoId(novoId);
   };
 
-  const criarFluxo = async (nome) => {
+  const criarFluxo = async ({ nome, templateId }) => {
+    const template = templateId ? obterTemplate(templateId) : null;
     try {
-      const resp = await api.post('/builder/fluxos', { botId, nome });
+      const resp = await api.post('/builder/fluxos', {
+        botId,
+        nome,
+        tipoGatilho: template?.fluxo?.tipoGatilho || 'KEYWORD',
+      });
+      const novoId = resp.data.id;
+
+      // Aplica canvas do template, gerando IDs novos para evitar colisao
+      // entre instancias do mesmo template no mesmo bot.
+      if (template) {
+        const idMap = new Map();
+        const nos = template.canvas.nos.map((n) => {
+          const novoIdNo = `no_${crypto.randomUUID()}`;
+          idMap.set(n.id, novoIdNo);
+          return {
+            id: novoIdNo,
+            tipo: n.tipo,
+            posicaoX: n.posicaoX,
+            posicaoY: n.posicaoY,
+            dados: n.dados || {},
+          };
+        });
+        const conexoes = template.canvas.conexoes.map((c) => ({
+          id: `con_${crypto.randomUUID()}`,
+          noOrigemId: idMap.get(c.noOrigemId),
+          noDestinoId: idMap.get(c.noDestinoId),
+          pontoOrigem: c.pontoOrigem || null,
+        }));
+        await api.put(`/builder/fluxos/${novoId}/canvas`, { nos, conexoes });
+      }
+
       setFluxos((atual) => [resp.data, ...atual]);
-      setFluxoAtivoId(resp.data.id);
+      setFluxoAtivoId(novoId);
       setDrawerNovoAberto(false);
-      toast.success('Fluxo criado.');
+      toast.success(template ? `Fluxo criado a partir do template "${template.nome}".` : 'Fluxo criado.');
     } catch (erro) {
       toast.error(erro.response?.data?.erro || 'Falha ao criar fluxo.');
     }
@@ -184,9 +229,51 @@ export default function BuilderPage() {
   const excluirNo = useCallback((idNo) => {
     setNodes((ns) => ns.filter((n) => n.id !== idNo));
     setEdges((es) => es.filter((e) => e.source !== idNo && e.target !== idNo));
-    setNoSelecionadoId(null);
+    setNoSelecionadoId((prev) => (prev === idNo ? null : prev));
     setSujo(true);
   }, []);
+
+  // Handlers do React Flow (canvas controlled). Mudancas como move/select/dimensions
+  // sao puramente visuais, mas remove/add/replace marcam o canvas como sujo.
+  const onNodesChange = useCallback((changes) => {
+    setNodes((ns) => applyNodeChanges(changes, ns));
+
+    const removidos = changes.filter((c) => c.type === 'remove');
+    if (removidos.length > 0) {
+      const idsRemovidos = new Set(removidos.map((c) => c.id));
+      setEdges((es) => es.filter((e) => !idsRemovidos.has(e.source) && !idsRemovidos.has(e.target)));
+      setNoSelecionadoId((prev) => (prev && idsRemovidos.has(prev) ? null : prev));
+    }
+
+    if (changes.some((c) => c.type !== 'select' && c.type !== 'dimensions')) {
+      setSujo(true);
+    }
+  }, []);
+
+  const onEdgesChange = useCallback((changes) => {
+    setEdges((es) => applyEdgeChanges(changes, es));
+    if (changes.some((c) => c.type !== 'select')) setSujo(true);
+  }, []);
+
+  const onConnect = useCallback((params) => {
+    setEdges((es) => addEdge({ ...params, id: novoIdConexao() }, es));
+    setSujo(true);
+  }, []);
+
+  // Recebe (tipo, posicao) do drag-drop do canvas. Cria nó e seleciona.
+  const adicionarNoPorPosicao = useCallback((tipo, posicao) => {
+    const novo = criarNoDoTipo(tipo, posicao);
+    if (!novo) return;
+    setNodes((ns) => ns.concat(novo));
+    setNoSelecionadoId(novo.id);
+    setSujo(true);
+  }, []);
+
+  // Versao "no centro" usada pelo modal de catalogo.
+  const adicionarNoCentro = useCallback(
+    (tipo) => adicionarNoPorPosicao(tipo, { x: 200, y: 180 }),
+    [adicionarNoPorPosicao]
+  );
 
   if (carregando) {
     return <div className="text-sm text-[var(--text-muted)]">Carregando...</div>;
@@ -230,7 +317,16 @@ export default function BuilderPage() {
           className="grid gap-4"
           style={{ gridTemplateColumns: '220px 1fr 320px', height: 'calc(100vh - 280px)', minHeight: 540 }}
         >
-          <Card padding="sm" className="overflow-y-auto">
+          <Card padding="sm" className="overflow-y-auto flex flex-col gap-3">
+            <Button
+              variant="accent"
+              size="sm"
+              icon={Plus}
+              onClick={() => setCatalogoAberto(true)}
+              fullWidth
+            >
+              Adicionar no
+            </Button>
             <PaletaNos />
           </Card>
 
@@ -240,15 +336,40 @@ export default function BuilderPage() {
                 Carregando canvas...
               </div>
             ) : (
-              <CanvasFluxo
-                fluxoId={fluxoAtivoId}
-                canvasInicial={canvasInicial}
-                noSelecionadoId={noSelecionadoId}
-                onSelecionarNo={setNoSelecionadoId}
-                onAlterarNos={setNodes}
-                onAlterarConexoes={setEdges}
-                onSujo={() => setSujo(true)}
-              />
+              <>
+                <CanvasFluxo
+                  nodes={nodes}
+                  edges={edges}
+                  noSelecionadoId={noSelecionadoId}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onAdicionarNoPorPosicao={adicionarNoPorPosicao}
+                  onSelecionarNo={setNoSelecionadoId}
+                />
+                {nodes.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="text-center pointer-events-auto bg-[var(--bg-card)]/95 backdrop-blur-sm border border-dashed border-[var(--border-strong)] rounded-2xl px-6 py-5 max-w-xs">
+                      <Workflow size={26} strokeWidth={1.5} className="mx-auto text-[var(--text-muted)] opacity-60" />
+                      <h3 className="text-sm font-semibold tracking-tight text-[var(--text-main)] mt-2.5">
+                        Canvas vazio
+                      </h3>
+                      <p className="text-[11px] text-[var(--text-muted)] mt-1 leading-snug">
+                        Comece arrastando da paleta ou clique abaixo.
+                      </p>
+                      <Button
+                        variant="accent"
+                        size="sm"
+                        icon={Plus}
+                        className="mt-3"
+                        onClick={() => setCatalogoAberto(true)}
+                      >
+                        Adicionar primeiro no
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </Card>
 
@@ -273,6 +394,12 @@ export default function BuilderPage() {
         isOpen={!!execucaoVisivelId}
         onClose={() => setExecucaoVisivelId(null)}
         execucaoId={execucaoVisivelId}
+      />
+
+      <CatalogoModal
+        isOpen={catalogoAberto}
+        onClose={() => setCatalogoAberto(false)}
+        onSelecionar={adicionarNoCentro}
       />
     </div>
   );
@@ -346,13 +473,14 @@ function CabecalhoBuilder({
             >
               Salvar
             </Button>
-            <IconButton
-              icon={Trash2}
-              variant="danger"
+            <Button
+              variant="danger-soft"
               size="sm"
-              ariaLabel="Excluir fluxo"
+              icon={Trash2}
               onClick={onExcluir}
-            />
+            >
+              Excluir
+            </Button>
           </>
         )}
       </div>
@@ -381,17 +509,30 @@ function EstadoSemFluxo({ onCriar }) {
 
 function DrawerNovoFluxo({ isOpen, onClose, onCriar }) {
   const [nome, setNome] = useState('');
+  const [templateId, setTemplateId] = useState(null); // null = em branco
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa form ao fechar
-    if (!isOpen) setNome('');
+    if (!isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa form ao fechar
+      setNome('');
+      setTemplateId(null);
+    }
   }, [isOpen]);
+
+  // Quando seleciona um template, sugere o nome dele.
+  useEffect(() => {
+    if (templateId) {
+      const tpl = obterTemplate(templateId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- prefill ao trocar template
+      if (tpl) setNome(tpl.nome);
+    }
+  }, [templateId]);
 
   const submeter = (e) => {
     e.preventDefault();
     const limpo = nome.trim();
     if (limpo.length < 2) return;
-    onCriar(limpo);
+    onCriar({ nome: limpo, templateId });
   };
 
   return (
@@ -399,18 +540,47 @@ function DrawerNovoFluxo({ isOpen, onClose, onCriar }) {
       isOpen={isOpen}
       onClose={onClose}
       title="Novo fluxo"
-      description="Cada fluxo e disparado por um gatilho proprio do bot."
-      size="md"
+      description="Comece em branco ou aplique um template pronto."
+      size="lg"
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button variant="accent" onClick={submeter} disabled={nome.trim().length < 2}>
-            Criar
+            {templateId ? 'Criar a partir do template' : 'Criar em branco'}
           </Button>
         </div>
       }
     >
-      <form onSubmit={submeter} className="space-y-4">
+      <form onSubmit={submeter} className="space-y-5">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+            Ponto de partida
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <CartaoTemplate
+              ativo={!templateId}
+              onClick={() => setTemplateId(null)}
+              titulo="Em branco"
+              descricao="Comece com um canvas vazio e monte tudo do zero."
+              ehBranco
+            />
+            {TEMPLATES.map((tpl) => {
+              const Icone = tpl.icone;
+              return (
+                <CartaoTemplate
+                  key={tpl.id}
+                  ativo={templateId === tpl.id}
+                  onClick={() => setTemplateId(tpl.id)}
+                  titulo={tpl.nome}
+                  descricao={tpl.descricao}
+                  Icone={Icone}
+                  rotuloCategoria={tpl.categoria}
+                />
+              );
+            })}
+          </div>
+        </div>
+
         <Input
           label="Nome do fluxo"
           autoFocus
@@ -424,5 +594,46 @@ function DrawerNovoFluxo({ isOpen, onClose, onCriar }) {
         </p>
       </form>
     </Drawer>
+  );
+}
+
+function CartaoTemplate({ ativo, onClick, titulo, descricao, Icone, rotuloCategoria, ehBranco }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
+        ativo
+          ? 'border-[var(--accent-border)] bg-[var(--accent-soft)]'
+          : 'border-[var(--border-main)] bg-[var(--bg-card)] hover:bg-[var(--bg-subtle)] hover:border-[var(--border-strong)]'
+      }`}
+    >
+      <div
+        className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 border ${
+          ativo
+            ? 'bg-[var(--accent)] text-[var(--text-on-accent)] border-[var(--accent-border)]'
+            : ehBranco
+              ? 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-dashed border-[var(--border-strong)]'
+              : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-main)]'
+        }`}
+      >
+        {Icone ? <Icone size={16} strokeWidth={1.75} /> : <span className="text-base font-bold">+</span>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold tracking-tight text-[var(--text-main)]">
+            {titulo}
+          </span>
+          {rotuloCategoria && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] px-1.5 py-0.5 rounded bg-[var(--bg-subtle)]">
+              {rotuloCategoria}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-snug">
+          {descricao}
+        </p>
+      </div>
+    </button>
   );
 }

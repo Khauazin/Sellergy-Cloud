@@ -91,5 +91,7 @@ export default function AdminLayout() {
 function resolveDinamico(path) {
   if (path.startsWith('/admin/clientes/')) return { titulo: 'Detalhes do cliente', breadcrumb: 'Clientes' };
   if (path.startsWith('/admin/builder/')) return { titulo: 'Construtor de fluxo', breadcrumb: 'Bots' };
+  if (path.match(/^\/admin\/bots\/[^/]+\/tools$/)) return { titulo: 'Ferramentas do agente', breadcrumb: 'Bots' };
+  if (path.match(/^\/admin\/bots\/[^/]+\/canal$/)) return { titulo: 'Canal do bot', breadcrumb: 'Bots' };
   return { titulo: 'Sellergy Cloud', breadcrumb: 'Admin' };
 }

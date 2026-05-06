@@ -11,6 +11,10 @@ const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
 roteador.use(requerModuloLiberado('BOTS'));
 
+const { nomesDisponiveis } = require('../agente/tools');
+const telegram = require('../canais/telegram');
+const { carregarCredencialDecifrada } = require('../credenciais');
+
 // Campos seguros para listagem (sem apiKeyIa).
 const camposBotPublicos = {
   id: true,
@@ -26,6 +30,11 @@ const camposBotPublicos = {
   provedorIa: true,
   promptSistemaIa: true,
   temperaturaIa: true,
+  toolsHabilitadas: true,
+  credencialCanalId: true,
+  identificadorCanal: true,
+  verifyTokenCanal: true,
+  fluxoPadraoId: true,
   criadoEm: true,
   atualizadoEm: true,
 };
@@ -269,6 +278,186 @@ roteador.post('/:id/duplicate', requerPermissao('BOTS', 'criar'), async (req, re
   } catch (error) {
     console.error('[bots/duplicate]', error);
     res.status(500).json({ error: 'Erro ao duplicar o bot.' });
+  }
+});
+
+// ==========================================
+// Configuracao de canal externo (Sub-fase 3.7)
+// Body: { credencialCanalId?, identificadorCanal?, verifyTokenCanal?, fluxoPadraoId?, canal? }
+// ==========================================
+roteador.patch('/:id/canal', requerPermissao('BOTS', 'editar'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = ehAdmin(req.usuario) ? { id } : { id, clienteId: req.usuario.clienteId };
+    const bot = await prisma.bot.findFirst({ where, select: { id: true, clienteId: true } });
+    if (!bot) return res.status(404).json({ erro: 'Bot nao encontrado.' });
+
+    const { credencialCanalId, identificadorCanal, verifyTokenCanal, fluxoPadraoId, canal } = req.body || {};
+    const data = {};
+
+    if (canal !== undefined) {
+      if (typeof canal !== 'string') return res.status(400).json({ erro: 'canal invalido.' });
+      data.canal = canal;
+    }
+    if (credencialCanalId !== undefined) {
+      if (credencialCanalId === null || credencialCanalId === '') {
+        data.credencialCanalId = null;
+      } else {
+        const cred = await prisma.credencial.findFirst({
+          where: { id: credencialCanalId, clienteId: bot.clienteId },
+          select: { id: true },
+        });
+        if (!cred) return res.status(400).json({ erro: 'Credencial nao pertence ao tenant.' });
+        data.credencialCanalId = credencialCanalId;
+      }
+    }
+    if (identificadorCanal !== undefined) {
+      data.identificadorCanal = identificadorCanal ? String(identificadorCanal).trim() : null;
+    }
+    if (verifyTokenCanal !== undefined) {
+      data.verifyTokenCanal = verifyTokenCanal ? String(verifyTokenCanal).trim() : null;
+    }
+    if (fluxoPadraoId !== undefined) {
+      if (fluxoPadraoId === null || fluxoPadraoId === '') {
+        data.fluxoPadraoId = null;
+      } else {
+        const fluxo = await prisma.fluxo.findFirst({
+          where: { id: fluxoPadraoId, botId: bot.id },
+          select: { id: true },
+        });
+        if (!fluxo) return res.status(400).json({ erro: 'Fluxo nao pertence a este bot.' });
+        data.fluxoPadraoId = fluxoPadraoId;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ erro: 'Nenhum campo para atualizar.' });
+    }
+
+    const atualizado = await prisma.bot.update({
+      where: { id: bot.id },
+      data,
+      select: camposBotPublicos,
+    });
+    res.json(atualizado);
+  } catch (erro) {
+    console.error('[bots/canal]', erro);
+    res.status(500).json({ erro: 'Erro ao configurar canal.' });
+  }
+});
+
+// ==========================================
+// Telegram: registrar webhook na API do Telegram automaticamente.
+// Pega a credencial+verifyTokenCanal do bot e chama setWebhook do
+// Telegram apontando pra URL publica deste backend.
+// ==========================================
+roteador.post('/:id/canal/telegram/registrar-webhook', requerPermissao('BOTS', 'editar'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = ehAdmin(req.usuario) ? { id } : { id, clienteId: req.usuario.clienteId };
+    const bot = await prisma.bot.findFirst({
+      where,
+      select: { id: true, clienteId: true, canal: true, credencialCanalId: true, verifyTokenCanal: true },
+    });
+    if (!bot) return res.status(404).json({ erro: 'Bot nao encontrado.' });
+    if (bot.canal !== 'TELEGRAM') return res.status(400).json({ erro: 'Bot nao esta configurado para canal TELEGRAM.' });
+    if (!bot.credencialCanalId) return res.status(400).json({ erro: 'Bot sem credencial de canal. Selecione uma credencial TELEGRAM_BOT_TOKEN.' });
+    if (!bot.verifyTokenCanal) return res.status(400).json({ erro: 'Bot sem verifyTokenCanal. Gere e salve um antes de registrar.' });
+
+    const { urlPublica } = req.body || {};
+    if (!urlPublica || typeof urlPublica !== 'string') {
+      return res.status(400).json({ erro: 'urlPublica eh obrigatoria (vem do frontend).' });
+    }
+    if (!/^https:\/\//i.test(urlPublica)) {
+      return res.status(400).json({ erro: 'urlPublica precisa ser HTTPS (Telegram exige).' });
+    }
+
+    const credencial = await carregarCredencialDecifrada({
+      credencialId: bot.credencialCanalId,
+      clienteId: bot.clienteId,
+    });
+    if (!credencial) return res.status(400).json({ erro: 'Credencial nao encontrada.' });
+    if (credencial.tipo !== 'TELEGRAM_BOT_TOKEN') {
+      return res.status(400).json({ erro: `Credencial errada: esperado TELEGRAM_BOT_TOKEN, recebido ${credencial.tipo}.` });
+    }
+
+    const urlWebhook = `${urlPublica.replace(/\/$/, '')}/canais/telegram/${bot.id}`;
+    const resultado = await telegram.registrarWebhook({
+      token: credencial.dados.token,
+      url: urlWebhook,
+      secretToken: bot.verifyTokenCanal,
+    });
+
+    res.json({ ok: true, urlWebhook, telegram: resultado });
+  } catch (erro) {
+    console.error('[bots/telegram/register-webhook]', erro);
+    res.status(500).json({ erro: erro?.message || 'Erro ao registrar webhook no Telegram.' });
+  }
+});
+
+// Consulta webhook atual no Telegram pra mostrar status na UI.
+roteador.get('/:id/canal/telegram/webhook-info', requerPermissao('BOTS', 'visualizar'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const where = ehAdmin(req.usuario) ? { id } : { id, clienteId: req.usuario.clienteId };
+    const bot = await prisma.bot.findFirst({
+      where,
+      select: { id: true, clienteId: true, canal: true, credencialCanalId: true },
+    });
+    if (!bot) return res.status(404).json({ erro: 'Bot nao encontrado.' });
+    if (bot.canal !== 'TELEGRAM') return res.status(400).json({ erro: 'Bot nao esta configurado para canal TELEGRAM.' });
+    if (!bot.credencialCanalId) return res.status(400).json({ erro: 'Bot sem credencial de canal.' });
+
+    const credencial = await carregarCredencialDecifrada({
+      credencialId: bot.credencialCanalId,
+      clienteId: bot.clienteId,
+    });
+    if (!credencial || credencial.tipo !== 'TELEGRAM_BOT_TOKEN') {
+      return res.status(400).json({ erro: 'Credencial invalida.' });
+    }
+
+    const info = await telegram.infoWebhook({ token: credencial.dados.token });
+    res.json({ info });
+  } catch (erro) {
+    console.error('[bots/telegram/webhook-info]', erro);
+    res.status(500).json({ erro: erro?.message || 'Erro ao consultar webhook.' });
+  }
+});
+
+// ==========================================
+// Tools habilitadas no bot (Sub-fase 3.5)
+// ==========================================
+roteador.patch('/:id/tools', requerPermissao('BOTS', 'editar'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const lista = req.body?.toolsHabilitadas;
+    if (!Array.isArray(lista)) {
+      return res.status(400).json({ erro: 'toolsHabilitadas deve ser array.' });
+    }
+
+    const validas = new Set(nomesDisponiveis());
+    const limpa = [];
+    for (const nome of lista) {
+      if (typeof nome !== 'string') continue;
+      if (!validas.has(nome)) {
+        return res.status(400).json({ erro: `Tool desconhecida: ${nome}` });
+      }
+      if (!limpa.includes(nome)) limpa.push(nome);
+    }
+
+    const where = ehAdmin(req.usuario) ? { id } : { id, clienteId: req.usuario.clienteId };
+    const bot = await prisma.bot.findFirst({ where, select: { id: true } });
+    if (!bot) return res.status(404).json({ erro: 'Bot nao encontrado.' });
+
+    const atualizado = await prisma.bot.update({
+      where: { id: bot.id },
+      data: { toolsHabilitadas: limpa },
+      select: { id: true, toolsHabilitadas: true },
+    });
+    res.json(atualizado);
+  } catch (erro) {
+    console.error('[bots/tools]', erro);
+    res.status(500).json({ erro: 'Erro ao atualizar tools.' });
   }
 });
 

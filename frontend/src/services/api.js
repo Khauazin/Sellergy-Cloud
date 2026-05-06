@@ -12,4 +12,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// URL publica do backend para colar em servicos externos (Meta, MP, etc).
+// Em dev, vem do tunel ngrok; em prod, do dominio publico real.
+// Fallback para a baseURL da API quando nao definida.
+export function urlPublica() {
+  const publica = import.meta.env.VITE_URL_PUBLICA;
+  const base = publica || api.defaults.baseURL || '';
+  return base.replace(/\/$/, '');
+}
+
 export default api;

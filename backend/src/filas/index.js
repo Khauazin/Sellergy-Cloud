@@ -10,6 +10,8 @@ const NOME_QUEUE_EXECUCAO = 'execucao-fluxo';
 const NOME_JOB_EXECUTAR = 'executar';
 const NOME_QUEUE_AGENDAMENTO = 'agendamento-disparo';
 const NOME_JOB_DISPARAR = 'disparar';
+const NOME_QUEUE_RETENCAO = 'retencao-execucoes';
+const NOME_JOB_LIMPAR = 'limpar';
 
 // Producer e Worker exigem opcoes de connection diferentes:
 //  - Producer: aceita defaults
@@ -44,6 +46,39 @@ const filaAgendamento = new Queue(NOME_QUEUE_AGENDAMENTO, {
     removeOnFail: { age: 60 * 60 * 24 * 30 },
   },
 });
+
+// Fila de retencao: job recorrente que apaga execucoes antigas de acordo com
+// `Fluxo.diasRetencaoSucesso` e `Fluxo.diasRetencaoErro`.
+const filaRetencao = new Queue(NOME_QUEUE_RETENCAO, {
+  connection: conexaoProducer,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 30_000 },
+    removeOnComplete: { age: 60 * 60 * 24 * 7, count: 100 },
+    removeOnFail: { age: 60 * 60 * 24 * 30 },
+  },
+});
+
+// Job recorrente diario as 03:00 UTC. JobId fixo evita duplicacao.
+async function garantirJobRetencaoDiario() {
+  const jobId = 'retencao:diaria';
+  // Limpa repeatable antigo (caso o pattern tenha mudado entre deploys).
+  const repeatables = await filaRetencao.getRepeatableJobs();
+  for (const r of repeatables) {
+    if ((r.id || '').startsWith('retencao:')) {
+      await filaRetencao.removeRepeatableByKey(r.key);
+    }
+  }
+  return filaRetencao.add(
+    NOME_JOB_LIMPAR,
+    {},
+    {
+      jobId,
+      repeat: { pattern: '0 3 * * *', tz: 'UTC' },
+      removeOnComplete: true,
+    }
+  );
+}
 
 // `jobId: execucaoId` evita enfileirar a mesma execucao duas vezes (idempotencia).
 async function enfileirarExecucao({ execucaoId, prioridade }) {
@@ -86,20 +121,25 @@ async function removerRepeatableAgendamento({ agendamentoId }) {
 async function fecharFilas() {
   await filaExecucao.close();
   await filaAgendamento.close();
+  await filaRetencao.close();
   await conexaoProducer.quit();
 }
 
 module.exports = {
   filaExecucao,
   filaAgendamento,
+  filaRetencao,
   enfileirarExecucao,
   adicionarRepeatableAgendamento,
   removerRepeatableAgendamento,
+  garantirJobRetencaoDiario,
   criarConexaoRedis,
   fecharFilas,
   NOME_QUEUE_EXECUCAO,
   NOME_JOB_EXECUTAR,
   NOME_QUEUE_AGENDAMENTO,
   NOME_JOB_DISPARAR,
+  NOME_QUEUE_RETENCAO,
+  NOME_JOB_LIMPAR,
   REDIS_URL,
 };

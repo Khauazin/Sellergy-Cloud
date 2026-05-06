@@ -1,20 +1,28 @@
-// Worker BullMQ. Roda dois consumidores no mesmo processo:
+// Worker BullMQ. Roda tres consumidores no mesmo processo:
 //  - `execucao-fluxo`: processa execucoes (engine sandbox + persistencia)
 //  - `agendamento-disparo`: dispara execucoes de fluxos agendados
+//  - `retencao-execucoes`: limpa registros de Execucao alem do prazo
+// Carrega .env do CWD + da raiz do projeto (mesmo padrao do index.js).
+const path = require('path');
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const { Worker } = require('bullmq');
 const prisma = require('./prisma');
 const {
   criarConexaoRedis,
   enfileirarExecucao,
+  garantirJobRetencaoDiario,
   NOME_QUEUE_EXECUCAO,
   NOME_JOB_EXECUTAR,
   NOME_QUEUE_AGENDAMENTO,
   NOME_JOB_DISPARAR,
+  NOME_QUEUE_RETENCAO,
+  NOME_JOB_LIMPAR,
 } = require('./filas');
 const { processarExecucao, criarExecucaoPendente } = require('./engine');
 const { proximoDisparo, reconciliarAgendamentos } = require('./agendamento');
+const { aplicarRetencaoExecucoes } = require('./retencao');
 
 const CONCORRENCIA = parseInt(process.env.WORKER_CONCORRENCIA || '5', 10);
 
@@ -22,6 +30,7 @@ console.log(`[worker] iniciando · execucao=${NOME_QUEUE_EXECUCAO} agendamento=$
 
 const conexaoExecucao = criarConexaoRedis({ paraWorker: true });
 const conexaoAgendamento = criarConexaoRedis({ paraWorker: true });
+const conexaoRetencao = criarConexaoRedis({ paraWorker: true });
 
 const workerExecucao = new Worker(
   NOME_QUEUE_EXECUCAO,
@@ -33,7 +42,11 @@ const workerExecucao = new Worker(
     if (!execucaoId) throw new Error('Job sem execucaoId.');
 
     console.log(`[worker:exec] processando ${execucaoId} (job=${job.id} tentativa=${job.attemptsMade + 1})`);
-    const resultado = await processarExecucao(execucaoId);
+    const resultado = await processarExecucao(execucaoId, {
+      // O backend HTTP escuta `progress` events via QueueEvents e re-emite
+      // via socket.io para os clientes que subscreveram em `execucao:<id>`.
+      onProgresso: (evento) => job.updateProgress(evento),
+    });
     return { execucaoId: resultado.id, status: resultado.status };
   },
   { connection: conexaoExecucao, concurrency: CONCORRENCIA }
@@ -88,18 +101,35 @@ const workerAgendamento = new Worker(
   { connection: conexaoAgendamento, concurrency: 2 }
 );
 
-for (const [nome, w] of [['exec', workerExecucao], ['sched', workerAgendamento]]) {
+const workerRetencao = new Worker(
+  NOME_QUEUE_RETENCAO,
+  async (job) => {
+    if (job.name !== NOME_JOB_LIMPAR) {
+      throw new Error(`Job desconhecido em ${NOME_QUEUE_RETENCAO}: ${job.name}`);
+    }
+    console.log('[worker:retencao] iniciando limpeza diaria...');
+    const r = await aplicarRetencaoExecucoes();
+    console.log(`[worker:retencao] removidas=${r.totalSucesso} sucessos, ${r.totalErro} erros`);
+    return r;
+  },
+  { connection: conexaoRetencao, concurrency: 1 }
+);
+
+for (const [nome, w] of [['exec', workerExecucao], ['sched', workerAgendamento], ['retencao', workerRetencao]]) {
   w.on('completed', (job, ret) => console.log(`[worker:${nome}] completed job=${job.id} ret=${JSON.stringify(ret)}`));
   w.on('failed', (job, err) => console.error(`[worker:${nome}] failed job=${job?.id} erro=${err?.message}`));
   w.on('error', (err) => console.error(`[worker:${nome}] erro:`, err));
 }
 
-// Reconciliacao: garante que todo agendamento ativo tem repeatable na fila.
-// Roda apos um pequeno delay para garantir que a conexao esta estavel.
+// Reconciliacao: garante que todo agendamento ativo tem repeatable na fila
+// e que o job de retencao diario esta agendado.
 setTimeout(() => {
   reconciliarAgendamentos()
     .then((r) => console.log(`[worker:sched] reconciliados=${r.ok}/${r.total} erros=${r.erros}`))
     .catch((e) => console.error('[worker:sched] erro na reconciliacao:', e));
+  garantirJobRetencaoDiario()
+    .then(() => console.log('[worker:retencao] job diario garantido (03:00 UTC)'))
+    .catch((e) => console.error('[worker:retencao] erro ao agendar:', e));
 }, 2_000);
 
 async function shutdown(sinal) {
@@ -107,8 +137,10 @@ async function shutdown(sinal) {
   try {
     await workerExecucao.close();
     await workerAgendamento.close();
+    await workerRetencao.close();
     await conexaoExecucao.quit();
     await conexaoAgendamento.quit();
+    await conexaoRetencao.quit();
   } catch (err) {
     console.error('[worker] erro ao encerrar:', err);
   }

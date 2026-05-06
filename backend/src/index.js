@@ -1,4 +1,10 @@
+// Carrega .env de duas localizacoes (sem sobrescrever):
+//   1) CWD — caminho que cobre `cd backend; npm run dev` se houver um .env aqui
+//   2) raiz do projeto — onde o .env real vive em dev local
+// Em producao (Docker) as vars ja vem do `env_file` do compose; ambas sao no-op.
+const path = require('path');
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const express = require('express');
 const cors = require('cors');
@@ -6,6 +12,8 @@ const helmet = require('helmet');
 const http = require('http');
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
+const { QueueEvents } = require('bullmq');
+const { criarConexaoRedis, NOME_QUEUE_EXECUCAO } = require('./filas');
 
 const rotasAutenticacao = require('./routes/auth.routes');
 const rotasClientes = require('./routes/clientes.routes');
@@ -16,7 +24,11 @@ const rotasBuilder = require('./routes/builder.routes');
 const rotasExecucoes = require('./routes/execucoes.routes');
 const rotasWebhooksAdmin = require('./routes/webhooks-admin.routes');
 const rotasWebhooksPublico = require('./routes/webhooks-publico.routes');
+const rotasCanaisPublico = require('./routes/canais-publico.routes');
 const rotasAgendamentosAdmin = require('./routes/agendamentos-admin.routes');
+const rotasConversas = require('./routes/conversas.routes');
+const rotasCredenciais = require('./routes/credenciais.routes');
+const rotasTools = require('./routes/tools.routes');
 const rotasBotVariables = require('./routes/bot-variables.routes');
 const rotasUsuarios = require('./routes/usuarios.routes');
 const rotasAgenda = require('./routes/agenda.routes');
@@ -47,6 +59,10 @@ const opcoesCors = {
 };
 
 const app = express();
+// Atras de proxy/tunel (ngrok, nginx, load balancer): confia no
+// primeiro hop pra que req.ip e X-Forwarded-For funcionem corretamente.
+// Necessario pro express-rate-limit nao reclamar e identificar o cliente real.
+app.set('trust proxy', 1);
 const servidor = http.createServer(app);
 const io = new Server(servidor, {
   cors: opcoesCors,
@@ -76,6 +92,9 @@ app.use(cors(opcoesCors));
 // Webhooks publicos: registrados ANTES do express.json para que possam
 // validar HMAC sobre o byte-stream original.
 app.use('/webhooks', rotasWebhooksPublico);
+// Canais externos (WhatsApp/Telegram) — registrado ANTES do express.json
+// global. Cada rota usa parser proprio quando necessario.
+app.use('/canais', rotasCanaisPublico);
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -106,6 +125,9 @@ app.use('/builder', rotasBuilder);
 app.use('/execucoes', rotasExecucoes);
 app.use('/webhooks-admin', rotasWebhooksAdmin);
 app.use('/agendamentos-admin', rotasAgendamentosAdmin);
+app.use('/conversas', rotasConversas);
+app.use('/credenciais', rotasCredenciais);
+app.use('/tools', rotasTools);
 app.use('/bot-variables', rotasBotVariables);
 app.use('/agenda', rotasAgenda);
 app.use('/catalogo', rotasCatalogo);
@@ -120,9 +142,44 @@ app.get('/saude', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Novo cliente conectado:', socket.id, 'usuario:', socket.usuario?.id);
+
+  // O cliente entra na room `execucao:<id>` para receber atualizacoes em tempo
+  // real. Pelo socket trafegam apenas metadados (status/duracao/IDs), sem
+  // payload sensivel — para detalhes o cliente refaz GET /execucoes/:id.
+  socket.on('execucao:subscribe', ({ execucaoId } = {}) => {
+    if (typeof execucaoId === 'string' && execucaoId) {
+      socket.join(`execucao:${execucaoId}`);
+    }
+  });
+  socket.on('execucao:unsubscribe', ({ execucaoId } = {}) => {
+    if (typeof execucaoId === 'string' && execucaoId) {
+      socket.leave(`execucao:${execucaoId}`);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Cliente desconectado:', socket.id);
   });
+});
+
+// QueueEvents: escuta o progresso emitido pelo worker via job.updateProgress
+// e re-emite via socket.io para os subscribers da room `execucao:<id>`.
+const conexaoEventos = criarConexaoRedis({ paraWorker: true });
+const eventosExecucao = new QueueEvents(NOME_QUEUE_EXECUCAO, { connection: conexaoEventos });
+
+eventosExecucao.on('progress', ({ jobId, data }) => {
+  if (!jobId || !data) return;
+  io.to(`execucao:${jobId}`).emit('execucao:evento', data);
+});
+
+eventosExecucao.on('completed', ({ jobId }) => {
+  if (!jobId) return;
+  io.to(`execucao:${jobId}`).emit('execucao:fim', { execucaoId: jobId });
+});
+
+eventosExecucao.on('failed', ({ jobId, failedReason }) => {
+  if (!jobId) return;
+  io.to(`execucao:${jobId}`).emit('execucao:fim', { execucaoId: jobId, erro: failedReason });
 });
 
 const PORTA = process.env.BACKEND_PORT || 3333;
@@ -137,6 +194,8 @@ async function encerrar(sinal) {
   console.log(`Sinal ${sinal} recebido, encerrando servidor...`);
   servidor.close(() => console.log('HTTP fechado.'));
   try {
+    await eventosExecucao.close();
+    await conexaoEventos.quit();
     await fecharFilas();
   } catch (erro) {
     console.error('Erro ao fechar filas:', erro);

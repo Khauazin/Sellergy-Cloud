@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, Radio } from 'lucide-react';
 import clsx from 'clsx';
 import { Drawer, Badge } from '../ui';
 import api from '../../services/api';
@@ -14,40 +15,76 @@ const STATUS_VARIANT = {
 };
 
 const STATUS_FINAIS = new Set(['SUCESSO', 'ERRO', 'CANCELADA']);
-const INTERVALO_POLL_MS = 1000;
+const INTERVALO_FALLBACK_MS = 5000;
 
 export default function DrawerExecucao({ execucaoId, isOpen, onClose }) {
   const [execucao, setExecucao] = useState(null);
   const [carregando, setCarregando] = useState(false);
+  const [conectado, setConectado] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !execucaoId) return;
     let ativo = true;
-    let timer;
+    let socket;
+    let timerFallback;
 
     const buscar = async () => {
-      if (!ativo) return;
+      if (!ativo) return null;
       try {
         const r = await api.get(`/execucoes/${execucaoId}`);
-        if (!ativo) return;
+        if (!ativo) return null;
         setExecucao(r.data);
-        if (!STATUS_FINAIS.has(r.data?.status)) {
-          timer = setTimeout(buscar, INTERVALO_POLL_MS);
-        }
+        return r.data;
       } catch {
         if (ativo) setExecucao(null);
+        return null;
       } finally {
         if (ativo) setCarregando(false);
       }
     };
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- polling on open
+    const agendarFallback = () => {
+      if (timerFallback) clearTimeout(timerFallback);
+      timerFallback = setTimeout(async () => {
+        if (!ativo) return;
+        // Se ainda nao terminou e nao recebeu evento socket, refetch.
+        const dados = await buscar();
+        if (ativo && dados && !STATUS_FINAIS.has(dados.status)) agendarFallback();
+      }, INTERVALO_FALLBACK_MS);
+    };
+
+    const abrirSocket = () => {
+      const token = localStorage.getItem('@sellergy:token');
+      socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333', {
+        auth: { token },
+        transports: ['websocket'],
+      });
+      socket.on('connect', () => {
+        if (!ativo) return;
+        setConectado(true);
+        socket.emit('execucao:subscribe', { execucaoId });
+      });
+      socket.on('disconnect', () => ativo && setConectado(false));
+      socket.on('execucao:evento', () => buscar());
+      socket.on('execucao:fim', () => buscar());
+      socket.on('connect_error', () => ativo && setConectado(false));
+    };
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch+subscribe on open
     setCarregando(true);
     setExecucao(null);
     buscar();
+    abrirSocket();
+    agendarFallback();
+
     return () => {
       ativo = false;
-      if (timer) clearTimeout(timer);
+      if (timerFallback) clearTimeout(timerFallback);
+      if (socket) {
+        try { socket.emit('execucao:unsubscribe', { execucaoId }); } catch { /* noop */ }
+        socket.removeAllListeners();
+        socket.disconnect();
+      }
     };
   }, [isOpen, execucaoId]);
 
@@ -55,7 +92,16 @@ export default function DrawerExecucao({ execucaoId, isOpen, onClose }) {
     <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title="Logs de execucao"
+      title={
+        <span className="inline-flex items-center gap-2">
+          Logs de execucao
+          {conectado && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--success)] font-semibold">
+              <Radio size={10} /> ao vivo
+            </span>
+          )}
+        </span>
+      }
       description={
         execucao
           ? `#${execucao.id.slice(0, 8)} · ${formatarData(execucao.iniciadaEm)}`

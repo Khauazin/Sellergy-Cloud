@@ -1,11 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ShoppingBag, Plus, Calendar, User, Package } from 'lucide-react';
+import { ShoppingBag, Plus, Calendar, User, Package, Ban } from 'lucide-react';
 import api from '../services/api';
+import vendaService from '../services/vendaService';
 import {
   Card, CardHeader, CardTitle, Button, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, Drawer, useToast, Combobox
 } from '../components/ui';
 import Modal from '../components/Modal';
+
+const STATUS_BADGE = {
+  COMPLETED: { variant: 'success', label: 'Concluida' },
+  PENDING: { variant: 'warning', label: 'Pendente' },
+  CANCELLED: { variant: 'danger', label: 'Cancelada' },
+  REFUNDED: { variant: 'neutral', label: 'Reembolsada' },
+};
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -70,6 +78,28 @@ export default function VendasPage() {
     }
   };
 
+  const handleCancelar = async (venda) => {
+    if (!venda) return;
+    if (venda.status === 'CANCELLED') {
+      toast.info('Venda ja esta cancelada.');
+      return;
+    }
+    const motivo = window.prompt(
+      `Cancelar venda ${fmtBRL(venda.valor)}?\n\nIsto vai estornar o estoque e cancelar o lancamento financeiro. Digite o motivo (opcional):`,
+      ''
+    );
+    // null = clicou em Cancelar; '' = OK sem digitar -> prossegue sem motivo
+    if (motivo === null) return;
+    try {
+      await vendaService.cancelar(venda.id, motivo);
+      toast.success('Venda cancelada. Estoque estornado e lancamento financeiro cancelado.');
+      setDrawer({ open: false, venda: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao cancelar venda.');
+    }
+  };
+
   const totalMes = useMemo(() => {
     const agora = new Date();
     return vendas
@@ -128,46 +158,54 @@ export default function VendasPage() {
                 <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
                 <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Cliente</th>
                 <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Pagamento</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Status</th>
                 <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor</th>
                 <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Data</th>
               </tr>
             </thead>
             <tbody>
-              {filtradas.map((v) => (
-                <tr
-                  key={v.id}
-                  onClick={() => setDrawer({ open: true, venda: v })}
-                  className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors"
-                >
-                  <td className="py-3 px-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-lg bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center flex-shrink-0">
-                        <ShoppingBag size={16} strokeWidth={1.75} />
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
-                          {v.descricao || `Venda #${v.id.slice(0, 8)}`}
+              {filtradas.map((v) => {
+                const cancelada = v.status === 'CANCELLED';
+                const cfgStatus = STATUS_BADGE[v.status] || { variant: 'neutral', label: v.status || '—' };
+                return (
+                  <tr
+                    key={v.id}
+                    onClick={() => setDrawer({ open: true, venda: v })}
+                    className={`border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors ${cancelada ? 'opacity-60' : ''}`}
+                  >
+                    <td className="py-3 px-5">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${cancelada ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--success-soft)] text-[var(--success)]'}`}>
+                          <ShoppingBag size={16} strokeWidth={1.75} />
                         </div>
-                        <div className="text-[11px] text-[var(--text-muted)]">
-                          {v.movimentacoesEstoque?.length || 0} itens
+                        <div>
+                          <div className={`text-sm font-semibold tracking-tight ${cancelada ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>
+                            {v.descricao || `Venda #${v.id.slice(0, 8)}`}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-muted)]">
+                            {v.movimentacoesEstoque?.length || 0} itens
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-5 text-xs text-[var(--text-secondary)]">
-                    {v.lead?.nome || '—'}
-                  </td>
-                  <td className="py-3 px-5 text-xs">
-                    {v.metodoPagamento ? <Badge variant="neutral" size="sm">{v.metodoPagamento}</Badge> : '—'}
-                  </td>
-                  <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--success)] tabular-nums">
-                    {fmtBRL(v.valor)}
-                  </td>
-                  <td className="py-3 px-5 text-xs text-[var(--text-muted)]">
-                    {new Date(v.criadoEm).toLocaleDateString('pt-BR')}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-3 px-5 text-xs text-[var(--text-secondary)]">
+                      {v.lead?.nome || '—'}
+                    </td>
+                    <td className="py-3 px-5 text-xs">
+                      {v.metodoPagamento ? <Badge variant="neutral" size="sm">{v.metodoPagamento}</Badge> : '—'}
+                    </td>
+                    <td className="py-3 px-5 text-xs">
+                      <Badge variant={cfgStatus.variant} size="sm">{cfgStatus.label}</Badge>
+                    </td>
+                    <td className={`py-3 px-5 text-right text-sm font-semibold tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--success)]'}`}>
+                      {fmtBRL(v.valor)}
+                    </td>
+                    <td className="py-3 px-5 text-xs text-[var(--text-muted)]">
+                      {new Date(v.criadoEm).toLocaleDateString('pt-BR')}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Card>
@@ -188,6 +226,7 @@ export default function VendasPage() {
         isOpen={drawer.open}
         onClose={() => setDrawer({ open: false, venda: null })}
         venda={drawer.venda}
+        onCancelar={handleCancelar}
       />
     </div>
   );
@@ -342,8 +381,11 @@ function ModalVenda({ isOpen, onClose, variacoes, leads, categorias, onSalvar })
   );
 }
 
-function DrawerVenda({ isOpen, onClose, venda }) {
+function DrawerVenda({ isOpen, onClose, venda, onCancelar }) {
   if (!venda) return null;
+
+  const cancelada = venda.status === 'CANCELLED';
+  const cfgStatus = STATUS_BADGE[venda.status] || { variant: 'neutral', label: venda.status || '—' };
 
   return (
     <Drawer
@@ -352,20 +394,55 @@ function DrawerVenda({ isOpen, onClose, venda }) {
       title={`Venda · ${fmtBRL(venda.valor)}`}
       description={venda.descricao}
       size="md"
+      footer={
+        !cancelada && onCancelar ? (
+          <div className="flex justify-end">
+            <Button
+              variant="danger-soft"
+              icon={Ban}
+              size="sm"
+              onClick={() => onCancelar(venda)}
+            >
+              Cancelar venda
+            </Button>
+          </div>
+        ) : null
+      }
     >
       <div className="space-y-5">
         <div className="text-center py-4">
-          <div className="text-4xl font-semibold tracking-tight tabular-nums text-[var(--success)]">
+          <div className={`text-4xl font-semibold tracking-tight tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--success)]'}`}>
             {fmtBRL(venda.valor)}
           </div>
           <div className="text-xs text-[var(--text-muted)] mt-2">
             {new Date(venda.criadoEm).toLocaleString('pt-BR')}
           </div>
+          <div className="mt-2">
+            <Badge variant={cfgStatus.variant} size="sm">{cfgStatus.label}</Badge>
+          </div>
         </div>
+
+        {cancelada && (
+          <div className="rounded-xl border border-[var(--danger-soft)] bg-[var(--danger-soft)] p-3">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--danger-text)] mb-1">
+              Cancelada
+            </div>
+            {venda.dataCancelamento && (
+              <div className="text-xs text-[var(--danger-text)]">
+                em {new Date(venda.dataCancelamento).toLocaleString('pt-BR')}
+              </div>
+            )}
+            {venda.motivoCancelamento && (
+              <div className="text-xs text-[var(--danger-text)] mt-1 italic">
+                "{venda.motivoCancelamento}"
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <InfoBox label="Pagamento" valor={venda.metodoPagamento || '—'} />
-          <InfoBox label="Status" valor={venda.status || '—'} />
+          <InfoBox label="Status" valor={cfgStatus.label} />
           <InfoBox label="Cliente" valor={venda.lead?.nome || '—'} />
           <InfoBox label="Itens" valor={`${venda.movimentacoesEstoque?.length || 0}`} />
         </div>

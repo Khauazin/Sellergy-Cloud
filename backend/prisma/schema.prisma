@@ -13,20 +13,21 @@ datasource db {
 // ==========================================
 
 model Usuario {
-  id              String     @id @default(uuid())
-  nome            String
-  email           String     @unique
-  senha           String
-  perfil          Perfil     @default(ADMIN)
-  permissoes      Json?      @default("{}")
-  deveTrocarSenha Boolean    @default(false)
-  foto            String? // URL ou data-URL base64 da foto pessoal
-  criadoEm        DateTime   @default(now())
-  atualizadoEm    DateTime   @updatedAt
-  clienteId       String?
-  alertas         Alerta[]
-  cliente         Cliente?   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  execucoes       Execucao[]
+  id                 String       @id @default(uuid())
+  nome               String
+  email              String       @unique
+  senha              String
+  perfil             Perfil       @default(ADMIN)
+  permissoes         Json?        @default("{}")
+  deveTrocarSenha    Boolean      @default(false)
+  foto               String? // URL ou data-URL base64 da foto pessoal
+  criadoEm           DateTime     @default(now())
+  atualizadoEm       DateTime     @updatedAt
+  clienteId          String?
+  alertas            Alerta[]
+  cliente            Cliente?     @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  execucoes          Execucao[]
+  credenciaisCriadas Credencial[]
 
   @@map("usuarios")
 }
@@ -57,6 +58,7 @@ model Cliente {
   lancamentosFinanceiros LancamentoFinanceiro[]
   categoriasFinanceiras  CategoriaFinanceira[]
   saldosHistorico        SaldoHistorico[]
+  credenciais            Credencial[]
 
   @@map("clientes")
 }
@@ -78,26 +80,39 @@ model SaldoHistorico {
 // ==========================================
 
 model Bot {
-  id                String        @id @default(uuid())
-  clienteId         String
-  nome              String
-  canal             Canal         @default(WHATSAPP)
-  status            StatusBot     @default(OFFLINE)
-  telefone          String?
-  totalMensagens    Int           @default(0)
-  mensagensHoje     Int           @default(0)
-  ultimaAtividadeEm DateTime?
-  criadoEm          DateTime      @default(now())
-  atualizadoEm      DateTime      @updatedAt
-  modeloIa          String?
-  provedorIa        ProvedorIA?
-  promptSistemaIa   String?
-  temperaturaIa     Float?        @default(0.7)
-  apiKeyIa          String?
-  alertas           Alerta[]
-  variaveis         VariavelBot[]
-  cliente           Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  fluxos            Fluxo[]
+  id                 String        @id @default(uuid())
+  clienteId          String
+  nome               String
+  canal              Canal         @default(WHATSAPP)
+  status             StatusBot     @default(OFFLINE)
+  telefone           String?
+  totalMensagens     Int           @default(0)
+  mensagensHoje      Int           @default(0)
+  ultimaAtividadeEm  DateTime?
+  criadoEm           DateTime      @default(now())
+  atualizadoEm       DateTime      @updatedAt
+  modeloIa           String?
+  provedorIa         ProvedorIA?
+  promptSistemaIa    String?
+  temperaturaIa      Float?        @default(0.7)
+  apiKeyIa           String?
+  // Lista de nomes de tools que o agente deste bot pode invocar
+  // (ex: ["crm.criarLead", "agenda.criarAgendamento"]). Default vazio = nenhuma.
+  toolsHabilitadas   Json          @default("[]")
+  // Canal externo (WhatsApp Cloud, Telegram, etc.):
+  //   credencialCanalId  -> Credencial (token do canal)
+  //   identificadorCanal -> ex: phoneNumberId do WhatsApp / chatId do Telegram
+  //   verifyTokenCanal   -> verify token usado pela Meta no GET de verificacao
+  //   fluxoPadraoId      -> fluxo disparado quando uma mensagem entra
+  credencialCanalId  String?
+  identificadorCanal String?
+  verifyTokenCanal   String?
+  fluxoPadraoId      String?
+  alertas            Alerta[]
+  variaveis          VariavelBot[]
+  cliente            Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  fluxos             Fluxo[]       @relation("FluxosDoBot")
+  fluxoPadrao        Fluxo?        @relation("FluxoPadraoDoBot", fields: [fluxoPadraoId], references: [id], onDelete: SetNull)
 
   @@map("bots")
 }
@@ -124,10 +139,14 @@ model Fluxo {
   ativo               Boolean            @default(false)
   tipoGatilho         TipoGatilho        @default(KEYWORD)
   palavraChaveGatilho String?
+  nivelLog            NivelLog           @default(METADATA)
+  diasRetencaoSucesso Int                @default(30)
+  diasRetencaoErro    Int                @default(90)
   criadoEm            DateTime           @default(now())
   atualizadoEm        DateTime           @updatedAt
   conexoes            Conexao[]
-  bot                 Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                 Bot                @relation("FluxosDoBot", fields: [botId], references: [id], onDelete: Cascade)
+  botsComoFluxoPadrao Bot[]              @relation("FluxoPadraoDoBot")
   nos                 No[]
   execucoes           Execucao[]
   webhooks            Webhook[]
@@ -347,6 +366,9 @@ model Venda {
   status                 StatusVenda            @default(COMPLETED)
   descricao              String?
   data                   DateTime               @default(now())
+  dataCancelamento       DateTime?
+  motivoCancelamento     String?
+  canceladaPorId         String?
   criadoEm               DateTime               @default(now())
   atualizadoEm           DateTime               @updatedAt
   cliente                Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -369,6 +391,7 @@ model Produto {
   descricao    String?
   tipo         TipoProduto         @default(FISICO)
   visibilidade VisibilidadeProduto @default(ATIVO)
+  imagemUrl    String? // URL no MinIO (bucket sellergy-midia)
   criadoEm     DateTime            @default(now())
   atualizadoEm DateTime            @updatedAt
 
@@ -392,6 +415,7 @@ model VariacaoProduto {
   estoqueMinimo     Int?     @default(0)
   estoqueIdeal      Int?     @default(0)
   localizacao       String?
+  imagemUrl         String? // imagem opcional da variacao (ex.: cor azul vs cor vermelha)
   criadoEm          DateTime @default(now())
   atualizadoEm      DateTime @updatedAt
 
@@ -485,6 +509,110 @@ model Alerta {
 }
 
 // ==========================================
+// CONVERSAS E MENSAGENS (cifradas em repouso)
+// ==========================================
+
+model Conversa {
+  id            String             @id @default(uuid())
+  clienteId     String
+  leadId        String?
+  botId         String?
+  canal         Canal              @default(WHATSAPP)
+  identificador String? // ex: telefone do contato no canal externo
+  ultimaMsgEm   DateTime?
+  criadoEm      DateTime           @default(now())
+  atualizadoEm  DateTime           @updatedAt
+  mensagens     MensagemConversa[]
+
+  @@index([clienteId, ultimaMsgEm(sort: Desc)])
+  @@index([leadId])
+  @@map("conversas")
+}
+
+model MensagemConversa {
+  id              String                @id @default(uuid())
+  conversaId      String
+  clienteId       String // duplicado p/ filtro multi-tenant rapido
+  sentido         SentidoMensagem
+  autor           AutorMensagem
+  autorUsuarioId  String?
+  tipo            TipoMensagem          @default(TEXTO)
+  statusEntrega   StatusEntregaMensagem @default(PENDENTE)
+  conteudoCifrado Bytes // ciphertext AES-256-GCM
+  iv              Bytes // 12 bytes
+  tag             Bytes // 16 bytes
+  versaoChave     Int                   @default(1)
+  midiaUrl        String? // referencia no MinIO; conteudo em bytes nao no banco
+  midiaTipoMime   String?
+  metadata        Json? // metadata em CLARO (sem PII)
+  criadoEm        DateTime              @default(now())
+
+  conversa Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+
+  @@index([conversaId, criadoEm])
+  @@index([clienteId])
+  @@map("mensagens_conversa")
+}
+
+model AuditoriaMensagem {
+  id         String   @id @default(uuid())
+  mensagemId String
+  usuarioId  String?
+  acao       String // 'LEITURA', 'CRIACAO', 'EXCLUSAO'
+  ip         String?
+  userAgent  String?
+  criadoEm   DateTime @default(now())
+
+  @@index([mensagemId, criadoEm(sort: Desc)])
+  @@index([usuarioId])
+  @@map("auditoria_mensagens")
+}
+
+// Audit append-only de toda chamada de tool feita por agentes IA.
+// Permite auditar "o que o bot fez" em cada execucao.
+model AuditoriaAcaoAgente {
+  id         String   @id @default(uuid())
+  execucaoId String
+  noId       String?
+  toolNome   String
+  args       Json?
+  sucesso    Boolean
+  resultado  Json?
+  erro       String?
+  duracaoMs  Int?
+  criadoEm   DateTime @default(now())
+
+  @@index([execucaoId, criadoEm])
+  @@index([toolNome])
+  @@map("auditoria_acoes_agente")
+}
+
+// Credenciais cifradas (chaves de API de provedores externos: OpenAI,
+// Anthropic, WhatsApp Cloud, Telegram, etc.). dadosCifrados guarda um
+// objeto JSON serializado e cifrado (AES-256-GCM) — formato livre por tipo.
+model Credencial {
+  id            String         @id @default(uuid())
+  clienteId     String
+  nome          String
+  tipo          TipoCredencial
+  descricao     String?
+  dadosCifrados Bytes
+  iv            Bytes
+  tag           Bytes
+  versaoChave   Int            @default(1)
+  ultimoUsoEm   DateTime?
+  criadoPorId   String?
+  criadoEm      DateTime       @default(now())
+  atualizadoEm  DateTime       @updatedAt
+
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  criadoPor Usuario? @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  @@index([clienteId, tipo])
+  @@map("credenciais")
+}
+
+// ==========================================
 // ENUMS
 // ==========================================
 
@@ -555,6 +683,10 @@ enum TipoNo {
   // Triggers da Fase 2
   WEBHOOK
   SCHEDULE
+  // IA — Fase 3
+  AI_AGENT
+  // Canais — envio direto pelo canal externo (WhatsApp/Telegram)
+  ENVIAR_MENSAGEM
 }
 
 enum StatusExecucao {
@@ -569,6 +701,59 @@ enum ModoExecucao {
   MANUAL
   WEBHOOK
   SCHEDULE
+}
+
+enum NivelLog {
+  NENHUM
+  METADATA
+  COMPLETO
+}
+
+enum SentidoMensagem {
+  ENTRADA
+  SAIDA
+}
+
+enum AutorMensagem {
+  BOT
+  CLIENTE_FINAL
+  VENDEDOR
+  SISTEMA
+}
+
+enum TipoMensagem {
+  TEXTO
+  IMAGEM
+  AUDIO
+  VIDEO
+  ARQUIVO
+  LOCALIZACAO
+  CONTATO
+  STICKER
+}
+
+enum StatusEntregaMensagem {
+  PENDENTE
+  ENVIADA
+  ENTREGUE
+  LIDA
+  ERRO
+}
+
+enum TipoCredencial {
+  // Provedores de LLM
+  OPENAI_API_KEY
+  ANTHROPIC_API_KEY
+  GEMINI_API_KEY
+  // Canais de mensagem
+  WHATSAPP_CLOUD_TOKEN
+  TELEGRAM_BOT_TOKEN
+  // Genericas (HTTP node)
+  HTTP_BEARER
+  HTTP_BASIC
+  HTTP_API_KEY
+  // Outros (extensivel)
+  OUTRO
 }
 
 enum TipoVariavel {

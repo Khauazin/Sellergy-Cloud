@@ -1,10 +1,15 @@
 const express = require('express');
+const prisma = require('../prisma');
 const CatalogoController = require('../controllers/CatalogoController');
 const middlewareAutenticacao = require('../middlewares/auth.middleware');
 const {
+  ehAdmin,
   requerModuloLiberado,
   requerPermissao,
 } = require('../middlewares/permissoes.middleware');
+const { aceitarUmaImagem, extensaoDeMime } = require('../middlewares/upload.middleware');
+const { upload, remover, chaveDeUrl } = require('../storage/minio');
+const { resolverPrecoVenda, fontePrecoVenda } = require('../produto');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
@@ -16,9 +21,149 @@ roteador.get('/:id', requerPermissao('CATALOGO', 'visualizar'), CatalogoControll
 roteador.put('/:id', requerPermissao('CATALOGO', 'editar'), CatalogoController.atualizar);
 roteador.delete('/:id', requerPermissao('CATALOGO', 'excluir'), CatalogoController.excluir);
 
-// Rotas de Variacoes
+// Variacoes
 roteador.post('/:produtoId/variacoes', requerPermissao('CATALOGO', 'criar'), (req, res) => CatalogoController.criarVariacao(req, res));
 roteador.put('/variacoes/:id', requerPermissao('CATALOGO', 'editar'), (req, res) => CatalogoController.editarVariacao(req, res));
 roteador.delete('/variacoes/:id', requerPermissao('CATALOGO', 'excluir'), (req, res) => CatalogoController.excluirVariacao(req, res));
+
+// ==========================================
+// Helpers multi-tenant
+// ==========================================
+async function produtoDoTenant(produtoId, usuario) {
+  if (typeof produtoId !== 'string' || !produtoId) return null;
+  const where = ehAdmin(usuario) ? { id: produtoId } : { id: produtoId, clienteId: usuario.clienteId };
+  return prisma.produto.findFirst({ where });
+}
+
+async function variacaoDoTenant(variacaoId, usuario) {
+  if (typeof variacaoId !== 'string' || !variacaoId) return null;
+  const where = ehAdmin(usuario)
+    ? { id: variacaoId }
+    : { id: variacaoId, produto: { clienteId: usuario.clienteId } };
+  return prisma.variacaoProduto.findFirst({ where, include: { produto: true } });
+}
+
+// ==========================================
+// Preco resolvido (regra catalogo vs estoque)
+// ==========================================
+roteador.get('/variacoes/:id/preco', requerPermissao('CATALOGO', 'visualizar'), async (req, res) => {
+  try {
+    const variacao = await variacaoDoTenant(req.params.id, req.usuario);
+    if (!variacao) return res.status(404).json({ erro: 'Variacao nao encontrada.' });
+    res.json({
+      preco: resolverPrecoVenda(variacao),
+      fonte: fontePrecoVenda(variacao),
+      precoEstoque: variacao.preco,
+      precoCatalogo: variacao.precoCatalogo,
+      usarPrecoCatalogo: variacao.usarPrecoCatalogo,
+    });
+  } catch (erro) {
+    console.error('[catalogo/preco]', erro);
+    res.status(500).json({ erro: 'Erro ao resolver preco.' });
+  }
+});
+
+// ==========================================
+// Upload de imagem do PRODUTO
+// ==========================================
+roteador.post(
+  '/:produtoId/imagem',
+  requerPermissao('CATALOGO', 'editar'),
+  aceitarUmaImagem('imagem'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ erro: 'Arquivo "imagem" obrigatorio.' });
+
+      const produto = await produtoDoTenant(req.params.produtoId, req.usuario);
+      if (!produto) return res.status(404).json({ erro: 'Produto nao encontrado.' });
+
+      const ext = extensaoDeMime(req.file.mimetype);
+      const key = `produtos/${produto.clienteId}/${produto.id}-${Date.now()}.${ext}`;
+      const url = await upload({ key, body: req.file.buffer, contentType: req.file.mimetype });
+
+      // Best-effort: remove imagem antiga (se existir)
+      if (produto.imagemUrl) {
+        const antiga = chaveDeUrl(produto.imagemUrl);
+        if (antiga) remover(antiga).catch((e) => console.error('[catalogo/imagem/remover-antiga]', e));
+      }
+
+      const atualizado = await prisma.produto.update({
+        where: { id: produto.id },
+        data: { imagemUrl: url },
+      });
+      res.json({ imagemUrl: atualizado.imagemUrl });
+    } catch (erro) {
+      console.error('[catalogo/upload-produto]', erro);
+      res.status(500).json({ erro: 'Erro ao enviar imagem.' });
+    }
+  }
+);
+
+roteador.delete('/:produtoId/imagem', requerPermissao('CATALOGO', 'editar'), async (req, res) => {
+  try {
+    const produto = await produtoDoTenant(req.params.produtoId, req.usuario);
+    if (!produto) return res.status(404).json({ erro: 'Produto nao encontrado.' });
+    if (produto.imagemUrl) {
+      const k = chaveDeUrl(produto.imagemUrl);
+      if (k) remover(k).catch((e) => console.error('[catalogo/imagem/remover]', e));
+    }
+    await prisma.produto.update({ where: { id: produto.id }, data: { imagemUrl: null } });
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error('[catalogo/remover-imagem-produto]', erro);
+    res.status(500).json({ erro: 'Erro ao remover imagem.' });
+  }
+});
+
+// ==========================================
+// Upload de imagem da VARIACAO
+// ==========================================
+roteador.post(
+  '/variacoes/:id/imagem',
+  requerPermissao('CATALOGO', 'editar'),
+  aceitarUmaImagem('imagem'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ erro: 'Arquivo "imagem" obrigatorio.' });
+
+      const variacao = await variacaoDoTenant(req.params.id, req.usuario);
+      if (!variacao) return res.status(404).json({ erro: 'Variacao nao encontrada.' });
+
+      const ext = extensaoDeMime(req.file.mimetype);
+      const key = `produtos/${variacao.produto.clienteId}/variacoes/${variacao.id}-${Date.now()}.${ext}`;
+      const url = await upload({ key, body: req.file.buffer, contentType: req.file.mimetype });
+
+      if (variacao.imagemUrl) {
+        const antiga = chaveDeUrl(variacao.imagemUrl);
+        if (antiga) remover(antiga).catch((e) => console.error('[catalogo/imagem-variacao/remover-antiga]', e));
+      }
+
+      const atualizada = await prisma.variacaoProduto.update({
+        where: { id: variacao.id },
+        data: { imagemUrl: url },
+      });
+      res.json({ imagemUrl: atualizada.imagemUrl });
+    } catch (erro) {
+      console.error('[catalogo/upload-variacao]', erro);
+      res.status(500).json({ erro: 'Erro ao enviar imagem.' });
+    }
+  }
+);
+
+roteador.delete('/variacoes/:id/imagem', requerPermissao('CATALOGO', 'editar'), async (req, res) => {
+  try {
+    const variacao = await variacaoDoTenant(req.params.id, req.usuario);
+    if (!variacao) return res.status(404).json({ erro: 'Variacao nao encontrada.' });
+    if (variacao.imagemUrl) {
+      const k = chaveDeUrl(variacao.imagemUrl);
+      if (k) remover(k).catch((e) => console.error('[catalogo/imagem-variacao/remover]', e));
+    }
+    await prisma.variacaoProduto.update({ where: { id: variacao.id }, data: { imagemUrl: null } });
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error('[catalogo/remover-imagem-variacao]', erro);
+    res.status(500).json({ erro: 'Erro ao remover imagem.' });
+  }
+});
 
 module.exports = roteador;

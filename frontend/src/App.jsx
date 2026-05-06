@@ -28,11 +28,14 @@ import FinanceiroPage from './pages/FinanceiroPage';
 import CrmUsersPage from './pages/CrmUsersPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import PerfilPage from './pages/PerfilPage';
+import CredenciaisPage from './pages/CredenciaisPage';
 
 // Admin
 import ClientsPage from './pages/ClientsPage';
 import AdminPermissoesClientePage from './pages/AdminPermissoesClientePage';
 import BotsPage from './pages/BotsPage';
+import BotToolsPage from './pages/BotToolsPage';
+import BotCanalPage from './pages/BotCanalPage';
 import BuilderPage from './pages/BuilderPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
@@ -137,6 +140,8 @@ export default function App() {
             <Route path="/admin/clientes/permissoes" element={<AdminPermissoesClientePage />} />
             <Route path="/admin/clientes/:id" element={<ClientsPage />} />
             <Route path="/admin/bots" element={<BotsPage />} />
+            <Route path="/admin/bots/:botId/tools" element={<BotToolsPage />} />
+            <Route path="/admin/bots/:botId/canal" element={<BotCanalPage />} />
             <Route path="/admin/builder/:botId" element={<BuilderPage />} />
             <Route path="/admin/alertas" element={<AlertsPage />} />
             <Route path="/admin/relatorios" element={<ReportsPage />} />
@@ -173,6 +178,7 @@ export default function App() {
             <Route path="/app/usuarios" element={<CrmUsersPage />} />
             <Route path="/app/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/app/configuracoes/perfil" element={<PerfilPage />} />
+            <Route path="/app/configuracoes/credenciais" element={<CredenciaisPage />} />
           </Route>
 
           {/* Fallback */}

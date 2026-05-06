@@ -1,5 +1,6 @@
 const prisma = require('../prisma');
 const { obterExecutor } = require('./executores');
+const { aplicarPolitica } = require('./registroLog');
 
 // Limites para proteger o processo do servidor durante o engine sincrono (Sub-fase 1.3).
 // Quando o engine virou consumidor de fila (Sub-fase 2.1) o limite passou a ser por job.
@@ -36,18 +37,37 @@ async function criarExecucaoPendente({
  * Processa uma Execucao previamente criada como PENDENTE. Marca como
  * EM_EXECUCAO no inicio e finaliza com SUCESSO ou ERRO. Idempotente:
  * se ja foi processada, retorna o registro como esta.
+ *
+ * @param {string} execucaoId
+ * @param {object} [opcoes]
+ * @param {(evento: object) => Promise<void>|void} [opcoes.onProgresso]
+ *   callback chamado em cada transicao relevante (no iniciado/finalizado,
+ *   execucao iniciada/finalizada). Erros do callback sao engolidos.
  */
-async function processarExecucao(execucaoId) {
+async function processarExecucao(execucaoId, opcoes = {}) {
+  const onProgresso = typeof opcoes.onProgresso === 'function'
+    ? async (evento) => {
+        try { await opcoes.onProgresso(evento); }
+        catch (e) { console.error('[engine/onProgresso]', e?.message || e); }
+      }
+    : async () => {};
   const execucao = await prisma.execucao.findUnique({
     where: { id: execucaoId },
     include: {
-      fluxo: { include: { nos: true, conexoes: true } },
+      fluxo: {
+        include: {
+          nos: true,
+          conexoes: true,
+          bot: { select: { id: true, clienteId: true } },
+        },
+      },
     },
   });
   if (!execucao) throw new Error(`Execucao ${execucaoId} nao encontrada.`);
   if (execucao.status !== 'PENDENTE') return execucao;
 
   const fluxo = execucao.fluxo;
+  const nivelLog = fluxo.nivelLog || 'METADATA';
   const TIPOS_TRIGGER = ['MANUAL', 'WEBHOOK', 'SCHEDULE'];
   const noTrigger = execucao.noTriggerId
     ? fluxo.nos.find((n) => n.id === execucao.noTriggerId)
@@ -71,6 +91,7 @@ async function processarExecucao(execucaoId) {
     where: { id: execucao.id },
     data: { status: 'EM_EXECUCAO', iniciadaEm: new Date() },
   });
+  await onProgresso({ tipo: 'execucao:inicio', execucaoId: execucao.id });
 
   // Mapa de saidas: noOrigemId -> [{ alvo, pontoOrigem }]
   const saidasPorNo = new Map();
@@ -84,6 +105,12 @@ async function processarExecucao(execucaoId) {
     entrada: execucao.dadosGatilho || {},
     variaveis: {},
     dadosGatilho: execucao.dadosGatilho || {},
+    // Identificadores usados por executores que carregam recursos do tenant
+    // (ex: HTTP_REQUEST -> credencial, AI_AGENT -> credencial+tools).
+    clienteId: fluxo.bot?.clienteId || null,
+    botId: fluxo.bot?.id || null,
+    fluxoId: fluxo.id,
+    execucaoId: execucao.id,
   };
 
   let passos = 0;
@@ -109,20 +136,36 @@ async function processarExecucao(execucaoId) {
         noId: no.id,
         tipo: no.tipo,
         status: 'EM_EXECUCAO',
-        entrada: contexto.entrada ?? null,
+        entrada: aplicarPolitica(contexto.entrada, nivelLog),
       },
+    });
+    await onProgresso({
+      tipo: 'no:inicio',
+      execucaoId: execucao.id,
+      noExecucaoId: registro.id,
+      noId: no.id,
+      tipoNo: no.tipo,
     });
 
     try {
       const resultado = await executor.executar({ no, contexto });
+      const duracaoNo = Date.now() - inicioNoMs;
       await prisma.execucaoNo.update({
         where: { id: registro.id },
         data: {
           status: 'SUCESSO',
-          saida: resultado?.saida ?? null,
+          saida: aplicarPolitica(resultado?.saida ?? null, nivelLog),
           finalizadoEm: new Date(),
-          duracaoMs: Date.now() - inicioNoMs,
+          duracaoMs: duracaoNo,
         },
+      });
+      await onProgresso({
+        tipo: 'no:fim',
+        execucaoId: execucao.id,
+        noExecucaoId: registro.id,
+        noId: no.id,
+        status: 'SUCESSO',
+        duracaoMs: duracaoNo,
       });
 
       contexto = {
@@ -141,14 +184,25 @@ async function processarExecucao(execucaoId) {
         await processarNo(p.alvo);
       }
     } catch (err) {
+      const duracaoNo = Date.now() - inicioNoMs;
       await prisma.execucaoNo.update({
         where: { id: registro.id },
         data: {
           status: 'ERRO',
           erro: String(err?.message || err),
+          // Em erro forcamos COMPLETO (com truncamento) para debug.
+          entrada: aplicarPolitica(contexto.entrada, nivelLog, { tipoErro: true }),
           finalizadoEm: new Date(),
-          duracaoMs: Date.now() - inicioNoMs,
+          duracaoMs: duracaoNo,
         },
+      });
+      await onProgresso({
+        tipo: 'no:fim',
+        execucaoId: execucao.id,
+        noExecucaoId: registro.id,
+        noId: no.id,
+        status: 'ERRO',
+        duracaoMs: duracaoNo,
       });
       throw err;
     }
@@ -156,7 +210,7 @@ async function processarExecucao(execucaoId) {
 
   try {
     await processarNo(noTrigger.id);
-    return prisma.execucao.update({
+    const final = await prisma.execucao.update({
       where: { id: execucao.id },
       data: {
         status: 'SUCESSO',
@@ -164,8 +218,15 @@ async function processarExecucao(execucaoId) {
         duracaoMs: Date.now() - inicioMs,
       },
     });
+    await onProgresso({
+      tipo: 'execucao:fim',
+      execucaoId: execucao.id,
+      status: 'SUCESSO',
+      duracaoMs: final.duracaoMs,
+    });
+    return final;
   } catch (err) {
-    return prisma.execucao.update({
+    const final = await prisma.execucao.update({
       where: { id: execucao.id },
       data: {
         status: 'ERRO',
@@ -174,6 +235,13 @@ async function processarExecucao(execucaoId) {
         erro: String(err?.message || err),
       },
     });
+    await onProgresso({
+      tipo: 'execucao:fim',
+      execucaoId: execucao.id,
+      status: 'ERRO',
+      duracaoMs: final.duracaoMs,
+    });
+    return final;
   }
 }
 

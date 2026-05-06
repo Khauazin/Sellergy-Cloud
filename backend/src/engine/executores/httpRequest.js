@@ -5,6 +5,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const { interpolar } = require('../expressoes');
+const { carregarCredencialDecifrada, aplicarCredencialEmCabecalhos } = require('../../credenciais');
 
 const TIMEOUT_MIN = 1000;
 const TIMEOUT_MAX = 120_000;
@@ -83,10 +84,20 @@ async function executar({ no, contexto }) {
     throw new Error(`Endereco bloqueado por politica SSRF: ${hostBruto}`);
   }
 
-  const cabecalhos = {};
+  let cabecalhos = {};
   for (const c of Array.isArray(dados.cabecalhos) ? dados.cabecalhos : []) {
     if (!c?.chave) continue;
     cabecalhos[interpolar(c.chave, contexto)] = interpolar(c.valor || '', contexto);
+  }
+
+  // Se o no aponta para uma credencial, decifra e injeta nos cabecalhos
+  // (Authorization Bearer/Basic, x-api-key, etc.) conforme o tipo.
+  if (dados.credencialId) {
+    const credencial = await carregarCredencialDecifrada({
+      credencialId: dados.credencialId,
+      clienteId: contexto.clienteId,
+    });
+    cabecalhos = aplicarCredencialEmCabecalhos(cabecalhos, credencial);
   }
 
   let corpo = interpolar(dados.corpo || '', contexto);

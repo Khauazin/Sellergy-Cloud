@@ -22,8 +22,16 @@ const LIMITES = Object.freeze({
 });
 
 const TIPOS_NO_VALIDOS = new Set([
+  // Legados (bot atual de mensagem)
   'MESSAGE', 'QUESTION', 'CONDITION', 'DELAY', 'HTTP_REQUEST', 'UPDATE_LEAD',
+  // Engine MVP — Fase 1
   'MANUAL', 'IF', 'SET', 'CODE',
+  // Triggers da Fase 2
+  'WEBHOOK', 'SCHEDULE',
+  // IA — Fase 3
+  'AI_AGENT',
+  // Canais — envio direto pelo canal externo (WhatsApp/Telegram)
+  'ENVIAR_MENSAGEM',
 ]);
 
 const TIPOS_GATILHO_VALIDOS = new Set(['KEYWORD', 'DEFAULT', 'ALWAYS']);

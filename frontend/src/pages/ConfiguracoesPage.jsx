@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Sun, Moon, Upload, ImageIcon, Trash2, Save, User, ShieldCheck,
-  Building2, ExternalLink, AlertCircle
+  Building2, ExternalLink, AlertCircle, Key
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
@@ -61,6 +61,7 @@ export default function ConfiguracoesPage() {
         <TabsContent value="conta" className="mt-5 space-y-2">
           <ConfigLink icon={User} titulo="Meu perfil" descricao="Editar foto, nome, e-mail e senha" onClick={() => navigate('/app/configuracoes/perfil')} />
           <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e definir permissoes" onClick={() => navigate('/app/usuarios')} />
+          <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de API (OpenAI, WhatsApp, etc.) cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
         </TabsContent>
 
         <TabsContent value="plano" className="mt-5">

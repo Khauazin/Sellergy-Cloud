@@ -12,5 +12,8 @@ roteador.use(requerModuloLiberado('VENDAS'));
 
 roteador.get('/', requerPermissao('VENDAS', 'visualizar'), VendaController.listarVendas);
 roteador.post('/', requerPermissao('VENDAS', 'criar'), VendaController.registrarVenda);
+roteador.post('/:id/cancelar', requerPermissao('VENDAS', 'editar'), (req, res) =>
+  VendaController.cancelarVenda(req, res)
+);
 
 module.exports = roteador;

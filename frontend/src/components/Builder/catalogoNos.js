@@ -1,4 +1,4 @@
-import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock } from 'lucide-react';
+import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock, Sparkles, Send } from 'lucide-react';
 
 // Catalogo dos 5 nos da Sub-fase 1.1 do engine de workflows.
 // Cada entrada define metadados visuais, handles e formato inicial dos dados.
@@ -79,6 +79,39 @@ export const CATALOGO_NOS = {
     cor: 'success',
     handles: { entrada: true, saidas: ['default'] },
     dadosPadrao: () => ({ label: 'Code', codigo: 'return entrada;' }),
+  },
+  ENVIAR_MENSAGEM: {
+    tipo: 'ENVIAR_MENSAGEM',
+    rotulo: 'Enviar Mensagem',
+    descricao: 'Envia texto pela conversa que disparou o fluxo (WhatsApp/Telegram).',
+    categoria: 'CANAIS',
+    icone: Send,
+    cor: 'success',
+    handles: { entrada: true, saidas: ['default'] },
+    dadosPadrao: () => ({
+      label: 'Enviar Mensagem',
+      texto: 'Recebi sua mensagem: {{dadosGatilho.texto}}',
+      conversaId: '',
+    }),
+  },
+  AI_AGENT: {
+    tipo: 'AI_AGENT',
+    rotulo: 'AI Agent',
+    descricao: 'Chama um LLM (OpenAI, Claude ou Gemini) com prompt e mensagem.',
+    categoria: 'IA',
+    icone: Sparkles,
+    cor: 'accent',
+    handles: { entrada: true, saidas: ['default'] },
+    dadosPadrao: () => ({
+      label: 'AI Agent',
+      provedor: 'OPENAI',
+      modelo: 'gpt-4o-mini',
+      credencialId: '',
+      prompt: 'Voce e um assistente prestativo. Responda de forma clara e concisa.',
+      mensagemUsuario: '{{entrada}}',
+      temperatura: 0.7,
+      maxTokens: 1024,
+    }),
   },
 };
 

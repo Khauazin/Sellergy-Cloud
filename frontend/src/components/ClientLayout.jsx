@@ -42,6 +42,7 @@ const TITULOS = {
   '/app/campanhas': { titulo: 'Campanhas', breadcrumb: 'Automacao' },
   '/app/usuarios': { titulo: 'Equipe', breadcrumb: 'Conta' },
   '/app/configuracoes': { titulo: 'Configuracoes', breadcrumb: 'Conta' },
+  '/app/configuracoes/credenciais': { titulo: 'Credenciais', breadcrumb: 'Configuracoes · Conta' },
 };
 
 export default function ClientLayout() {

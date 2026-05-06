@@ -18,3 +18,4 @@ export { default as Select } from './Select';
 export { default as Textarea } from './Textarea';
 export { default as Drawer } from './Drawer';
 export { default as Combobox } from './Combobox';
+export { default as UploadImagem } from './UploadImagem';

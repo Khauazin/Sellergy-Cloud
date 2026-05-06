@@ -110,6 +110,96 @@ class VendaController {
   }
 
   /**
+   * Cancela uma venda. Estorna estoque e cancela lançamentos financeiros
+   * vinculados em uma única transação. Idempotente: se a venda já estava
+   * cancelada, retorna 200 sem efeito colateral.
+   *
+   * Body opcional: { motivo: string }.
+   */
+  async cancelarVenda(req, res) {
+    const { clienteId, id: usuarioId } = req.usuario;
+    if (!clienteId) {
+      return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
+    }
+
+    const { id } = req.params;
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+
+    try {
+      const venda = await prisma.venda.findFirst({
+        where: { id, clienteId },
+        include: {
+          movimentacoesEstoque: true,
+          lancamentosFinanceiros: true,
+        },
+      });
+      if (!venda) return res.status(404).json({ error: 'Venda não encontrada.' });
+      if (venda.status === 'CANCELLED') {
+        return res.status(200).json({ ok: true, ja_cancelada: true, venda });
+      }
+
+      const agora = new Date();
+
+      const resultado = await prisma.$transaction(async (tx) => {
+        // 1. Marca venda como cancelada
+        const atualizada = await tx.venda.update({
+          where: { id },
+          data: {
+            status: 'CANCELLED',
+            dataCancelamento: agora,
+            motivoCancelamento: motivo || null,
+            canceladaPorId: usuarioId || null,
+          },
+        });
+
+        // 2. Estorna estoque para CADA movimentação tipo VENDA dessa venda.
+        // Cria movimentação DEVOLUCAO com sinal positivo (compensa o negativo
+        // original) e atualiza saldo da variação.
+        for (const m of venda.movimentacoesEstoque || []) {
+          if (m.tipo !== 'VENDA') continue;
+          const qtdEstorno = Math.abs(m.quantidade);
+          await tx.movimentacaoEstoque.create({
+            data: {
+              variacaoId: m.variacaoId,
+              tipo: 'DEVOLUCAO',
+              quantidade: qtdEstorno,
+              motivo: `Cancelamento da venda #${venda.id}${motivo ? ` — ${motivo}` : ''}`,
+              vendaId: venda.id,
+            },
+          });
+          await tx.variacaoProduto.update({
+            where: { id: m.variacaoId },
+            data: { estoqueAtual: { increment: qtdEstorno } },
+          });
+        }
+
+        // 3. Cancela lançamentos financeiros vinculados (que ainda não estão
+        // cancelados). Marca data e motivo.
+        for (const l of venda.lancamentosFinanceiros || []) {
+          if (l.status === 'CANCELADO') continue;
+          await tx.lancamentoFinanceiro.update({
+            where: { id: l.id },
+            data: {
+              status: 'CANCELADO',
+              dataCancelamento: agora,
+              motivoCancelamento: motivo
+                ? `Cancelamento da venda — ${motivo}`
+                : 'Cancelamento da venda',
+            },
+          });
+        }
+
+        return atualizada;
+      });
+
+      return res.json({ ok: true, venda: resultado });
+    } catch (error) {
+      console.error('[VendaController/cancelar]', error);
+      return res.status(500).json({ error: 'Erro ao cancelar venda.' });
+    }
+  }
+
+  /**
    * Lista as vendas do cliente.
    */
   async listarVendas(req, res) {

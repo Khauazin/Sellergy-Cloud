@@ -115,6 +115,15 @@ function ResumoDados({ tipo, data }) {
       </div>
     );
   }
+  if (tipo === 'AI_AGENT') {
+    const provedor = data.provedor || 'OPENAI';
+    const modelo = data.modelo || '—';
+    return (
+      <div className="px-3 py-2 text-[11px] text-[var(--text-secondary)] truncate">
+        <span className="font-bold">{provedor}</span> · {modelo}
+      </div>
+    );
+  }
   return null;
 }
 
