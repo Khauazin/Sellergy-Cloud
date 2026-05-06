@@ -323,7 +323,9 @@ O bot pode ter vários fluxos (boas-vindas, vendas, suporte...). Você precisa d
 
 ## Passo 8 — Testa com você mesmo
 
-Hora da verdade.
+> ⚠️ **Importante:** o botão **"Executar"** lá no canto do builder **não serve pra testar bot de atendimento**. Ele dispara o fluxo simulando que veio de você (admin), sem cliente nem conversa real. Se você clicar nele, vai dar erro tipo `"conversaId nao encontrado"` no nó **Enviar Mensagem** — isso é normal: o nó precisa de uma conversa de verdade pra saber pra quem responder.
+>
+> **A forma certa de testar é mandar mensagem pelo Telegram.** É isso que a gente vai fazer agora:
 
 1. [ ] No Telegram, busca pelo **usuário do seu bot** (ex.: `@padaria_joao_bot`).
 2. [ ] Abre a conversa, clica **Iniciar** ou manda `oi`.
@@ -352,6 +354,16 @@ Hora da verdade.
 
 Se nenhum desses, chama o pessoal do Sellergy passando o **ID do bot** (vê na URL da página do bot) e o horário aproximado do teste.
 
+### "Cliquei em Executar e deu `conversaId nao encontrado`"
+
+Isso é **comportamento normal**, não é bug. ✅
+
+O botão **"Executar"** do canto superior dispara o fluxo simulando que veio de você (admin) — sem conversa, sem cliente, sem canal. Como o nó **Enviar Mensagem** precisa de uma conversa real pra saber pra quem responder, ele dá erro nesse modo.
+
+**Pra testar de verdade, manda mensagem pelo Telegram pro seu bot.** O fluxo dispara sozinho do jeito certo.
+
+> O botão "Executar" é útil só pra testar partes técnicas (HTTP Request, Code, IF) — não pra simular conversa de cliente.
+
 ### "Aparece uma mensagem de erro tipo 'Modulo CRM nao liberado'"
 
 A sua empresa não tá com o módulo de CRM ativado. Fala com a pessoa que cuida do contrato com o Sellergy — eles liberam em segundos.
@@ -367,6 +379,56 @@ Funcionalidade boa! Ainda não tem direto na interface — fala com o pessoal do
 ### "Vou usar no WhatsApp também"
 
 Vamos! O processo é idêntico, mudando o **canal** de Telegram pra WhatsApp no Passo 3, e usando uma credencial **WhatsApp Cloud Token** em vez de Telegram. Só que pra isso você precisa de uma **conta de WhatsApp Business verificada pela Meta** — esse é o pulo do gato.
+
+---
+
+## Como testar sem ficar no vai-e-vem do Telegram
+
+Pegou o jeito mas tá cansado de mandar `/start` no Telegram toda vez que muda uma vírgula no fluxo? Tem como testar mais rápido:
+
+### Hoje — abre 2 conversas no Telegram
+
+A maneira mais simples é ter **duas conversas** com o mesmo bot:
+- **Conversa real** (você de cliente) — testa do começo
+- **Outro número/conta** — pra simular um segundo cliente sem misturar histórico
+
+Ou, no celular, abre o Telegram em **modo anônimo** num browser pra ter uma 2ª "identidade" sem precisar criar conta nova.
+
+> Cada conversa tem sua própria "ficha" (estado). Resetar uma não afeta a outra.
+
+### Em breve — chat de teste embutido
+
+Estamos planejando um botão **"Testar conversa simulada"** dentro do builder, que abre um mini-chat na sua tela:
+
+- Você digita do lado "cliente"
+- O fluxo roda de verdade, com tudo funcionando (estado, IFs, IA, criação de lead)
+- Você vê a resposta no mini-chat
+- No fim, dá pra resetar e começar de novo num clique
+
+**Sem precisar do Telegram, sem ficar criando contas falsas.** Vai ser ideal pra desenvolver e ajustar prompts.
+
+> Não tem ainda. Se for muito importante pra você, fala com a equipe — ajuda a priorizar.
+
+---
+
+## Como ver o que o bot fez (debug)
+
+Quando algo dá errado e você quer entender, tem 2 lugares pra olhar:
+
+### 1. Drawer de execuções no builder
+
+Toda vez que o bot é disparado (mensagem chega), gera uma **execução**. No builder, perto do topo, deve ter uma forma de ver as últimas execuções (geralmente um ícone de histórico ou abrindo o nó). Lá você vê:
+
+- Qual nó executou
+- O que entrou e o que saiu de cada nó
+- Quanto tempo demorou
+- Se algum deu erro
+
+É a forma mais visual de entender "por que o bot foi pra esse caminho".
+
+### 2. Histórico da conversa
+
+Em **CRM → Conversas** (ou similar), você vê todas as mensagens de cada cliente, ordenadas. Útil pra revisar o que o cliente mandou e como o bot respondeu.
 
 ---
 
