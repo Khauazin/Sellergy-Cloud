@@ -20,7 +20,11 @@ function NoBase({ data, selected }) {
 
   const Icone = cfg.icone;
   const corClasse = CLASSES_COR[cfg.cor] || CLASSES_COR.neutral;
-  const saidas = cfg.handles.saidas;
+  // Tipos com saidas dinamicas (ex.: SWITCH) declaram cfg.saidasDinamicas(data).
+  const saidas = (typeof cfg.saidasDinamicas === 'function')
+    ? cfg.saidasDinamicas(data)
+    : cfg.handles.saidas;
+  const rotuloSaida = cfg.rotuloDaSaida || ((id) => id);
   const multiplasSaidas = saidas.length > 1;
 
   return (
@@ -70,7 +74,7 @@ function NoBase({ data, selected }) {
           {saidas.map((s, i) => (
             <div key={s} className="flex items-center justify-end gap-2 pr-3 relative h-[22px]">
               <span className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-muted)]">
-                {s}
+                {rotuloSaida(s, data)}
               </span>
               <Handle
                 id={s}
@@ -121,6 +125,22 @@ function ResumoDados({ tipo, data }) {
     return (
       <div className="px-3 py-2 text-[11px] text-[var(--text-secondary)] truncate">
         <span className="font-bold">{provedor}</span> · {modelo}
+      </div>
+    );
+  }
+  if (tipo === 'SWITCH' && data.expressao) {
+    const n = Array.isArray(data.casos) ? data.casos.length : 0;
+    return (
+      <div className="px-3 py-2 text-[11px] text-[var(--text-secondary)] truncate font-mono">
+        {data.expressao}
+        <span className="ml-1 text-[var(--text-muted)] font-sans">· {n} caso{n === 1 ? '' : 's'}</span>
+      </div>
+    );
+  }
+  if (tipo === 'TOOL' && data.toolNome) {
+    return (
+      <div className="px-3 py-2 text-[11px] text-[var(--text-secondary)] truncate font-mono">
+        {data.toolNome}
       </div>
     );
   }

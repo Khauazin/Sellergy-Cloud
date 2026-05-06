@@ -1,4 +1,14 @@
-import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock, Sparkles, Send, Database, Wrench } from 'lucide-react';
+import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock, Sparkles, Send, Database, Wrench, ListTree } from 'lucide-react';
+
+// Saidas reservadas pro SWITCH:
+//  - id de cada caso = String(valor) ou '__vazio__' se valor === ''
+//  - id do default = '__default__'
+// Mantenha em sincronia com backend/src/engine/executores/switch.js (idDoCaso).
+export function idDoCasoSwitch(valor) {
+  if (valor === '' || valor === null || valor === undefined) return '__vazio__';
+  return String(valor);
+}
+export const ID_DEFAULT_SWITCH = '__default__';
 
 // Catalogo dos 5 nos da Sub-fase 1.1 do engine de workflows.
 // Cada entrada define metadados visuais, handles e formato inicial dos dados.
@@ -140,6 +150,37 @@ export const CATALOGO_NOS = {
       toolNome: 'crm.criarLead',
       args: { nome: '{{dadosGatilho.estado.nome}}', telefone: '{{dadosGatilho.telefone}}' },
       permitirFalha: false,
+    }),
+  },
+  SWITCH: {
+    tipo: 'SWITCH',
+    rotulo: 'Switch',
+    descricao: 'Bifurca em N saidas baseado no valor de uma expressao (substitui IF aninhado).',
+    categoria: 'CORE',
+    icone: ListTree,
+    cor: 'warning',
+    handles: { entrada: true, saidas: ['__vazio__', '__default__'] }, // fallback estatico se data ainda nao tem casos
+    // Saidas dependem dos casos configurados. NoBase prioriza essa funcao
+    // sobre o `handles.saidas` estatico quando ela existe.
+    saidasDinamicas: (dados) => {
+      const casos = Array.isArray(dados?.casos) ? dados.casos : [];
+      const ids = casos.map((c) => idDoCasoSwitch(c?.valor));
+      return [...ids, ID_DEFAULT_SWITCH];
+    },
+    // Renderiza um label legivel pra cada handle no canvas.
+    rotuloDaSaida: (saidaId, dados) => {
+      if (saidaId === ID_DEFAULT_SWITCH) return 'default';
+      const casos = Array.isArray(dados?.casos) ? dados.casos : [];
+      const c = casos.find((x) => idDoCasoSwitch(x?.valor) === saidaId);
+      if (!c) return saidaId;
+      return c.label || (c.valor === '' ? '(vazio)' : String(c.valor));
+    },
+    dadosPadrao: () => ({
+      label: 'Switch',
+      expressao: '{{dadosGatilho.estado.passo}}',
+      casos: [
+        { valor: '', label: 'inicio' },
+      ],
     }),
   },
 };

@@ -8,6 +8,7 @@ const aiAgent = require('./aiAgent');
 const enviarMensagem = require('./enviarMensagem');
 const setEstadoConversa = require('./setEstadoConversa');
 const tool = require('./tool');
+const switchNo = require('./switch');
 
 const EXECUTORES = {
   MANUAL: manual,
@@ -20,6 +21,7 @@ const EXECUTORES = {
   ENVIAR_MENSAGEM: enviarMensagem,
   SET_ESTADO_CONVERSA: setEstadoConversa,
   TOOL: tool,
+  SWITCH: switchNo,
 };
 
 function obterExecutor(tipo) {

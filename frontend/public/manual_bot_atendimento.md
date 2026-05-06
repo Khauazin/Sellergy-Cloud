@@ -237,43 +237,64 @@ A "memória" do bot (saber em qual etapa está) fica salva numa "ficha" da conve
 
 #### Os blocos que você vai usar
 
-A paleta tem 4 blocos importantes pra esse caminho:
-
-- **IF** → "se a etapa atual é X, vai por aqui; senão, vai por ali"
+- **Switch** → "olha o valor da etapa atual e escolhe um caminho de N saídas"
 - **Estado da Conversa** → "salva nessa ficha que estamos na etapa X"
 - **Enviar Mensagem** → escreve o que o bot diz
 - **Tool (Ação)** → executa uma ação, tipo "criar lead"
 
-#### Roteiro a montar
+> 💡 **Por que Switch e não IF?** Pra esse caso, você teria que aninhar 4 IFs (vazio? → não → é NOME? → não → é CPF? → ...) e o canvas vira uma árvore confusa. Com Switch, **fica 1 nó com 5 saídas paralelas** — muito mais limpo.
 
-Vai arrastando os blocos e ligando seguindo a sequência abaixo.
+#### Topologia
 
-**Quando chega a 1ª mensagem do cliente:**
+```
+[Webhook] → [Switch passo]
+                ├─ (vazio)  → [Estado: passo=NOME]   → [Enviar "qual seu nome?"]
+                ├─ NOME     → [Estado: nome=texto, passo=CPF]   → [Enviar "qual CPF?"]
+                ├─ CPF      → [Estado: cpf=texto, passo=EMAIL]  → [Enviar "qual email?"]
+                ├─ EMAIL    → [Estado: email=texto] → [Tool criarLead] → [Estado: passo=PRONTO] → [Enviar "pronto!"]
+                └─ default  → [Enviar "ja cadastrei voce!"]
+```
 
-1. **Webhook** (início)
-2. → **IF**: "etapa está vazia?" *(condição: `!{{dadosGatilho.estado.passo}}`)*
-   - Se SIM:
-     - → **Estado da Conversa**: salva `passo = NOME`
-     - → **Enviar Mensagem**: `Olá! Qual seu nome completo?`
-   - Se NÃO:
-     - → **IF**: "etapa é NOME?" *(condição: `'{{dadosGatilho.estado.passo}}' === 'NOME'`)*
-       - Se SIM:
-         - → **Estado da Conversa**: salva `nome = {{dadosGatilho.texto}}` e `passo = CPF`
-         - → **Enviar Mensagem**: `Prazer, {{dadosGatilho.estado.nome}}! Pode me passar seu CPF?`
-       - Se NÃO:
-         - → **IF**: "etapa é CPF?"
-           - Se SIM:
-             - → **Estado**: `cpf = {{dadosGatilho.texto}}`, `passo = EMAIL`
-             - → **Enviar Mensagem**: `E qual seu e-mail?`
-           - Se NÃO:
-             - → **IF**: "etapa é EMAIL?"
-               - Se SIM:
-                 - → **Estado**: `email = {{dadosGatilho.texto}}`
-                 - → **Tool**: usa a ferramenta `crm.criarLead`, com os dados (mais abaixo)
-                 - → **Estado** (estratégia "substituir"): `passo = PRONTO`
-                 - → **Enviar Mensagem**: `Pronto, {{dadosGatilho.estado.nome}}! Já te cadastrei.`
-               - Se NÃO (nenhuma das anteriores):
-                 - → **Enviar Mensagem**: `Hmm, não entendi. Pode repetir?`
+#### Configurando o nó Switch
+
+Clica no nó **Switch** e preenche:
+
+| Campo | Valor |
+|---|---|
+| Expressão | `{{dadosGatilho.estado.passo}}` |
+| Casos | adiciona 4 casos: |
+
+| valor | label (opcional) |
+|---|---|
+| *(deixa vazio)* | `inicio` |
+| `NOME` | |
+| `CPF` | |
+| `EMAIL` | |
+
+> Quando você adiciona/remove casos, **as bolinhas de saída do nó no canvas mudam automaticamente**. Cada caso vira uma saída labelada — você liga ela ao próximo bloco do caminho dela. A saída `default` aparece sempre no fim — é pra "nenhum caso bateu" (ex.: cliente já está em `passo=PRONTO`).
+
+#### Cada caminho do Switch faz
+
+**Caminho `(vazio)` — primeira mensagem do cliente:**
+- → **Estado da Conversa**: `passo = NOME`
+- → **Enviar Mensagem**: `Olá! Qual seu nome completo?`
+
+**Caminho `NOME` — cliente respondeu o nome:**
+- → **Estado**: `nome = {{dadosGatilho.texto}}`, `passo = CPF`
+- → **Enviar Mensagem**: `Prazer, {{dadosGatilho.estado.nome}}! Qual seu CPF?`
+
+**Caminho `CPF` — cliente respondeu o CPF:**
+- → **Estado**: `cpf = {{dadosGatilho.texto}}`, `passo = EMAIL`
+- → **Enviar Mensagem**: `E qual seu e-mail?`
+
+**Caminho `EMAIL` — cliente respondeu o email (último passo):**
+- → **Estado**: `email = {{dadosGatilho.texto}}`
+- → **Tool**: `crm.criarLead` (configuração mais abaixo)
+- → **Estado** (estratégia **SUBSTITUIR**): `passo = PRONTO`
+- → **Enviar Mensagem**: `Pronto, {{dadosGatilho.estado.nome}}! Já te cadastrei.`
+
+**Caminho `default` — qualquer outra etapa (ex.: cliente volta depois de cadastrado):**
+- → **Enviar Mensagem**: `Você já está cadastrado, {{dadosGatilho.estado.nome}}! Em breve nossa equipe entra em contato.`
 
 #### Configurar o bloco Tool (criar lead)
 
@@ -363,6 +384,27 @@ O botão **"Executar"** do canto superior dispara o fluxo simulando que veio de 
 **Pra testar de verdade, manda mensagem pelo Telegram pro seu bot.** O fluxo dispara sozinho do jeito certo.
 
 > O botão "Executar" é útil só pra testar partes técnicas (HTTP Request, Code, IF) — não pra simular conversa de cliente.
+
+### "missing ) after argument list" no IF
+
+Esse erro acontece quando uma condição do nó **IF** vira código JavaScript inválido depois que o sistema substitui as variáveis `{{...}}`.
+
+**Causa comum:** condição tipo `!{{dadosGatilho.estado.passo}}`. Quando o valor não existe (ex.: primeira mensagem do cliente), o `{{...}}` vira string vazia e a expressão fica só `!` — incompleta.
+
+**Correção:** sempre **envolva o `{{...}}` em aspas simples**:
+
+```
+'{{dadosGatilho.estado.passo}}' === ''
+```
+
+Assim, mesmo quando vazio, vira `'' === ''` (válido). Vale pra qualquer comparação:
+
+```
+'{{dadosGatilho.estado.passo}}' === 'NOME'
+'{{dadosGatilho.estado.passo}}' === 'CPF'
+```
+
+> **Regra de bolso:** se o `{{...}}` representa **texto/string**, embrulha em aspas. Se é número, deixa solto: `{{entrada.contador}} > 0`.
 
 ### "Aparece uma mensagem de erro tipo 'Modulo CRM nao liberado'"
 

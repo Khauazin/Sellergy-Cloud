@@ -36,6 +36,8 @@ const TIPOS_NO_VALIDOS = new Set([
   'SET_ESTADO_CONVERSA',
   // Acao programatica — invoca uma tool do agente direto do builder
   'TOOL',
+  // Switch — bifurca em N saidas baseado no valor de uma expressao
+  'SWITCH',
 ]);
 
 const TIPOS_GATILHO_VALIDOS = new Set(['KEYWORD', 'DEFAULT', 'ALWAYS']);

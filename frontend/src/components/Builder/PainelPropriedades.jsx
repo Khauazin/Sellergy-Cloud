@@ -84,6 +84,7 @@ export default function PainelPropriedades({ no, fluxoId, onAlterar, onExcluir }
       {no.data?.tipo === 'ENVIAR_MENSAGEM' && <FormEnviarMensagem data={no.data} setData={setData} />}
       {no.data?.tipo === 'SET_ESTADO_CONVERSA' && <FormSetEstadoConversa data={no.data} setData={setData} />}
       {no.data?.tipo === 'TOOL' && <FormTool data={no.data} setData={setData} />}
+      {no.data?.tipo === 'SWITCH' && <FormSwitch data={no.data} setData={setData} />}
     </div>
   );
 }
@@ -392,6 +393,82 @@ function FormSetEstadoConversa({ data, setData }) {
             </div>
           ))}
         </div>
+      </div>
+    </>
+  );
+}
+
+function FormSwitch({ data, setData }) {
+  const casos = Array.isArray(data?.casos) ? data.casos : [];
+  const setCaso = (i, campo, valor) => {
+    setData({
+      casos: casos.map((c, idx) => (idx === i ? { ...c, [campo]: valor } : c)),
+    });
+  };
+
+  return (
+    <>
+      <div className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded-lg p-2.5 leading-snug border border-[var(--border-main)]">
+        Avalia uma expressao e envia o fluxo pra saida do caso que bate.
+        Substitui IF aninhados — 1 Switch com 5 casos em vez de 4 IFs.
+      </div>
+
+      <Input
+        size="sm"
+        label="Expressao"
+        value={data?.expressao || ''}
+        onChange={(e) => setData({ expressao: e.target.value })}
+        placeholder="{{dadosGatilho.estado.passo}}"
+        hint="Suporta {{interpolacao}}. O resultado e comparado com cada caso (string ===)."
+        className="font-mono"
+      />
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)]">
+            Casos
+          </label>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Plus}
+            onClick={() => setData({ casos: [...casos, { valor: '', label: '' }] })}
+          >
+            Adicionar
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          {casos.length === 0 && (
+            <p className="text-[11px] text-[var(--text-muted)]">Nenhum caso. Adiciona pelo menos um.</p>
+          )}
+          {casos.map((c, i) => (
+            <div key={i} className="flex gap-1.5">
+              <Input
+                size="sm"
+                placeholder="valor (ex.: NOME)"
+                value={c.valor || ''}
+                onChange={(e) => setCaso(i, 'valor', e.target.value)}
+              />
+              <Input
+                size="sm"
+                placeholder="label (opcional)"
+                value={c.label || ''}
+                onChange={(e) => setCaso(i, 'label', e.target.value)}
+              />
+              <IconButton
+                icon={Trash2}
+                variant="danger"
+                size="sm"
+                ariaLabel="Remover caso"
+                onClick={() => setData({ casos: casos.filter((_, idx) => idx !== i) })}
+              />
+            </div>
+          ))}
+        </div>
+        <p className="text-[10px] text-[var(--text-muted)] mt-2 leading-snug">
+          A saida <strong>default</strong> e usada quando nenhum caso bate.
+          Pra testar valor vazio (ex.: estado nao iniciado), deixa o campo "valor" em branco — vira o caso "(vazio)".
+        </p>
       </div>
     </>
   );
