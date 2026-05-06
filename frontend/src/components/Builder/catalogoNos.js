@@ -1,4 +1,4 @@
-import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock, Sparkles, Send } from 'lucide-react';
+import { Play, Globe, GitBranch, Variable, Code, Webhook, Clock, Sparkles, Send, Database, Wrench } from 'lucide-react';
 
 // Catalogo dos 5 nos da Sub-fase 1.1 do engine de workflows.
 // Cada entrada define metadados visuais, handles e formato inicial dos dados.
@@ -111,6 +111,35 @@ export const CATALOGO_NOS = {
       mensagemUsuario: '{{entrada}}',
       temperatura: 0.7,
       maxTokens: 1024,
+    }),
+  },
+  SET_ESTADO_CONVERSA: {
+    tipo: 'SET_ESTADO_CONVERSA',
+    rotulo: 'Estado da Conversa',
+    descricao: 'Salva variaveis na conversa pra fluxos multi-turno (memoria entre mensagens).',
+    categoria: 'CONVERSA',
+    icone: Database,
+    cor: 'info',
+    handles: { entrada: true, saidas: ['default'] },
+    dadosPadrao: () => ({
+      label: 'Estado da Conversa',
+      atribuicoes: [{ chave: 'passo', valor: 'AGUARDANDO_NOME' }],
+      estrategia: 'MERGE',
+    }),
+  },
+  TOOL: {
+    tipo: 'TOOL',
+    rotulo: 'Tool (Acao)',
+    descricao: 'Executa uma tool do agente (ex.: criar lead) respeitando permissoes do bot.',
+    categoria: 'CORE',
+    icone: Wrench,
+    cor: 'success',
+    handles: { entrada: true, saidas: ['default'] },
+    dadosPadrao: () => ({
+      label: 'Tool',
+      toolNome: 'crm.criarLead',
+      args: { nome: '{{dadosGatilho.estado.nome}}', telefone: '{{dadosGatilho.telefone}}' },
+      permitirFalha: false,
     }),
   },
 };

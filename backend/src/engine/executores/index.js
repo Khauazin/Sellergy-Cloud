@@ -6,6 +6,8 @@ const httpRequest = require('./httpRequest');
 const code = require('./code');
 const aiAgent = require('./aiAgent');
 const enviarMensagem = require('./enviarMensagem');
+const setEstadoConversa = require('./setEstadoConversa');
+const tool = require('./tool');
 
 const EXECUTORES = {
   MANUAL: manual,
@@ -16,6 +18,8 @@ const EXECUTORES = {
   CODE: code,
   AI_AGENT: aiAgent,
   ENVIAR_MENSAGEM: enviarMensagem,
+  SET_ESTADO_CONVERSA: setEstadoConversa,
+  TOOL: tool,
 };
 
 function obterExecutor(tipo) {

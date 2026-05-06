@@ -519,6 +519,7 @@ model Conversa {
   botId         String?
   canal         Canal              @default(WHATSAPP)
   identificador String? // ex: telefone do contato no canal externo
+  estado        Json               @default("{}") // estado livre do fluxo manual (ex.: { passo: 'NOME', nome: 'Joao' })
   ultimaMsgEm   DateTime?
   criadoEm      DateTime           @default(now())
   atualizadoEm  DateTime           @updatedAt
@@ -687,6 +688,10 @@ enum TipoNo {
   AI_AGENT
   // Canais — envio direto pelo canal externo (WhatsApp/Telegram)
   ENVIAR_MENSAGEM
+  // Conversa — manipulacao de estado pra fluxos multi-turno deterministicos
+  SET_ESTADO_CONVERSA
+  // Acao programatica — invoca uma tool do agente direto do builder
+  TOOL
 }
 
 enum StatusExecucao {
