@@ -6,10 +6,30 @@ const {
   requerModuloLiberado,
   requerPermissao,
 } = require('../middlewares/permissoes.middleware');
+const {
+  substituirVinculosDoLead,
+  adicionarVinculo,
+  removerVinculo,
+} = require('../leadProdutos');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
 roteador.use(requerModuloLiberado('CRM'));
+
+// Inclui produtos vinculados ao retornar lead (`variacoes` com produto/categoria
+// pra o front montar UI sem N+1). Reutilizado em todas as rotas de leitura.
+const INCLUDE_LEAD = {
+  etapa: true,
+  variacoes: {
+    include: {
+      variacao: {
+        include: {
+          produto: { include: { categoria: true } },
+        },
+      },
+    },
+  },
+};
 
 function tenantDoSolicitante(req, queryClienteId) {
   if (ehAdmin(req.usuario)) return queryClienteId || null;
@@ -113,7 +133,7 @@ roteador.get('/leads', requerPermissao('CRM', 'visualizar'), async (req, res) =>
 
     const leads = await prisma.lead.findMany({
       where: { clienteId },
-      include: { etapa: true },
+      include: INCLUDE_LEAD,
       orderBy: { atualizadoEm: 'desc' }
     });
     res.json(leads);
@@ -126,7 +146,8 @@ roteador.get('/leads', requerPermissao('CRM', 'visualizar'), async (req, res) =>
 roteador.post('/leads', requerPermissao('CRM', 'criar'), async (req, res) => {
   try {
     const {
-      etapaId, nome, telefone, email, valor, tags, prioridade, origem, observacoes,
+      etapaId, nome, telefone, email, tags, prioridade, origem, observacoes,
+      variacoes, // novo: [{ variacaoId, quantidade?, observacao? }]
       clienteId: bodyClienteId,
     } = req.body;
     const clienteId = tenantDoSolicitante(req, bodyClienteId);
@@ -135,9 +156,16 @@ roteador.post('/leads', requerPermissao('CRM', 'criar'), async (req, res) => {
       return res.status(400).json({ error: 'clienteId eh obrigatorio para criar lead' });
     }
 
-    const lead = await prisma.lead.create({
-      data: { clienteId, etapaId, nome, telefone, email, valor: parseFloat(valor) || 0, tags, prioridade, origem, observacoes },
-      include: { etapa: true }
+    // Cria o lead + vinculos em uma transacao. O valor inicial e 0 — vai ser
+    // recalculado por `substituirVinculosDoLead` se houver variacoes.
+    const lead = await prisma.$transaction(async (tx) => {
+      const novo = await tx.lead.create({
+        data: { clienteId, etapaId, nome, telefone, email, valor: 0, tags, prioridade, origem, observacoes },
+      });
+      if (Array.isArray(variacoes) && variacoes.length > 0) {
+        await substituirVinculosDoLead({ leadId: novo.id, clienteId, vinculos: variacoes, tx });
+      }
+      return tx.lead.findUnique({ where: { id: novo.id }, include: INCLUDE_LEAD });
     });
 
     try {
@@ -154,7 +182,7 @@ roteador.post('/leads', requerPermissao('CRM', 'criar'), async (req, res) => {
     res.status(201).json(lead);
   } catch (error) {
     console.error('[crm/leads-create]', error);
-    res.status(500).json({ error: 'Erro ao criar lead' });
+    res.status(500).json({ error: error?.message || 'Erro ao criar lead' });
   }
 });
 
@@ -162,7 +190,8 @@ roteador.put('/leads/:id', requerPermissao('CRM', 'editar'), async (req, res) =>
   try {
     const { id } = req.params;
     const {
-      etapaId, nome, telefone, email, valor, tags, prioridade, origem, observacoes,
+      etapaId, nome, telefone, email, tags, prioridade, origem, observacoes,
+      variacoes, // novo: se vier, substitui o conjunto de produtos vinculados
       clienteId: bodyClienteId,
     } = req.body;
 
@@ -173,15 +202,24 @@ roteador.put('/leads/:id', requerPermissao('CRM', 'editar'), async (req, res) =>
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const lead = await prisma.lead.update({
-      where: { id },
-      data: {
-        etapaId, nome, telefone, email,
-        valor: parseFloat(valor) || 0,
-        tags, prioridade, origem, observacoes,
-        clienteId: ehAdmin(req.usuario) ? (bodyClienteId || anterior.clienteId) : anterior.clienteId
-      },
-      include: { etapa: true }
+    const clienteIdEfetivo = ehAdmin(req.usuario) ? (bodyClienteId || anterior.clienteId) : anterior.clienteId;
+
+    const lead = await prisma.$transaction(async (tx) => {
+      await tx.lead.update({
+        where: { id },
+        data: {
+          etapaId, nome, telefone, email,
+          tags, prioridade, origem, observacoes,
+          clienteId: clienteIdEfetivo,
+          // valor sera recalculado por substituirVinculosDoLead se variacoes vier
+        },
+      });
+
+      if (Array.isArray(variacoes)) {
+        await substituirVinculosDoLead({ leadId: id, clienteId: clienteIdEfetivo, vinculos: variacoes, tx });
+      }
+
+      return tx.lead.findUnique({ where: { id }, include: INCLUDE_LEAD });
     });
 
     if (anterior && anterior.etapaId !== etapaId) {
@@ -201,7 +239,90 @@ roteador.put('/leads/:id', requerPermissao('CRM', 'editar'), async (req, res) =>
     res.json(lead);
   } catch (error) {
     console.error('[crm/leads-update]', error);
-    res.status(500).json({ error: 'Erro ao atualizar lead' });
+    res.status(500).json({ error: error?.message || 'Erro ao atualizar lead' });
+  }
+});
+
+// ==========================================
+// PRODUTOS VINCULADOS AO LEAD
+// ==========================================
+// Helper: garante que o lead pertence ao tenant do solicitante.
+async function leadDoSolicitante(req, leadId) {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) return { erro: 'Lead nao encontrado.', status: 404 };
+  if (!ehAdmin(req.usuario) && lead.clienteId !== req.usuario.clienteId) {
+    return { erro: 'Acesso negado.', status: 403 };
+  }
+  return { lead };
+}
+
+// Adiciona (ou incrementa quantidade de) uma variacao no lead.
+roteador.post('/leads/:leadId/variacoes', requerPermissao('CRM', 'editar'), async (req, res) => {
+  try {
+    const { leadId } = req.params;
+    const { variacaoId, quantidade, observacao } = req.body;
+    const r = await leadDoSolicitante(req, leadId);
+    if (r.erro) return res.status(r.status).json({ error: r.erro });
+    const out = await adicionarVinculo({
+      leadId,
+      clienteId: r.lead.clienteId,
+      variacaoId,
+      quantidade,
+      observacao,
+    });
+    res.json(out);
+  } catch (error) {
+    console.error('[crm/leads-add-variacao]', error);
+    res.status(400).json({ error: error?.message || 'Erro ao vincular produto.' });
+  }
+});
+
+// Remove uma variacao do lead.
+roteador.delete('/leads/:leadId/variacoes/:variacaoId', requerPermissao('CRM', 'editar'), async (req, res) => {
+  try {
+    const { leadId, variacaoId } = req.params;
+    const r = await leadDoSolicitante(req, leadId);
+    if (r.erro) return res.status(r.status).json({ error: r.erro });
+    const out = await removerVinculo({ leadId, variacaoId });
+    res.json(out);
+  } catch (error) {
+    console.error('[crm/leads-remove-variacao]', error);
+    res.status(500).json({ error: 'Erro ao desvincular produto.' });
+  }
+});
+
+// Atualiza quantidade/observacao de uma variacao ja vinculada.
+roteador.patch('/leads/:leadId/variacoes/:variacaoId', requerPermissao('CRM', 'editar'), async (req, res) => {
+  try {
+    const { leadId, variacaoId } = req.params;
+    const { quantidade, observacao } = req.body;
+    const r = await leadDoSolicitante(req, leadId);
+    if (r.erro) return res.status(r.status).json({ error: r.erro });
+
+    const dadosUpdate = {};
+    if (quantidade !== undefined) dadosUpdate.quantidade = Math.max(1, Number(quantidade) || 1);
+    if (observacao !== undefined) dadosUpdate.observacao = observacao || null;
+    if (Object.keys(dadosUpdate).length === 0) {
+      return res.status(400).json({ error: 'Nada pra atualizar.' });
+    }
+
+    await prisma.leadVariacao.update({
+      where: { leadId_variacaoId: { leadId, variacaoId } },
+      data: dadosUpdate,
+    });
+
+    // Recalcula valor.
+    const { calcularValorAgregado } = require('../leadProdutos');
+    const vinculos = await prisma.leadVariacao.findMany({
+      where: { leadId },
+      include: { variacao: true },
+    });
+    const { valorTotal } = calcularValorAgregado(vinculos);
+    await prisma.lead.update({ where: { id: leadId }, data: { valor: valorTotal } });
+    res.json({ vinculos, valorTotal });
+  } catch (error) {
+    console.error('[crm/leads-patch-variacao]', error);
+    res.status(500).json({ error: 'Erro ao atualizar vinculo.' });
   }
 });
 

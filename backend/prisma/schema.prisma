@@ -307,6 +307,7 @@ model Lead {
   mensagens              Mensagem[]
   vendas                 Venda[]
   lancamentosFinanceiros LancamentoFinanceiro[]
+  variacoes              LeadVariacao[]
 
   @@map("leads")
 }
@@ -421,8 +422,32 @@ model VariacaoProduto {
 
   produto       Produto               @relation(fields: [produtoId], references: [id], onDelete: Cascade)
   movimentacoes MovimentacaoEstoque[]
+  vinculosLead  LeadVariacao[]
 
   @@map("variacoes_produto")
+}
+
+// ==========================================
+// PRODUTOS VINCULADOS AO LEAD (interesse de compra)
+// ==========================================
+// Tabela M:N entre Lead e VariacaoProduto, com quantidade pra suportar
+// "2x camiseta P + 1x camiseta G". O `valor` agregado do lead e calculado
+// no servidor a partir dessa relacao (preco × quantidade respeitando
+// usarPrecoCatalogo).
+model LeadVariacao {
+  id          String   @id @default(uuid())
+  leadId      String
+  variacaoId  String
+  quantidade  Int      @default(1)
+  observacao  String?
+  criadoEm    DateTime @default(now())
+
+  lead     Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  variacao VariacaoProduto @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, variacaoId])
+  @@index([leadId])
+  @@map("lead_variacoes")
 }
 
 // ==========================================

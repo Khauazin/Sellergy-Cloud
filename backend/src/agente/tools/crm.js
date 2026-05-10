@@ -1,6 +1,7 @@
 // Tools do modulo CRM. Multi-tenant: contexto.clienteId obrigatorio.
 
 const prisma = require('../../prisma');
+const { adicionarVinculo, removerVinculo } = require('../../leadProdutos');
 
 function exigirCliente(contexto) {
   if (!contexto?.clienteId) {
@@ -109,4 +110,67 @@ const moverEtapaLead = {
   },
 };
 
-module.exports = [criarLead, buscarLead, moverEtapaLead];
+// =====================================================================
+// VINCULOS DE PRODUTOS NO LEAD
+// =====================================================================
+const vincularProdutoAoLead = {
+  nome: 'crm.vincularProdutoAoLead',
+  modulo: 'CRM',
+  descricao: 'Vincula uma variacao de produto ao lead, com quantidade. Use quando o cliente demonstrar interesse em produtos especificos. O valor estimado do lead e recalculado automaticamente.',
+  parametros: {
+    tipo: 'object',
+    propriedades: {
+      leadId: { tipo: 'string', descricao: 'ID do lead' },
+      variacaoId: { tipo: 'string', descricao: 'ID da variacao do produto (use catalogo.buscarProduto antes pra encontrar)' },
+      quantidade: { tipo: 'number', descricao: 'Quantidade desejada (default: 1)', opcional: true },
+      observacao: { tipo: 'string', descricao: 'Observacao livre (ex.: cor preferida)', opcional: true },
+    },
+    obrigatorios: ['leadId', 'variacaoId'],
+  },
+  async executar({ args, contexto }) {
+    exigirCliente(contexto);
+    // Confirma que o lead pertence ao tenant antes de chamar o helper.
+    const lead = await prisma.lead.findFirst({
+      where: { id: args.leadId, clienteId: contexto.clienteId },
+    });
+    if (!lead) throw new Error('Lead nao encontrado.');
+
+    const { vinculos, valorTotal } = await adicionarVinculo({
+      leadId: lead.id,
+      clienteId: contexto.clienteId,
+      variacaoId: args.variacaoId,
+      quantidade: args.quantidade,
+      observacao: args.observacao || null,
+    });
+    return {
+      leadId: lead.id,
+      valorTotal,
+      totalProdutos: vinculos.length,
+    };
+  },
+};
+
+const desvincularProdutoDoLead = {
+  nome: 'crm.desvincularProdutoDoLead',
+  modulo: 'CRM',
+  descricao: 'Remove uma variacao previamente vinculada ao lead. O valor estimado e recalculado.',
+  parametros: {
+    tipo: 'object',
+    propriedades: {
+      leadId: { tipo: 'string' },
+      variacaoId: { tipo: 'string' },
+    },
+    obrigatorios: ['leadId', 'variacaoId'],
+  },
+  async executar({ args, contexto }) {
+    exigirCliente(contexto);
+    const lead = await prisma.lead.findFirst({
+      where: { id: args.leadId, clienteId: contexto.clienteId },
+    });
+    if (!lead) throw new Error('Lead nao encontrado.');
+    const { valorTotal } = await removerVinculo({ leadId: lead.id, variacaoId: args.variacaoId });
+    return { leadId: lead.id, valorTotal };
+  },
+};
+
+module.exports = [criarLead, buscarLead, moverEtapaLead, vincularProdutoAoLead, desvincularProdutoDoLead];
