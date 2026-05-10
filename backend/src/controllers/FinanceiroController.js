@@ -21,6 +21,26 @@ async function buscarLancamentoDoCliente(id, clienteId) {
   return lancamento;
 }
 
+// =====================================================================
+// PROTECAO DE INTEGRIDADE FINANCEIRA
+// =====================================================================
+// Lancamento gerado por venda (vendaId !== null) NAO pode ser editado,
+// excluido ou cancelado pelo modulo Financeiro. Pra reverter, o usuario
+// precisa cancelar a VENDA inteira (POST /vendas/:id/cancelar), o que
+// reverte estoque + cancela o lancamento na mesma transacao.
+//
+// Isso vale pra TODOS os perfis (inclusive CLIENT e ADMIN do tenant) —
+// nao e questao de permissao, e questao de integridade contabil.
+// Auditoria: cada cancelamento de venda fica registrado no banco.
+const MSG_BLOQUEIO_VENDA = 'Este lancamento foi gerado por uma venda. Pra editar/cancelar, va em Vendas e cancele a venda — isso reverte estoque e este lancamento juntos.';
+
+function bloquearSeVendaVinculada(lancamento) {
+  if (lancamento && lancamento.vendaId) {
+    return { erro: MSG_BLOQUEIO_VENDA, status: 422 };
+  }
+  return null;
+}
+
 class FinanceiroController {
 
   // Lançamentos
@@ -197,6 +217,9 @@ class FinanceiroController {
       const dados = req.body;
       const existente = await buscarLancamentoDoCliente(id, clienteId);
       if (!existente) return res.status(404).json({ error: 'Lançamento não encontrado.' });
+      // Trava de integridade: lancamento de venda nao pode ser alterado aqui.
+      const bloqueio = bloquearSeVendaVinculada(existente);
+      if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
       if (existente.status === 'PAGO') return res.status(422).json({ error: 'Não é possível editar um lançamento já pago.' });
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
@@ -226,6 +249,9 @@ class FinanceiroController {
       const { status, dataPagamento, dataCancelamento } = req.body;
       const existente = await buscarLancamentoDoCliente(id, clienteId);
       if (!existente) return res.status(404).json({ error: 'Lançamento não encontrado.' });
+      // Trava de integridade: status de lancamento de venda e definido pela venda.
+      const bloqueio = bloquearSeVendaVinculada(existente);
+      if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
         where: { id },
@@ -469,6 +495,9 @@ class FinanceiroController {
       const { clienteId } = req.usuario;
       const existente = await buscarLancamentoDoCliente(id, clienteId);
       if (!existente) return res.status(404).json({ error: 'Lançamento não encontrado.' });
+      // Trava de integridade: lancamento de venda NUNCA e excluido — vai cancelado pela venda.
+      const bloqueio = bloquearSeVendaVinculada(existente);
+      if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
 
       await prisma.lancamentoFinanceiro.delete({ where: { id } });
       res.json({ message: 'Lançamento excluído com sucesso.' });
@@ -484,6 +513,8 @@ class FinanceiroController {
       const { motivo } = req.body;
       const existente = await buscarLancamentoDoCliente(id, clienteId);
       if (!existente) return res.status(404).json({ error: 'Lançamento não encontrado.' });
+      const bloqueio = bloquearSeVendaVinculada(existente);
+      if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
         where: { id },
@@ -540,15 +571,23 @@ class FinanceiroController {
         return res.status(400).json({ error: 'IDs inválidos.' });
       }
 
+      // Lancamentos de venda nao podem ser alterados em lote — filtra fora.
       const resultado = await prisma.lancamentoFinanceiro.updateMany({
-        where: { id: { in: ids }, clienteId },
+        where: { id: { in: ids }, clienteId, vendaId: null },
         data: {
           status,
           dataPagamento: status === 'PAGO' ? new Date() : null
         }
       });
 
-      res.json({ mensagem: 'Status atualizado com sucesso.', alterados: resultado.count });
+      const ignorados = ids.length - resultado.count;
+      res.json({
+        mensagem: ignorados > 0
+          ? `${resultado.count} lancamento(s) atualizado(s). ${ignorados} ignorado(s) — sao de venda e so mudam pelo modulo Vendas.`
+          : 'Status atualizado com sucesso.',
+        alterados: resultado.count,
+        ignorados,
+      });
     } catch (error) {
       res.status(500).json({ error: 'Erro ao atualizar em lote' });
     }
@@ -561,8 +600,9 @@ class FinanceiroController {
 
       if (!idAgrupamento) return res.status(400).json({ error: 'ID de agrupamento inválido.' });
 
+      // Filtra fora lancamentos de venda — eles nao podem ser excluidos por aqui.
       const resultado = await prisma.lancamentoFinanceiro.deleteMany({
-        where: { idAgrupamento, clienteId, status: { not: 'PAGO' } }
+        where: { idAgrupamento, clienteId, status: { not: 'PAGO' }, vendaId: null }
       });
 
       res.json({ mensagem: 'Parcelas não pagas excluídas.', excluidas: resultado.count });

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   DollarSign, TrendingUp, TrendingDown, AlertCircle, Plus, MoreHorizontal,
-  Edit2, Trash2, CheckCircle2, XCircle, Tag, Filter, ArrowDownToLine, ArrowUpFromLine
+  Edit2, Trash2, CheckCircle2, XCircle, Tag, Filter, ArrowDownToLine, ArrowUpFromLine,
+  Lock, ShoppingCart
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -555,6 +556,9 @@ function ModalCategoria({ isOpen, onClose, cat, onSalvar }) {
 function DrawerLancamento({ isOpen, onClose, lanc, onEditar, onExcluir, onStatus }) {
   if (!lanc) return null;
   const status = STATUS_LABELS[lanc.status] || { label: lanc.status, variant: 'neutral' };
+  // Lancamento gerado por venda — backend bloqueia edicao/exclusao/status.
+  // Frontend reflete: esconde botoes destrutivos e mostra aviso.
+  const ehDeVenda = !!lanc.vendaId;
 
   return (
     <Drawer
@@ -564,10 +568,16 @@ function DrawerLancamento({ isOpen, onClose, lanc, onEditar, onExcluir, onStatus
       description={lanc.tipo === 'RECEITA' ? 'Receita' : 'Despesa'}
       size="md"
       footer={
-        <div className="flex justify-between gap-2">
-          <Button variant="danger-soft" icon={Trash2} onClick={onExcluir}>Excluir</Button>
-          <Button variant="primary" icon={Edit2} onClick={onEditar}>Editar</Button>
-        </div>
+        ehDeVenda ? (
+          <div className="text-[11px] text-[var(--text-muted)] text-center w-full">
+            Lançamento de venda · gerenciado pelo módulo Vendas
+          </div>
+        ) : (
+          <div className="flex justify-between gap-2">
+            <Button variant="danger-soft" icon={Trash2} onClick={onExcluir}>Excluir</Button>
+            <Button variant="primary" icon={Edit2} onClick={onEditar}>Editar</Button>
+          </div>
+        )
       }
     >
       <div className="space-y-5">
@@ -582,6 +592,16 @@ function DrawerLancamento({ isOpen, onClose, lanc, onEditar, onExcluir, onStatus
           </div>
         </div>
 
+        {ehDeVenda && (
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-[var(--info-soft)] border border-[var(--info)]/30">
+            <ShoppingCart className="w-5 h-5 flex-shrink-0 text-[var(--info)] mt-0.5" />
+            <div className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              <strong className="text-[var(--text-main)]">Este lançamento veio de uma venda.</strong>
+              {' '}Pra alterar valor ou cancelar, vá em <strong>Vendas</strong> e cancele a venda — isso reverte estoque e este lançamento juntos. <Lock size={11} className="inline -mt-0.5" />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <InfoBox label="Vencimento" valor={new Date(lanc.dataVencimento).toLocaleDateString('pt-BR')} />
           <InfoBox label="Pagamento" valor={lanc.dataPagamento ? new Date(lanc.dataPagamento).toLocaleDateString('pt-BR') : '—'} />
@@ -591,15 +611,17 @@ function DrawerLancamento({ isOpen, onClose, lanc, onEditar, onExcluir, onStatus
           <InfoBox label="Lead" valor={lanc.lead?.nome || '—'} />
         </div>
 
-        <div>
-          <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Mudar status</div>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant={lanc.status === 'PAGO' ? 'primary' : 'secondary'} size="sm" icon={CheckCircle2} onClick={() => onStatus('PAGO')}>Pago</Button>
-            <Button variant={lanc.status === 'PENDENTE' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('PENDENTE')}>Pendente</Button>
-            <Button variant={lanc.status === 'ATRASADO' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('ATRASADO')}>Atrasado</Button>
-            <Button variant={lanc.status === 'CANCELADO' ? 'danger' : 'secondary'} size="sm" icon={XCircle} onClick={() => onStatus('CANCELADO')}>Cancelado</Button>
+        {!ehDeVenda && (
+          <div>
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Mudar status</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant={lanc.status === 'PAGO' ? 'primary' : 'secondary'} size="sm" icon={CheckCircle2} onClick={() => onStatus('PAGO')}>Pago</Button>
+              <Button variant={lanc.status === 'PENDENTE' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('PENDENTE')}>Pendente</Button>
+              <Button variant={lanc.status === 'ATRASADO' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('ATRASADO')}>Atrasado</Button>
+              <Button variant={lanc.status === 'CANCELADO' ? 'danger' : 'secondary'} size="sm" icon={XCircle} onClick={() => onStatus('CANCELADO')}>Cancelado</Button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </Drawer>
   );
