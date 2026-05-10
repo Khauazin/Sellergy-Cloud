@@ -1583,7 +1583,7 @@ function AbaBots({ intervalo }) {
           carregando={carregando} />
         <KpiCard icon={Bot} color="success" label="Execuções de fluxo"
           valor={fmtNum(dados?.kpis.totalExec)}
-          subvalor={dados?.kpis.taxaSucesso !== null
+          subvalor={dados && dados.kpis.taxaSucesso !== null
             ? `${fmtPct(dados.kpis.taxaSucesso)} de sucesso` : null}
           carregando={carregando} />
         <KpiCard icon={Sparkles} color="warning" label="Tokens de IA"
