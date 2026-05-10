@@ -110,6 +110,7 @@ export default function RelatoriosPage() {
           <TabsTrigger value="executiva">Visão executiva</TabsTrigger>
           <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+          <TabsTrigger value="vendas">Vendas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executiva">
@@ -122,6 +123,10 @@ export default function RelatoriosPage() {
 
         <TabsContent value="financeiro">
           <AbaFinanceiro intervalo={intervalo} />
+        </TabsContent>
+
+        <TabsContent value="vendas">
+          <AbaVendas intervalo={intervalo} />
         </TabsContent>
       </Tabs>
     </div>
@@ -419,6 +424,285 @@ function AbaFinanceiro({ intervalo }) {
         <TabelaMetodosPagamento itens={dados?.porMetodo} carregando={carregando} />
       </Card>
     </div>
+  );
+}
+
+// ============================================================
+// ABA: Vendas
+// ============================================================
+function AbaVendas({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/vendas', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={ShoppingCart} color="info" label="Total de vendas"
+          valor={fmtNum(dados?.kpis.totalVendas)}
+          subvalor={dados ? fmtBRL(dados.kpis.valorTotal) : null}
+          carregando={carregando} />
+        <KpiCard icon={DollarSign} color="success" label="Ticket médio"
+          valor={fmtBRL(dados?.kpis.ticketMedio)} carregando={carregando} />
+        <KpiCard icon={TrendingUp} color="accent" label="Lucro bruto"
+          valor={fmtBRL(dados?.kpis.lucroBruto)}
+          subvalor={dados ? `Margem ${fmtPct(dados.kpis.margemBruta)}` : null}
+          carregando={carregando} />
+        <KpiCard icon={Users} color="warning" label="Conversão lead → venda"
+          valor={dados?.kpis.taxaConversao !== null && dados?.kpis.taxaConversao !== undefined
+            ? fmtPct(dados.kpis.taxaConversao) : '—'}
+          subvalor={dados ? `${dados.kpis.vendasComLead} de ${dados.kpis.leadsCriadosPeriodo} leads` : null}
+          carregando={carregando} />
+      </div>
+
+      {/* Por canal */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas por canal</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Origem do lead que originou cada venda</div>
+        </div>
+        <TabelaPorCanal porCanal={dados?.porCanal} carregando={carregando} />
+      </Card>
+
+      {/* Sazonalidade — heatmap */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Sazonalidade</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Dia da semana × hora do dia (cor = volume de receita)</div>
+        </div>
+        <Heatmap sazonalidade={dados?.sazonalidade} carregando={carregando} />
+      </Card>
+
+      {/* Por categoria */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas por categoria</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Inclui receita, CMV, lucro e margem por categoria</div>
+        </div>
+        <TabelaCategoriasVendas itens={dados?.porCategoria} carregando={carregando} />
+      </Card>
+
+      {/* Por metodo */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Por método de pagamento</div>
+        </div>
+        <TabelaMetodosPagamento itens={dados?.porMetodo} carregando={carregando} />
+      </Card>
+
+      {/* Top vendas mais lucrativas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas mais lucrativas</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 10 por lucro absoluto</div>
+          </div>
+          <TabelaTopVendas itens={dados?.top10MaisLucrativas} carregando={carregando} corLucro="success" />
+        </Card>
+
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas com menor lucro</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 10 — pra revisar precificação</div>
+          </div>
+          <TabelaTopVendas itens={dados?.top10MenosLucrativas} carregando={carregando} corLucro="warning" />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ====== Componentes da aba Vendas ======
+function TabelaPorCanal({ porCanal, carregando }) {
+  if (carregando && !porCanal) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!porCanal || porCanal.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma venda no período.</div>;
+  }
+  const totalValor = porCanal.reduce((acc, c) => acc + c.valor, 0);
+  return (
+    <div className="px-5 py-4 space-y-3">
+      {porCanal.map((c) => {
+        const pct = totalValor > 0 ? (c.valor / totalValor) * 100 : 0;
+        return (
+          <div key={c.origem} className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-[var(--text-main)]">{c.origem}</span>
+                <span className="text-[var(--text-muted)]">{c.qtd} venda{c.qtd === 1 ? '' : 's'}</span>
+              </div>
+              <div className="flex items-baseline gap-3">
+                <span className="text-[var(--text-muted)] tabular-nums">{fmtPct(pct)}</span>
+                <span className="font-bold tabular-nums text-[var(--text-main)]">{fmtBRL(c.valor)}</span>
+                <span className="text-[var(--success)] tabular-nums text-[11px]">+{fmtBRL(c.lucro)}</span>
+              </div>
+            </div>
+            <div className="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const DIAS_SEMANA = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+
+function Heatmap({ sazonalidade, carregando }) {
+  if (carregando && !sazonalidade) return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!sazonalidade || sazonalidade.celulas.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem vendas no período.</div>;
+  }
+  const max = sazonalidade.maxValor;
+  if (max === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem vendas no período.</div>;
+  }
+
+  // Agrupa em matriz 7x24
+  const matriz = Array.from({ length: 7 }, () => Array(24).fill(null));
+  for (const c of sazonalidade.celulas) matriz[c.diaSemana][c.hora] = c;
+
+  return (
+    <div className="px-5 py-4 overflow-x-auto">
+      <div className="min-w-[720px]">
+        {/* Cabecalho de horas */}
+        <div className="flex gap-0.5 ml-10 mb-1">
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="flex-1 text-center text-[9px] text-[var(--text-muted)] font-semibold tabular-nums">
+              {h.toString().padStart(2, '0')}
+            </div>
+          ))}
+        </div>
+        {matriz.map((linha, d) => (
+          <div key={d} className="flex items-center gap-0.5 mb-0.5">
+            <div className="w-9 text-[10px] text-[var(--text-muted)] font-bold uppercase">{DIAS_SEMANA[d]}</div>
+            {linha.map((cel, h) => {
+              const intensidade = cel.valor > 0 ? cel.valor / max : 0;
+              const opacidade = intensidade === 0 ? 0 : Math.max(0.15, intensidade);
+              return (
+                <div
+                  key={h}
+                  className="flex-1 h-7 rounded relative group cursor-help"
+                  style={{
+                    backgroundColor: cel.valor === 0
+                      ? 'var(--bg-subtle)'
+                      : `color-mix(in srgb, var(--accent) ${opacidade * 100}%, transparent)`,
+                    border: cel.valor === 0 ? '1px solid var(--border-subtle)' : 'none',
+                  }}
+                  title={`${DIAS_SEMANA[d]} ${h.toString().padStart(2, '0')}h: ${cel.qtd} venda(s) · ${fmtBRL(cel.valor)}`}
+                >
+                  {cel.qtd > 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-[var(--text-on-primary)] tabular-nums">
+                      {cel.qtd}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {/* Legenda */}
+        <div className="flex items-center justify-end gap-2 mt-3 text-[10px] text-[var(--text-muted)]">
+          <span>Menos</span>
+          {[0.15, 0.3, 0.5, 0.7, 0.9].map((op) => (
+            <div
+              key={op}
+              className="w-4 h-3 rounded"
+              style={{ backgroundColor: `color-mix(in srgb, var(--accent) ${op * 100}%, transparent)` }}
+            />
+          ))}
+          <span>Mais</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabelaCategoriasVendas({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma venda no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Categoria</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Qtd</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Receita</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">CMV</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Lucro</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Margem</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((c) => (
+          <tr key={c.categoria} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)]">{c.categoria}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums">{fmtNum(c.qtd)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-main)]">{fmtBRL(c.valor)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-secondary)]">{fmtBRL(c.custo)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums font-bold text-[var(--success)]">{fmtBRL(c.lucro)}</td>
+            <td className={`py-3 px-5 text-right text-sm tabular-nums font-bold ${
+              c.margem < 20 ? 'text-[var(--warning)]' : 'text-[var(--text-main)]'
+            }`}>{fmtPct(c.margem)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaTopVendas({ itens, carregando, corLucro = 'success' }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem dados.</div>;
+  }
+  const corLucroVar = corLucro === 'warning' ? 'var(--warning)' : 'var(--success)';
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-2.5 px-4">Venda</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-2.5 px-4">Valor</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-2.5 px-4">Lucro</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((v) => (
+          <tr key={v.id} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-2.5 px-4">
+              <div className="font-semibold text-[var(--text-main)] truncate max-w-[200px]">{v.descricao}</div>
+              <div className="text-[10px] text-[var(--text-muted)]">{new Date(v.data).toLocaleDateString('pt-BR')}</div>
+            </td>
+            <td className="py-2.5 px-4 text-right tabular-nums">{fmtBRL(v.valor)}</td>
+            <td className="py-2.5 px-4 text-right tabular-nums">
+              <div className="font-bold" style={{ color: corLucroVar }}>{fmtBRL(v.lucro)}</div>
+              <div className="text-[10px] text-[var(--text-muted)]">{fmtPct(v.margem)}</div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

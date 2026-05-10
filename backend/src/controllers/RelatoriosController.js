@@ -759,8 +759,237 @@ async function relatorioFinanceiro(req, res) {
   }
 }
 
+// =====================================================================
+// VENDAS — KPIs, canal, sazonalidade (dia x hora), categorias, lucro
+// =====================================================================
+async function relatorioVendas(req, res) {
+  try {
+    const { clienteId } = req.usuario;
+    if (!clienteId) return res.status(403).json({ error: 'Tenant indefinido.' });
+
+    const periodo = resolverPeriodo(req.query);
+
+    const [vendas, movimentacoesVenda, leadsCriadosPeriodo] = await Promise.all([
+      // Todas vendas COMPLETED no periodo, com lead pra agregar por origem.
+      prisma.venda.findMany({
+        where: {
+          clienteId,
+          status: 'COMPLETED',
+          data: { gte: periodo.inicio, lte: periodo.fim },
+        },
+        include: {
+          lead: { select: { id: true, origem: true } },
+        },
+        orderBy: { data: 'asc' },
+      }),
+
+      // Movimentacoes VENDA do periodo — usadas pra CMV e categoria.
+      // Filtra explicitamente por vendaId nao nulo.
+      prisma.movimentacaoEstoque.findMany({
+        where: {
+          tipo: 'VENDA',
+          vendaId: { not: null },
+          data: { gte: periodo.inicio, lte: periodo.fim },
+          variacao: { produto: { clienteId } },
+        },
+        include: {
+          variacao: {
+            select: {
+              id: true, nome: true, preco: true, precoCusto: true, imagemUrl: true,
+              produto: {
+                select: {
+                  id: true, nome: true, imagemUrl: true,
+                  categoria: { select: { id: true, nome: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      // Leads criados no periodo — pra calcular taxa de conversao
+      prisma.lead.count({
+        where: { clienteId, criadoEm: { gte: periodo.inicio, lte: periodo.fim } },
+      }),
+    ]);
+
+    // ============== KPIs ==============
+    const totalVendas = vendas.length;
+    const valorTotalVendas = vendas.reduce((acc, v) => acc + Number(v.valor || 0), 0);
+    const ticketMedio = totalVendas > 0 ? valorTotalVendas / totalVendas : 0;
+
+    // CMV por venda — soma (qtd × precoCusto) das movimentacoes de cada vendaId.
+    const cmvPorVenda = new Map();
+    for (const m of movimentacoesVenda) {
+      if (!m.vendaId) continue;
+      const qtd = Math.abs(m.quantidade || 0);
+      const custo = Number(m.variacao?.precoCusto || 0);
+      const cmv = qtd * custo;
+      cmvPorVenda.set(m.vendaId, (cmvPorVenda.get(m.vendaId) || 0) + cmv);
+    }
+
+    // Lucro bruto = receita - CMV
+    let lucroBrutoTotal = 0;
+    let cmvTotal = 0;
+    for (const v of vendas) {
+      const cmv = cmvPorVenda.get(v.id) || 0;
+      lucroBrutoTotal += Number(v.valor || 0) - cmv;
+      cmvTotal += cmv;
+    }
+    const margemBruta = valorTotalVendas > 0 ? (lucroBrutoTotal / valorTotalVendas) * 100 : 0;
+
+    // Conversao lead -> venda. Vendas com leadId vinculado / leads criados.
+    const vendasComLead = vendas.filter((v) => v.leadId).length;
+    const taxaConversao = leadsCriadosPeriodo > 0
+      ? Number(((vendasComLead / leadsCriadosPeriodo) * 100).toFixed(1))
+      : null;
+
+    // ============== POR CANAL/ORIGEM ==============
+    const canalMap = new Map();
+    for (const v of vendas) {
+      const origem = (v.lead?.origem || 'Manual').trim() || 'Manual';
+      if (!canalMap.has(origem)) {
+        canalMap.set(origem, { origem, qtd: 0, valor: 0, lucro: 0 });
+      }
+      const item = canalMap.get(origem);
+      item.qtd += 1;
+      item.valor += Number(v.valor || 0);
+      item.lucro += Number(v.valor || 0) - (cmvPorVenda.get(v.id) || 0);
+    }
+    const porCanal = [...canalMap.values()].sort((a, b) => b.valor - a.valor);
+
+    // ============== SAZONALIDADE — dia da semana x hora ==============
+    // Matriz 7 (dom-sab) x 24 (0-23). Cada celula: qtd e valor.
+    const matriz = [];
+    for (let d = 0; d < 7; d++) {
+      const linha = [];
+      for (let h = 0; h < 24; h++) {
+        linha.push({ diaSemana: d, hora: h, qtd: 0, valor: 0 });
+      }
+      matriz.push(linha);
+    }
+    for (const v of vendas) {
+      const data = new Date(v.data);
+      const dia = data.getDay();   // 0 = domingo
+      const hora = data.getHours();
+      matriz[dia][hora].qtd += 1;
+      matriz[dia][hora].valor += Number(v.valor || 0);
+    }
+    // Achata e devolve. Tambem calcula maxValor pra UI normalizar a cor.
+    let maxValorCelula = 0;
+    const celulas = [];
+    for (const linha of matriz) {
+      for (const cel of linha) {
+        if (cel.valor > maxValorCelula) maxValorCelula = cel.valor;
+        celulas.push(cel);
+      }
+    }
+
+    // ============== POR CATEGORIA ==============
+    const catMap = new Map();
+    for (const m of movimentacoesVenda) {
+      const cat = m.variacao?.produto?.categoria?.nome || 'Sem categoria';
+      const qtd = Math.abs(m.quantidade || 0);
+      const valor = qtd * Number(m.variacao?.preco || 0);
+      const custo = qtd * Number(m.variacao?.precoCusto || 0);
+      if (!catMap.has(cat)) {
+        catMap.set(cat, { categoria: cat, qtd: 0, valor: 0, custo: 0 });
+      }
+      const item = catMap.get(cat);
+      item.qtd += qtd;
+      item.valor += valor;
+      item.custo += custo;
+    }
+    const porCategoria = [...catMap.values()]
+      .map((c) => ({
+        ...c,
+        lucro: c.valor - c.custo,
+        margem: c.valor > 0 ? Number((((c.valor - c.custo) / c.valor) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.valor - a.valor);
+
+    // ============== POR METODO DE PAGAMENTO ==============
+    const metodoMap = new Map();
+    for (const v of vendas) {
+      const m = v.metodoPagamento || 'Não informado';
+      if (!metodoMap.has(m)) metodoMap.set(m, { metodo: m, qtd: 0, valor: 0 });
+      const item = metodoMap.get(m);
+      item.qtd += 1;
+      item.valor += Number(v.valor || 0);
+    }
+    const porMetodo = [...metodoMap.values()].sort((a, b) => b.valor - a.valor);
+
+    // ============== TOP 10 VENDAS MAIS LUCRATIVAS ==============
+    // Agrupa info da venda + cmv pra ordenar por lucro absoluto.
+    // Faz 1 lookup extra de produtos vinculados pra mostrar nome.
+    const movMap = new Map();
+    for (const m of movimentacoesVenda) {
+      if (!m.vendaId) continue;
+      if (!movMap.has(m.vendaId)) movMap.set(m.vendaId, []);
+      movMap.get(m.vendaId).push(m);
+    }
+    const topVendas = vendas.map((v) => {
+      const cmv = cmvPorVenda.get(v.id) || 0;
+      const lucro = Number(v.valor || 0) - cmv;
+      const margem = v.valor > 0 ? (lucro / Number(v.valor)) * 100 : 0;
+      const itens = movMap.get(v.id) || [];
+      // Resumo dos produtos da venda (primeiro item ou "X produtos")
+      let descricao = '—';
+      if (itens.length === 1) {
+        const v0 = itens[0].variacao;
+        const ehPad = !v0?.nome || v0.nome === 'Padrão' || v0.nome === 'Padrao';
+        descricao = `${v0?.produto?.nome}${ehPad ? '' : ' · ' + v0.nome}`;
+      } else if (itens.length > 1) {
+        descricao = `${itens.length} produtos`;
+      }
+      return {
+        id: v.id,
+        data: v.data,
+        valor: Number(v.valor || 0),
+        cmv,
+        lucro,
+        margem: Number(margem.toFixed(1)),
+        descricao,
+      };
+    });
+    const top10MaisLucrativas = [...topVendas].sort((a, b) => b.lucro - a.lucro).slice(0, 10);
+    const top10MenosLucrativas = [...topVendas].sort((a, b) => a.lucro - b.lucro).slice(0, 10);
+
+    res.json({
+      periodo: {
+        inicio: periodo.inicio.toISOString(),
+        fim: periodo.fim.toISOString(),
+      },
+      kpis: {
+        totalVendas,
+        valorTotal: valorTotalVendas,
+        ticketMedio: Number(ticketMedio.toFixed(2)),
+        lucroBruto: lucroBrutoTotal,
+        cmvTotal,
+        margemBruta: Number(margemBruta.toFixed(2)),
+        leadsCriadosPeriodo,
+        vendasComLead,
+        taxaConversao,
+      },
+      porCanal,
+      sazonalidade: {
+        celulas,
+        maxValor: maxValorCelula,
+      },
+      porCategoria,
+      porMetodo,
+      top10MaisLucrativas,
+      top10MenosLucrativas,
+    });
+  } catch (erro) {
+    console.error('[relatorios/vendas]', erro);
+    res.status(500).json({ error: 'Erro ao gerar relatorio de vendas.' });
+  }
+}
+
 module.exports = {
   visaoExecutiva,
   relatorioCRM,
   relatorioFinanceiro,
+  relatorioVendas,
 };
