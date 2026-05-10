@@ -1,21 +1,22 @@
-// Pagina de relatorios consolidados do tenant. Comeca com a aba "Visao
-// Executiva" (KPIs do periodo + top produtos). Outras abas (Financeiro,
-// Vendas, CRM, Estoque/CMV, Bots) entram em fases proximas.
+// Pagina de relatorios consolidados do tenant.
+// Estrutura: Tabs (Visao Executiva, CRM, ...) + filtro de periodo GLOBAL.
+// Cada aba e um componente que recebe o intervalo e busca seus dados.
 //
 // Filosofia do filtro de periodo:
-//   - Default: ultimos 30 dias.
-//   - Presets rapidos: hoje, 7d, 30d, 90d, este mes, mes passado.
-//   - Custom: 2 inputs de data.
-//   - O periodo e GLOBAL (vale pra todas as abas) — quando trocar, todas
-//     as abas refazem queries com o novo intervalo.
+//   - Default: ultimos 30 dias. Presets rapidos + custom.
+//   - GLOBAL: vale pra todas as abas — quando troca, todas refazem queries.
 
 import { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart,
-  Users, Package, AlertCircle, Image as ImageIcon, Calendar, RefreshCw,
+  Users, Package, AlertCircle, Image as ImageIcon, Calendar,
+  Filter, Clock, Phone, Mail,
 } from 'lucide-react';
 import api from '../services/api';
-import { Card, Button, Badge, Select, Input } from '../components/ui';
+import {
+  Card, Badge, Select, Input,
+  Tabs, TabsList, TabsTrigger, TabsContent,
+} from '../components/ui';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtPct = (v) => `${Number(v ?? 0).toFixed(1)}%`;
@@ -31,7 +32,6 @@ const PRESETS = [
   { value: 'custom', label: 'Personalizado' },
 ];
 
-// Calcula intervalo a partir do preset.
 function calcularIntervalo(preset, customInicio, customFim) {
   const fim = new Date();
   const inicio = new Date();
@@ -71,35 +71,15 @@ function calcularIntervalo(preset, customInicio, customFim) {
 }
 
 export default function RelatoriosPage() {
+  const [aba, setAba] = useState('executiva');
   const [preset, setPreset] = useState('30d');
   const [customInicio, setCustomInicio] = useState('');
   const [customFim, setCustomFim] = useState('');
-  const [carregando, setCarregando] = useState(false);
-  const [dados, setDados] = useState(null);
-  const [erro, setErro] = useState(null);
 
   const intervalo = useMemo(
     () => calcularIntervalo(preset, customInicio, customFim),
     [preset, customInicio, customFim]
   );
-
-  useEffect(() => {
-    let ativo = true;
-    setCarregando(true);
-    setErro(null);
-    api.get('/relatorios/visao-executiva', {
-      params: {
-        inicio: intervalo.inicio.toISOString(),
-        fim: intervalo.fim.toISOString(),
-      },
-    })
-      .then((r) => { if (ativo) setDados(r.data); })
-      .catch((e) => {
-        if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar relatórios.');
-      })
-      .finally(() => { if (ativo) setCarregando(false); });
-    return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
 
   return (
     <div className="space-y-5">
@@ -122,162 +102,425 @@ export default function RelatoriosPage() {
         />
       </div>
 
-      {erro && (
-        <Card padding="md">
-          <div className="flex items-center gap-2 text-sm text-[var(--danger)]">
-            <AlertCircle size={16} />
-            <span>{erro}</span>
-          </div>
-        </Card>
-      )}
+      <Tabs value={aba} onValueChange={setAba}>
+        <TabsList>
+          <TabsTrigger value="executiva">Visão executiva</TabsTrigger>
+          <TabsTrigger value="crm">CRM</TabsTrigger>
+        </TabsList>
 
-      {/* Grid de KPIs */}
+        <TabsContent value="executiva">
+          <AbaVisaoExecutiva intervalo={intervalo} />
+        </TabsContent>
+
+        <TabsContent value="crm">
+          <AbaCRM intervalo={intervalo} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ============================================================
+// ABA: Visao Executiva
+// ============================================================
+function AbaVisaoExecutiva({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/visao-executiva', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard
-          icon={DollarSign}
-          color="success"
-          label="Faturamento"
-          valor={fmtBRL(dados?.faturamento.valor)}
-          delta={dados?.faturamento.delta}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={TrendingUp}
-          color="accent"
-          label="Lucro líquido"
-          valor={fmtBRL(dados?.lucroLiquido.valor)}
-          delta={dados?.lucroLiquido.delta}
-          subvalor={dados ? `Margem ${fmtPct(dados.lucroLiquido.margem)}` : null}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={Package}
-          color="warning"
-          label="CMV"
+        <KpiCard icon={DollarSign} color="success" label="Faturamento"
+          valor={fmtBRL(dados?.faturamento.valor)} delta={dados?.faturamento.delta} carregando={carregando} />
+        <KpiCard icon={TrendingUp} color="accent" label="Lucro líquido"
+          valor={fmtBRL(dados?.lucroLiquido.valor)} delta={dados?.lucroLiquido.delta}
+          subvalor={dados ? `Margem ${fmtPct(dados.lucroLiquido.margem)}` : null} carregando={carregando} />
+        <KpiCard icon={Package} color="warning" label="CMV"
           valor={fmtBRL(dados?.cmv.valor)}
-          subvalor={dados ? `${fmtPct(dados.cmv.percentual)} do faturamento` : null}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={AlertCircle}
-          color={dados?.caixa.emRisco > 0 ? 'danger' : 'neutral'}
-          label="A receber em atraso"
+          subvalor={dados ? `${fmtPct(dados.cmv.percentual)} do faturamento` : null} carregando={carregando} />
+        <KpiCard icon={AlertCircle} color={dados?.caixa.emRisco > 0 ? 'danger' : 'neutral'} label="A receber em atraso"
           valor={fmtBRL(dados?.caixa.emRisco)}
-          subvalor={dados ? `${dados.caixa.emRiscoQtd} título(s)` : null}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={ShoppingCart}
-          color="info"
-          label="Vendas"
+          subvalor={dados ? `${dados.caixa.emRiscoQtd} título(s)` : null} carregando={carregando} />
+        <KpiCard icon={ShoppingCart} color="info" label="Vendas"
           valor={fmtNum(dados?.vendas.total)}
-          subvalor={dados ? `Ticket médio ${fmtBRL(dados.vendas.ticketMedio)}` : null}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={Users}
-          color="info"
-          label="Leads criados"
-          valor={fmtNum(dados?.leads.criados)}
-          delta={dados?.leads.delta}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={TrendingUp}
-          color="success"
-          label="Lucro bruto"
+          subvalor={dados ? `Ticket médio ${fmtBRL(dados.vendas.ticketMedio)}` : null} carregando={carregando} />
+        <KpiCard icon={Users} color="info" label="Leads criados"
+          valor={fmtNum(dados?.leads.criados)} delta={dados?.leads.delta} carregando={carregando} />
+        <KpiCard icon={TrendingUp} color="success" label="Lucro bruto"
           valor={fmtBRL(dados?.cmv.lucroBruto)}
           subvalor={dados?.faturamento.valor > 0
             ? `${fmtPct((dados.cmv.lucroBruto / dados.faturamento.valor) * 100)} margem bruta`
-            : null}
-          carregando={carregando}
-        />
-        <KpiCard
-          icon={DollarSign}
-          color="success"
-          label="Saldo do período"
+            : null} carregando={carregando} />
+        <KpiCard icon={DollarSign} color="success" label="Saldo do período"
           valor={fmtBRL(dados?.caixa.saldoPeriodo)}
           subvalor={dados ? `Receita ${fmtBRL(dados.caixa.receitaPaga)}, despesa ${fmtBRL(dados.caixa.despesaPaga)}` : null}
-          carregando={carregando}
-        />
+          carregando={carregando} />
       </div>
 
-      {/* Top produtos */}
+      {/* Top produtos vendidos */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)] flex items-center justify-between">
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Top produtos vendidos</div>
             <div className="text-sm text-[var(--text-secondary)] mt-0.5">No período selecionado</div>
           </div>
-          {dados && (
-            <Badge variant="neutral" size="sm">{dados.topProdutos.length} produto(s)</Badge>
-          )}
+          {dados && <Badge variant="neutral" size="sm">{dados.topProdutos.length} produto(s)</Badge>}
         </div>
-        {carregando && !dados ? (
-          <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>
-        ) : !dados || dados.topProdutos.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <Package className="mx-auto mb-2 text-[var(--text-muted)] opacity-50" size={32} />
-            <div className="text-sm text-[var(--text-muted)]">Nenhuma venda no período.</div>
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--border-main)]">
-                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
-                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
-                <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Quantidade</th>
-                <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Receita</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dados.topProdutos.map((p, idx) => (
-                <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
-                  <td className="py-3 px-5">
-                    {p.imagemUrl ? (
-                      <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
-                        <ImageIcon size={14} />
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-3 px-5">
-                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
-                      <span className="text-[var(--text-muted)] mr-2">#{idx + 1}</span>
-                      {p.nome}
-                      {p.variacao && <span className="text-[var(--text-muted)] font-medium"> · {p.variacao}</span>}
-                    </div>
-                  </td>
-                  <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums text-[var(--text-main)]">
-                    {fmtNum(p.quantidade)}
-                  </td>
-                  <td className="py-3 px-5 text-right text-sm font-bold tabular-nums text-[var(--success)]">
-                    {fmtBRL(p.valor)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      {/* Placeholder de outras abas (transparencia: aviso o que vem) */}
-      <Card padding="md">
-        <div className="text-xs text-[var(--text-muted)]">
-          <strong className="text-[var(--text-secondary)]">Em breve nas próximas abas:</strong>{' '}
-          Financeiro detalhado (DRE, fluxo de caixa, aging de inadimplência), Vendas (por canal, sazonalidade),
-          CRM (funil de conversão, tempo médio por etapa), Estoque & CMV (margem por produto, curva ABC),
-          Bots/IA (mensagens/dia, custo de tokens).
-        </div>
+        <TabelaTopProdutos
+          itens={dados?.topProdutos}
+          carregando={carregando}
+          colunas={[
+            { label: 'Quantidade', valor: (p) => fmtNum(p.quantidade), align: 'right' },
+            { label: 'Receita', valor: (p) => fmtBRL(p.valor), align: 'right', destaque: 'success' },
+          ]}
+        />
       </Card>
     </div>
   );
 }
 
 // ============================================================
-// Componentes auxiliares
+// ABA: CRM
 // ============================================================
+function AbaCRM({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/crm', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      {/* KPIs do CRM */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={Users} color="info" label="Leads abertos no funil"
+          valor={fmtNum(dados?.totais.leadsAbertos)}
+          subvalor={dados ? `Valor potencial ${fmtBRL(dados.totais.valorTotalFunil)}` : null}
+          carregando={carregando} />
+        <KpiCard icon={TrendingUp} color="accent" label="Leads criados (período)"
+          valor={fmtNum(dados?.totais.criadosPeriodo)} carregando={carregando} />
+        <KpiCard icon={ShoppingCart} color="success" label="Conversões (período)"
+          valor={fmtNum(dados?.totais.conversoesPeriodo)}
+          subvalor={dados?.totais.taxaConversao !== null && dados?.totais.taxaConversao !== undefined
+            ? `Taxa ${fmtPct(dados.totais.taxaConversao)}` : null}
+          carregando={carregando} />
+        <KpiCard icon={AlertCircle} color="warning" label="Leads parados (>7d)"
+          valor={fmtNum(dados?.leadsParados.length)}
+          subvalor="Sem contato recente"
+          carregando={carregando} />
+      </div>
+
+      {/* Funil de conversao */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Funil de conversão</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+            Leads atualmente em cada etapa do CRM (independente do período)
+          </div>
+        </div>
+        <FunilEtapas funil={dados?.funil} carregando={carregando} />
+      </Card>
+
+      {/* Origem dos leads + Tempo medio por etapa */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Origem dos leads</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">No período selecionado</div>
+          </div>
+          <TabelaOrigens origens={dados?.origens} carregando={carregando} />
+        </Card>
+
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Tempo médio por etapa</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Baseado nos últimos 60 dias</div>
+          </div>
+          <TabelaTempoEtapas tempos={dados?.tempoMedioPorEtapa} carregando={carregando} />
+        </Card>
+      </div>
+
+      {/* Leads parados */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Leads parados</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+            Sem contato registrado há mais de 7 dias — chame eles
+          </div>
+        </div>
+        <TabelaLeadsParados leads={dados?.leadsParados} carregando={carregando} />
+      </Card>
+
+      {/* Top produtos no funil */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)] flex items-center justify-between">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Top produtos no funil</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+              Produtos com mais interesse de leads (não convertidos)
+            </div>
+          </div>
+          {dados && <Badge variant="neutral" size="sm">{dados.topProdutosNoFunil.length}</Badge>}
+        </div>
+        <TabelaTopProdutos
+          itens={dados?.topProdutosNoFunil}
+          carregando={carregando}
+          mensagemVazia="Nenhum produto vinculado a leads ainda."
+          colunas={[
+            { label: 'Leads interessados', valor: (p) => fmtNum(p.leads), align: 'right' },
+            { label: 'Qtd. total', valor: (p) => fmtNum(p.quantidadeTotal), align: 'right' },
+            { label: 'Valor potencial', valor: (p) => fmtBRL(p.valorPotencial), align: 'right', destaque: 'success' },
+          ]}
+        />
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// COMPONENTES — funil
+// ============================================================
+function FunilEtapas({ funil, carregando }) {
+  if (carregando && !funil) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!funil || funil.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Crie etapas no CRM pra ver o funil.</div>;
+  }
+  // Etapa com mais leads = base (largura 100%). Outras proporcionais.
+  const max = Math.max(1, ...funil.map((e) => e.leads));
+
+  return (
+    <div className="px-5 py-4 space-y-2.5">
+      {funil.map((e, idx) => {
+        const pct = (e.leads / max) * 100;
+        const corBg = e.cor || 'var(--accent)';
+        return (
+          <div key={e.etapaId} className="flex items-center gap-3">
+            <div className="w-32 flex-shrink-0">
+              <div className="text-sm font-semibold text-[var(--text-main)] truncate">{e.nome}</div>
+              {idx < funil.length - 1 && e.taxaAvanco !== undefined && (
+                <div className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                  <TrendingDown size={9} /> {fmtPct(e.taxaAvanco)} segue adiante
+                </div>
+              )}
+            </div>
+            <div className="flex-1 relative h-9 bg-[var(--bg-subtle)] rounded-lg overflow-hidden">
+              <div
+                className="absolute inset-y-0 left-0 rounded-lg transition-all flex items-center px-3"
+                style={{
+                  width: `${Math.max(pct, e.leads > 0 ? 8 : 0)}%`,
+                  backgroundColor: corBg,
+                  opacity: 0.85,
+                }}
+              >
+                <span className="text-xs font-bold text-white drop-shadow tabular-nums">{e.leads}</span>
+              </div>
+            </div>
+            <div className="w-32 flex-shrink-0 text-right">
+              <div className="text-sm font-bold text-[var(--text-main)] tabular-nums">{fmtBRL(e.valor)}</div>
+              <div className="text-[10px] text-[var(--text-muted)]">valor agregado</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabelaOrigens({ origens, carregando }) {
+  if (carregando && !origens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!origens || origens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhum lead no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Origem</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Leads</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Conversões</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Taxa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {origens.map((o) => (
+          <tr key={o.origem} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)]">{o.origem}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums">{fmtNum(o.leads)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--success)]">{fmtNum(o.conversoes)}</td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">
+              {o.taxaConversao !== null ? fmtPct(o.taxaConversao) : '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaTempoEtapas({ tempos, carregando }) {
+  if (carregando && !tempos) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!tempos || tempos.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem movimentações suficientes ainda.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Etapa</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Tempo médio</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Amostra</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tempos.map((t) => (
+          <tr key={t.etapa} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)]">{t.etapa}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums font-bold">
+              <Clock size={11} className="inline mr-1 -mt-0.5 text-[var(--text-muted)]" />
+              {t.diasMedio.toFixed(1)} dias
+            </td>
+            <td className="py-3 px-5 text-right text-xs text-[var(--text-muted)] tabular-nums">{t.amostra} leads</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaLeadsParados({ leads, carregando }) {
+  if (carregando && !leads) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!leads || leads.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Tudo em dia! Nenhum lead parado.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Lead</th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Etapa</th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Origem</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Sem contato</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {leads.map((l) => (
+          <tr key={l.id} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              <div className="text-sm font-semibold text-[var(--text-main)]">{l.nome}</div>
+              <div className="text-[11px] text-[var(--text-muted)] flex items-center gap-2 mt-0.5">
+                {l.telefone && <span className="flex items-center gap-1"><Phone size={10} />{l.telefone}</span>}
+                {l.email && <span className="flex items-center gap-1"><Mail size={10} />{l.email}</span>}
+              </div>
+            </td>
+            <td className="py-3 px-5 text-xs">
+              <Badge variant="neutral" size="sm">{l.etapa}</Badge>
+            </td>
+            <td className="py-3 px-5 text-xs text-[var(--text-secondary)]">{l.origem}</td>
+            <td className={`py-3 px-5 text-right text-sm font-bold tabular-nums ${
+              l.diasParado > 30 ? 'text-[var(--danger)]' :
+              l.diasParado > 14 ? 'text-[var(--warning)]' :
+              'text-[var(--text-secondary)]'
+            }`}>
+              {l.diasParado} dia{l.diasParado === 1 ? '' : 's'}
+            </td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums">{fmtBRL(l.valor)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ============================================================
+// COMPONENTES — compartilhados
+// ============================================================
+function TabelaTopProdutos({ itens, carregando, colunas, mensagemVazia = 'Nenhuma venda no período.' }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return (
+      <div className="px-5 py-12 text-center">
+        <Package className="mx-auto mb-2 text-[var(--text-muted)] opacity-50" size={32} />
+        <div className="text-sm text-[var(--text-muted)]">{mensagemVazia}</div>
+      </div>
+    );
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+          {colunas.map((c) => (
+            <th key={c.label} className={`text-${c.align || 'right'} text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5`}>{c.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((p, idx) => (
+          <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              {p.imagemUrl ? (
+                <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={14} />
+                </div>
+              )}
+            </td>
+            <td className="py-3 px-5">
+              <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
+                <span className="text-[var(--text-muted)] mr-2">#{idx + 1}</span>
+                {p.nome}
+                {p.variacao && <span className="text-[var(--text-muted)] font-medium"> · {p.variacao}</span>}
+              </div>
+            </td>
+            {colunas.map((c) => (
+              <td key={c.label} className={`py-3 px-5 text-${c.align || 'right'} text-sm tabular-nums ${
+                c.destaque === 'success' ? 'font-bold text-[var(--success)]' : 'text-[var(--text-main)]'
+              }`}>{c.valor(p)}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 function FiltroPeriodo({
   preset, onPresetChange,
@@ -298,18 +541,8 @@ function FiltroPeriodo({
       </div>
       {preset === 'custom' && (
         <>
-          <Input
-            size="sm"
-            type="date"
-            value={customInicio}
-            onChange={(e) => onCustomInicio(e.target.value)}
-          />
-          <Input
-            size="sm"
-            type="date"
-            value={customFim}
-            onChange={(e) => onCustomFim(e.target.value)}
-          />
+          <Input size="sm" type="date" value={customInicio} onChange={(e) => onCustomInicio(e.target.value)} />
+          <Input size="sm" type="date" value={customFim} onChange={(e) => onCustomFim(e.target.value)} />
         </>
       )}
       <div className="text-[10px] text-[var(--text-muted)] pb-2.5 flex items-center gap-1">
@@ -349,15 +582,22 @@ function KpiCard({ icon: Icon, color = 'neutral', label, valor, subvalor, delta,
           </div>
         )}
       </div>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mt-3">
-        {label}
-      </div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mt-3">{label}</div>
       <div className="text-xl font-bold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">
         {carregando && !valor ? <span className="inline-block w-24 h-5 bg-[var(--bg-subtle)] rounded animate-pulse" /> : valor}
       </div>
-      {subvalor && (
-        <div className="text-[11px] text-[var(--text-muted)] mt-1">{subvalor}</div>
-      )}
+      {subvalor && <div className="text-[11px] text-[var(--text-muted)] mt-1">{subvalor}</div>}
+    </Card>
+  );
+}
+
+function ErroBox({ mensagem }) {
+  return (
+    <Card padding="md">
+      <div className="flex items-center gap-2 text-sm text-[var(--danger)]">
+        <AlertCircle size={16} />
+        <span>{mensagem}</span>
+      </div>
     </Card>
   );
 }
