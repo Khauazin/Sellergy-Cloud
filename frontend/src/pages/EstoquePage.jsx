@@ -401,6 +401,21 @@ function Kpi({ icon: Icon, label, valor, accent, tone }) {
   );
 }
 
+// Tipos de movimentacao expostos no UI. `direcao` controla se a quantidade
+// vai virar positiva (entrada) ou negativa (saida) no submit.
+// AJUSTE_POSITIVO/NEGATIVO sao "atalhos" do mesmo tipo AJUSTE no backend —
+// a direcao e definida pela quantidade gravada (positiva ou negativa).
+const TIPOS_MOVIMENTACAO = [
+  { value: 'COMPRA_FORNECEDOR', label: 'Compra de fornecedor', sentido: 'in', sublabel: 'entrada', icone: '📦', tipoBackend: 'COMPRA_FORNECEDOR' },
+  { value: 'DEVOLUCAO',          label: 'Devolução do cliente', sentido: 'in', sublabel: 'entrada', icone: '↩️', tipoBackend: 'DEVOLUCAO' },
+  { value: 'AJUSTE_POSITIVO',    label: 'Ajuste para mais', sentido: 'in', sublabel: 'corrigir contagem', icone: '➕', tipoBackend: 'AJUSTE' },
+  { value: 'VENDA',              label: 'Venda manual', sentido: 'out', sublabel: 'saída', icone: '🛒', tipoBackend: 'VENDA' },
+  { value: 'AJUSTE_NEGATIVO',    label: 'Ajuste para menos', sentido: 'out', sublabel: 'corrigir contagem (perda/quebra)', icone: '➖', tipoBackend: 'AJUSTE' },
+  { value: 'RESERVA',            label: 'Reserva', sentido: 'out', sublabel: 'separar pra cliente', icone: '🔒', tipoBackend: 'RESERVA' },
+];
+
+const fmtBRL2 = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
   const [form, setForm] = useState({
     variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '',
@@ -411,16 +426,31 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
     if (isOpen) setForm({ variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '', precoCusto: '', precoVenda: '' });
   }, [isOpen]);
 
-  // Variacao selecionada para travar quantidade no estoque atual quando for VENDA
   const variacaoSel = variacoes.find((v) => v.id === form.variacaoId);
-  const ehSaida = ['VENDA', 'RESERVA'].includes(form.tipo);
+  const tipoCfg = TIPOS_MOVIMENTACAO.find((t) => t.value === form.tipo);
+  const ehSaida = tipoCfg?.sentido === 'out';
+  const ehCompra = form.tipo === 'COMPRA_FORNECEDOR';
   const maxQtd = ehSaida && variacaoSel ? variacaoSel.estoqueAtual : null;
+
+  const qtdNum = Math.max(0, parseInt(form.quantidade, 10) || 0);
+  const estoqueAtual = variacaoSel?.estoqueAtual ?? 0;
+  const estoqueMinimo = variacaoSel?.estoqueMinimo ?? 0;
+  const estoqueDepois = variacaoSel
+    ? (ehSaida ? estoqueAtual - qtdNum : estoqueAtual + qtdNum)
+    : null;
+  const valorTotalCompra = (ehCompra && form.precoCusto && qtdNum > 0)
+    ? qtdNum * parseFloat(form.precoCusto)
+    : null;
+
+  const estoqueAtualBaixo = variacaoSel && variacaoSel.produto?.tipo === 'FISICO' && estoqueAtual <= estoqueMinimo;
+  const estoqueDepoisBaixo = variacaoSel && variacaoSel.produto?.tipo === 'FISICO' && estoqueDepois !== null && estoqueDepois <= estoqueMinimo;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.variacaoId) { alert('Selecione uma variacao'); return; }
+    if (!form.variacaoId) { alert('Selecione um produto'); return; }
+    if (!tipoCfg) { alert('Tipo invalido'); return; }
 
-    let quantidade = parseInt(form.quantidade);
+    let quantidade = parseInt(form.quantidade, 10);
     if (isNaN(quantidade) || quantidade < 1) {
       alert('Quantidade deve ser maior que zero');
       return;
@@ -438,7 +468,7 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
 
     onSalvar({
       variacaoId: form.variacaoId,
-      tipo: form.tipo,
+      tipo: tipoCfg.tipoBackend, // mapeia AJUSTE_POSITIVO/NEGATIVO -> AJUSTE
       quantidade,
       motivo: form.motivo,
       precoCusto: form.precoCusto || undefined,
@@ -447,30 +477,36 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Nova movimentacao" description="Entrada, saida ou ajuste de estoque." size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Registrar movimentação" description="Compra, venda, devolução ou ajuste manual." size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Select
-          label="Variacao"
+          label="Produto"
           value={form.variacaoId}
           onChange={(e) => setForm({ ...form, variacaoId: e.target.value })}
-          placeholder="Selecione..."
+          placeholder="Selecione um produto..."
           options={variacoes.map((v) => ({
             value: v.id,
-            label: `${v.produto?.nome} - ${v.nome} (${v.estoqueAtual} em estoque)`
+            label: `${v.produto?.nome}${v.nome && v.nome !== 'Padrão' && v.nome !== 'Padrao' ? ' · ' + v.nome : ''} (${v.estoqueAtual} em estoque)`
           }))}
           required
         />
 
+        {/* Card de detalhes do produto selecionado */}
+        {variacaoSel && (
+          <CardProdutoSelecionado
+            variacao={variacaoSel}
+            estoqueBaixo={estoqueAtualBaixo}
+          />
+        )}
+
         <Select
-          label="Tipo"
+          label="O que aconteceu?"
           value={form.tipo}
           onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-          options={[
-            { value: 'COMPRA_FORNECEDOR', label: 'Compra fornecedor (entrada)' },
-            { value: 'AJUSTE', label: 'Ajuste positivo' },
-            { value: 'DEVOLUCAO', label: 'Devolucao (entrada)' },
-            { value: 'VENDA', label: 'Venda (saida)' },
-          ]}
+          options={TIPOS_MOVIMENTACAO.map((t) => ({
+            value: t.value,
+            label: `${t.icone} ${t.label} — ${t.sublabel}`,
+          }))}
           placeholder=""
         />
 
@@ -482,17 +518,75 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
           value={form.quantidade}
           onChange={(e) => setForm({ ...form, quantidade: e.target.value })}
           required
-          hint={ehSaida && maxQtd !== null ? `Disponivel: ${maxQtd}` : undefined}
+          hint={ehSaida && maxQtd !== null ? `Disponível em estoque: ${maxQtd}` : undefined}
         />
 
-        {form.tipo === 'COMPRA_FORNECEDOR' && (
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Preco custo (atualizar)" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} hint="Opcional" />
-            <Input label="Preco venda (atualizar)" type="number" step="0.01" min="0" value={form.precoVenda} onChange={(e) => setForm({ ...form, precoVenda: e.target.value })} hint="Opcional" />
+        {/* Preview do impacto */}
+        {variacaoSel && qtdNum > 0 && variacaoSel.produto?.tipo === 'FISICO' && (
+          <div className={`text-xs px-3 py-2.5 rounded-xl border ${
+            estoqueDepoisBaixo
+              ? 'bg-[var(--warning-soft)] border-[var(--warning)]/30 text-[var(--warning)]'
+              : ehSaida
+                ? 'bg-[var(--bg-subtle)] border-[var(--border-main)] text-[var(--text-secondary)]'
+                : 'bg-[var(--success-soft)] border-[var(--success)]/30 text-[var(--success)]'
+          }`}>
+            <strong>Estoque após esta movimentação:</strong>{' '}
+            <span className="font-bold tabular-nums">{estoqueDepois}</span> unidades
+            {estoqueDepoisBaixo && (
+              <span className="ml-2 opacity-80">⚠ abaixo do estoque mínimo ({estoqueMinimo})</span>
+            )}
+            {valorTotalCompra !== null && (
+              <span className="block mt-1">
+                <strong>Valor total da compra:</strong> {fmtBRL2(valorTotalCompra)}
+              </span>
+            )}
           </div>
         )}
 
-        <Textarea label="Motivo / observacao" value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} rows={2} />
+        {ehCompra && (
+          <div className="border border-[var(--border-main)] rounded-xl p-4 bg-[var(--bg-subtle)]/40 space-y-3">
+            <div className="text-xs font-semibold text-[var(--text-secondary)]">
+              Atualizar preços (opcional)
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)] -mt-2">
+              Se preencher, atualiza o preço do produto pra próximas vendas/compras.
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Novo preço de custo"
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.precoCusto}
+                onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
+                placeholder={variacaoSel?.precoCusto ? `Atual: ${fmtBRL2(variacaoSel.precoCusto)}` : 'R$ 0,00'}
+              />
+              <Input
+                label="Novo preço de venda"
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.precoVenda}
+                onChange={(e) => setForm({ ...form, precoVenda: e.target.value })}
+                placeholder={variacaoSel?.preco ? `Atual: ${fmtBRL2(variacaoSel.preco)}` : 'R$ 0,00'}
+              />
+            </div>
+          </div>
+        )}
+
+        <Textarea
+          label="Motivo / observação"
+          value={form.motivo}
+          onChange={(e) => setForm({ ...form, motivo: e.target.value })}
+          rows={2}
+          placeholder={
+            form.tipo === 'AJUSTE_NEGATIVO' ? 'Ex.: 2 unidades quebradas no manuseio' :
+            form.tipo === 'AJUSTE_POSITIVO' ? 'Ex.: contagem física revelou 3 unidades a mais' :
+            form.tipo === 'DEVOLUCAO' ? 'Ex.: cliente devolveu por defeito' :
+            form.tipo === 'RESERVA' ? 'Ex.: separado pra Maria, retira sexta' :
+            'Opcional'
+          }
+        />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
@@ -500,6 +594,52 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+function CardProdutoSelecionado({ variacao, estoqueBaixo }) {
+  const ehVariacaoPadrao = !variacao.nome || variacao.nome === 'Padrão' || variacao.nome === 'Padrao';
+  const ehFisico = variacao.produto?.tipo === 'FISICO';
+  const imagemUrl = variacao.imagemUrl || variacao.produto?.imagemUrl;
+
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-2xl border border-[var(--border-main)] bg-[var(--bg-subtle)]/30">
+      {imagemUrl ? (
+        <img
+          src={imagemUrl}
+          alt=""
+          className="w-14 h-14 rounded-xl object-cover border border-[var(--border-main)] flex-shrink-0"
+        />
+      ) : (
+        <div className="w-14 h-14 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] flex items-center justify-center flex-shrink-0 text-[var(--text-muted)]">
+          <Box size={20} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-[var(--text-main)] truncate">
+          {variacao.produto?.nome}
+          {!ehVariacaoPadrao && <span className="text-[var(--text-muted)] font-medium"> · {variacao.nome}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-muted)] mt-0.5">
+          {variacao.produto?.categoria?.nome && (
+            <span>{variacao.produto.categoria.nome}</span>
+          )}
+          <span>Venda: <strong className="text-emerald-600 dark:text-emerald-400">{fmtBRL2(variacao.preco)}</strong></span>
+          {variacao.precoCusto > 0 && (
+            <span>Custo: {fmtBRL2(variacao.precoCusto)}</span>
+          )}
+        </div>
+      </div>
+      {ehFisico && (
+        <div className={`text-right flex-shrink-0 ${estoqueBaixo ? 'text-[var(--warning)]' : 'text-[var(--text-main)]'}`}>
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">Estoque</div>
+          <div className="text-lg font-black tabular-nums leading-none mt-0.5">{variacao.estoqueAtual}</div>
+          {estoqueBaixo && (
+            <div className="text-[9px] uppercase tracking-wider mt-0.5">⚠ baixo</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
