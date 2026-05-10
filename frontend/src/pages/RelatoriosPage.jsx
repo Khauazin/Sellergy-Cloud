@@ -11,6 +11,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart,
   Users, Package, AlertCircle, Image as ImageIcon, Calendar,
   Filter, Clock, Phone, Mail, Wallet, ArrowUpRight, ArrowDownRight,
+  Bot, MessageSquare, Sparkles, Wrench, CheckCircle2, XCircle,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
@@ -112,6 +113,7 @@ export default function RelatoriosPage() {
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="vendas">Vendas</TabsTrigger>
           <TabsTrigger value="estoque">Estoque & CMV</TabsTrigger>
+          <TabsTrigger value="bots">Bots / IA</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executiva">
@@ -132,6 +134,10 @@ export default function RelatoriosPage() {
 
         <TabsContent value="estoque">
           <AbaEstoque intervalo={intervalo} />
+        </TabsContent>
+
+        <TabsContent value="bots">
+          <AbaBots intervalo={intervalo} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1525,6 +1531,360 @@ function TabelaTopProdutos({ itens, carregando, colunas, mensagemVazia = 'Nenhum
                 c.destaque === 'success' ? 'font-bold text-[var(--success)]' : 'text-[var(--text-main)]'
               }`}>{c.valor(p)}</td>
             ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ============================================================
+// ABA: Bots / IA
+// ============================================================
+function AbaBots({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/bots', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  const fmtMs = (ms) => {
+    if (!ms || ms < 1000) return `${ms || 0}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={MessageSquare} color="info" label="Mensagens trocadas"
+          valor={fmtNum(dados?.kpis.totalMsgs)}
+          subvalor={dados ? `${fmtNum(dados.kpis.msgsEntrada)} entrada · ${fmtNum(dados.kpis.msgsSaida)} saída` : null}
+          carregando={carregando} />
+        <KpiCard icon={Users} color="accent" label="Conversas ativas"
+          valor={fmtNum(dados?.kpis.conversasAtivas)}
+          subvalor={dados ? `${dados.kpis.conversasComLead} vinculadas a lead` : null}
+          carregando={carregando} />
+        <KpiCard icon={Bot} color="success" label="Execuções de fluxo"
+          valor={fmtNum(dados?.kpis.totalExec)}
+          subvalor={dados?.kpis.taxaSucesso !== null
+            ? `${fmtPct(dados.kpis.taxaSucesso)} de sucesso` : null}
+          carregando={carregando} />
+        <KpiCard icon={Sparkles} color="warning" label="Tokens de IA"
+          valor={fmtNum(dados?.kpis.tokensTotal)}
+          subvalor={dados ? `${fmtNum(dados.kpis.chamadasIA)} chamada(s) ao LLM` : null}
+          carregando={carregando} />
+      </div>
+
+      {/* Mensagens por dia */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Mensagens por dia</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas (cliente → bot) e saídas (bot → cliente)</div>
+        </div>
+        <GraficoMensagensPorDia mensagens={dados?.mensagensPorDia} carregando={carregando} />
+      </Card>
+
+      {/* Por canal + status execucao */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Por canal</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Volume de mensagens por canal</div>
+          </div>
+          <TabelaCanaisBot porCanal={dados?.porCanal} carregando={carregando} />
+        </Card>
+
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Saúde das execuções</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+              {dados ? `Duração média de execução bem-sucedida: ${fmtMs(dados.kpis.duracaoMediaMs)}` : '—'}
+            </div>
+          </div>
+          <BlocoStatusExec
+            status={dados?.execucoes.status}
+            modo={dados?.execucoes.modo}
+            carregando={carregando}
+          />
+        </Card>
+      </div>
+
+      {/* Tools mais usadas */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Ferramentas usadas pelo bot</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+            Ações que a IA executou (crm.criarLead, mensagens.enviar, etc.)
+          </div>
+        </div>
+        <TabelaToolsUsadas itens={dados?.toolsUsadas} carregando={carregando} fmtMs={fmtMs} />
+      </Card>
+
+      {/* Custo de IA por modelo */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Uso de IA por modelo</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Tokens usados em cada modelo (referência pra custos)</div>
+        </div>
+        <TabelaModelosIA itens={dados?.ia.porModelo} carregando={carregando} />
+      </Card>
+
+      {/* Top conversas */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Top conversas mais ativas</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Maior volume total de mensagens</div>
+        </div>
+        <TabelaTopConversas itens={dados?.topConversas} carregando={carregando} />
+      </Card>
+    </div>
+  );
+}
+
+// ====== Componentes da aba Bots ======
+function GraficoMensagensPorDia({ mensagens, carregando }) {
+  if (carregando && !mensagens) return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!mensagens || mensagens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem mensagens no período.</div>;
+  }
+  const dadosGrafico = mensagens.map((m) => ({
+    ...m,
+    label: m.data.split('-').slice(1).reverse().join('/'),
+  }));
+  return (
+    <div className="px-5 py-4">
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={dadosGrafico}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-main)" />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-main)', borderRadius: 8 }}
+            formatter={(v, name) => [`${v} msg`, name]}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Line type="monotone" dataKey="entrada" stroke="var(--info)" name="Recebidas" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="saida" stroke="var(--accent)" name="Enviadas" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function TabelaCanaisBot({ porCanal, carregando }) {
+  if (carregando && !porCanal) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!porCanal || porCanal.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem mensagens.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Canal</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Recebidas</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Enviadas</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {porCanal.map((c) => (
+          <tr key={c.canal} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)]">{c.canal}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--info)]">{fmtNum(c.entrada)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--accent)]">{fmtNum(c.saida)}</td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">{fmtNum(c.total)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function BlocoStatusExec({ status, modo, carregando }) {
+  if (carregando && !status) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!status) return null;
+
+  const total = Object.values(status).reduce((a, b) => a + b, 0);
+  if (total === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma execução no período.</div>;
+  }
+
+  const corStatus = {
+    SUCESSO: 'var(--success)',
+    ERRO: 'var(--danger)',
+    EM_EXECUCAO: 'var(--info)',
+    PENDENTE: 'var(--text-muted)',
+    CANCELADA: 'var(--warning)',
+  };
+
+  return (
+    <div className="px-5 py-4 space-y-4">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Por status</div>
+        <div className="space-y-1.5">
+          {Object.entries(status).filter(([, v]) => v > 0).map(([k, v]) => {
+            const pct = (v / total) * 100;
+            return (
+              <div key={k} className="space-y-0.5">
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className="font-semibold text-[var(--text-main)]">{k}</span>
+                  <span className="tabular-nums">
+                    <span className="font-bold" style={{ color: corStatus[k] }}>{v}</span>
+                    <span className="text-[var(--text-muted)] ml-2">{fmtPct(pct)}</span>
+                  </span>
+                </div>
+                <div className="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: corStatus[k] }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Por modo de disparo</div>
+        <div className="flex gap-2 flex-wrap">
+          {Object.entries(modo).filter(([, v]) => v > 0).map(([k, v]) => (
+            <div key={k} className="flex items-baseline gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] text-xs">
+              <span className="font-semibold text-[var(--text-main)]">{k}</span>
+              <span className="font-bold tabular-nums text-[var(--accent)]">{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabelaToolsUsadas({ itens, carregando, fmtMs }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma ferramenta usada no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Ferramenta</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Chamadas</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Sucesso</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Erros</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Taxa</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Tempo médio</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((t) => (
+          <tr key={t.tool} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              <div className="flex items-center gap-2">
+                <Wrench size={14} className="text-[var(--text-muted)]" />
+                <span className="text-sm font-semibold text-[var(--text-main)] font-mono">{t.tool}</span>
+              </div>
+            </td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">{fmtNum(t.total)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--success)]">{fmtNum(t.sucesso)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--danger)]">{fmtNum(t.erro)}</td>
+            <td className={`py-3 px-5 text-right text-sm tabular-nums font-bold ${
+              t.taxaSucesso < 80 ? 'text-[var(--warning)]' : 'text-[var(--success)]'
+            }`}>{fmtPct(t.taxaSucesso)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">{fmtMs(t.duracaoMediaMs)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaModelosIA({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma chamada de IA no período.</div>;
+  }
+  const totalTokens = itens.reduce((a, m) => a + m.tokens, 0);
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Modelo</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Chamadas</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Tokens</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">% do total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((m) => {
+          const pct = totalTokens > 0 ? (m.tokens / totalTokens) * 100 : 0;
+          return (
+            <tr key={m.modelo} className="border-b border-[var(--border-subtle)] last:border-b-0">
+              <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)] font-mono">
+                <Sparkles size={12} className="inline mr-2 -mt-0.5 text-[var(--accent)]" />
+                {m.modelo}
+              </td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums">{fmtNum(m.chamadas)}</td>
+              <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">{fmtNum(m.tokens)}</td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">{fmtPct(pct)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaTopConversas({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma conversa no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Canal</th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Identificador</th>
+          <th className="text-center text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Lead?</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Mensagens</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Última</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((c, idx) => (
+          <tr key={c.id} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              <Badge variant="neutral" size="sm">{c.canal}</Badge>
+            </td>
+            <td className="py-3 px-5 text-sm font-mono text-[var(--text-secondary)]">
+              <span className="text-[var(--text-muted)] mr-2">#{idx + 1}</span>
+              {c.identificador}
+            </td>
+            <td className="py-3 px-5 text-center">
+              {c.temLead
+                ? <CheckCircle2 size={14} className="inline text-[var(--success)]" />
+                : <XCircle size={14} className="inline text-[var(--text-muted)]" />}
+            </td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">{fmtNum(c.mensagens)}</td>
+            <td className="py-3 px-5 text-right text-xs tabular-nums text-[var(--text-muted)]">
+              {c.ultimaMsg ? new Date(c.ultimaMsg).toLocaleString('pt-BR') : '—'}
+            </td>
           </tr>
         ))}
       </tbody>
