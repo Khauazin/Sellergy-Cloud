@@ -7,9 +7,10 @@ import api from '../services/api';
 import {
   Card, CardHeader, CardTitle, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, useToast, Tabs, TabsList, TabsTrigger, TabsContent,
-  Dropdown, DropdownItem, DropdownDivider, Switch
+  Dropdown, DropdownItem, DropdownDivider, Switch, UploadImagem
 } from '../components/ui';
 import Modal from '../components/Modal';
+import catalogoService from '../services/catalogoService';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -504,20 +505,58 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
 
 function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
   const [form, setForm] = useState({
-    nome: '', descricao: '', categoriaId: '', tipo: 'FISICO',
+    nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
     nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
     precoCatalogo: '', usarPrecoCatalogo: false,
-    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
+    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, imagemVariacaoUrl: '',
   });
+  const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   useEffect(() => {
-    if (isOpen) setForm({
-      nome: '', descricao: '', categoriaId: '', tipo: 'FISICO',
-      nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
-      precoCatalogo: '', usarPrecoCatalogo: false,
-      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
-    });
+    if (isOpen) {
+      setForm({
+        nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
+        nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
+        precoCatalogo: '', usarPrecoCatalogo: false,
+        estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, imagemVariacaoUrl: '',
+      });
+      setTempsParaLimpar([]);
+    }
   }, [isOpen]);
+
+  const handleClose = () => {
+    for (const url of tempsParaLimpar) catalogoService.removerImagemTemp(url);
+    setTempsParaLimpar([]);
+    onClose();
+  };
+
+  const handleUploadProduto = async (file) => {
+    const url = await catalogoService.uploadImagemTemp(file);
+    setTempsParaLimpar((prev) => [...prev, url]);
+    setForm((prev) => ({ ...prev, imagemUrl: url }));
+  };
+
+  const handleRemoverImagemProduto = async () => {
+    if (form.imagemUrl) {
+      await catalogoService.removerImagemTemp(form.imagemUrl);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== form.imagemUrl));
+    }
+    setForm((prev) => ({ ...prev, imagemUrl: '' }));
+  };
+
+  const handleUploadVariacao = async (file) => {
+    const url = await catalogoService.uploadImagemTemp(file);
+    setTempsParaLimpar((prev) => [...prev, url]);
+    setForm((prev) => ({ ...prev, imagemVariacaoUrl: url }));
+  };
+
+  const handleRemoverImagemVariacao = async () => {
+    if (form.imagemVariacaoUrl) {
+      await catalogoService.removerImagemTemp(form.imagemVariacaoUrl);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== form.imagemVariacaoUrl));
+    }
+    setForm((prev) => ({ ...prev, imagemVariacaoUrl: '' }));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -532,6 +571,7 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
       categoriaId: form.categoriaId,
       tipo: form.tipo,
       visibilidade: 'ATIVO',
+      imagemUrl: form.imagemUrl || null,
       variacoes: [{
         nome: form.nomeVariacao || 'Padrao',
         sku: form.sku || null,
@@ -542,24 +582,34 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
         estoqueAtual: parseInt(form.estoqueAtual) || 0,
         estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
         estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
+        imagemUrl: form.imagemVariacaoUrl || null,
       }],
     });
+    setTempsParaLimpar([]);
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Novo produto" description="Cadastra produto + primeira variacao em uma operacao." size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Novo produto" description="Cadastra produto + primeira variacao em uma operacao." size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
-          <Select
-            label="Categoria"
-            value={form.categoriaId}
-            onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
-            placeholder="Selecione..."
-            options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
-            required
-            hint={categorias.length === 0 ? 'Crie uma categoria na aba "Categorias" antes' : null}
+        <div className="flex items-start gap-4">
+          <UploadImagem
+            imagemUrl={form.imagemUrl || null}
+            onUpload={handleUploadProduto}
+            onRemover={handleRemoverImagemProduto}
+            tamanho="md"
           />
+          <div className="flex-1 min-w-0 space-y-3">
+            <Input label="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
+            <Select
+              label="Categoria"
+              value={form.categoriaId}
+              onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
+              placeholder="Selecione..."
+              options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
+              required
+              hint={categorias.length === 0 ? 'Crie uma categoria na aba "Categorias" antes' : null}
+            />
+          </div>
         </div>
 
         <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={2} />
@@ -578,9 +628,20 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
         <div className="border-t border-[var(--border-main)] pt-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Detalhes da variacao</div>
 
+          <div className="flex items-start gap-4 mb-3">
+            <UploadImagem
+              imagemUrl={form.imagemVariacaoUrl || null}
+              onUpload={handleUploadVariacao}
+              onRemover={handleRemoverImagemVariacao}
+              tamanho="sm"
+            />
+            <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input label="Nome da variacao" value={form.nomeVariacao} onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })} placeholder="Padrao, Tamanho M, Cor azul..." required />
+              <Input label="SKU (opcional)" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input label="Nome da variacao" value={form.nomeVariacao} onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })} placeholder="Padrao, Tamanho M, Cor azul..." required />
-            <Input label="SKU (opcional)" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
             <Input label="Preco de venda (R$)" type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required hint="Preco padrao do estoque" />
             <Input label="Preco de custo (R$) - CMV" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
           </div>
@@ -622,7 +683,7 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>
           <Button variant="primary" type="submit">Criar produto</Button>
         </div>
       </form>
