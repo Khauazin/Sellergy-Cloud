@@ -483,7 +483,17 @@ function ModalStage({ isOpen, onClose, stage, onSalvar }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Qualificacao, Proposta..." required autoFocus />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Ordem" type="number" value={form.ordem} onChange={(e) => setForm({ ...form, ordem: parseInt(e.target.value) || 0 })} />
+          <Input
+            label="Ordem"
+            type="number"
+            min={0}
+            step={1}
+            value={form.ordem}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              setForm({ ...form, ordem: Number.isFinite(n) && n >= 0 ? n : 0 });
+            }}
+          />
           <div>
             <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5">Cor</label>
             <input type="color" value={form.cor} onChange={(e) => setForm({ ...form, cor: e.target.value })} className="w-full h-11 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] cursor-pointer" />

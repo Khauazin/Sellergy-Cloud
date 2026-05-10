@@ -38,11 +38,12 @@ export default function Modal({ isOpen, onClose, title, description, children, s
 
       <div className={clsx(
         'relative w-full bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl shadow-[var(--shadow-lg)] overflow-hidden',
+        'flex flex-col max-h-[90vh]',
         'animate-in zoom-in-95 fade-in duration-200',
         sizes[size]
       )}>
         {(title || onClose) && (
-          <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-[var(--border-main)]">
+          <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-[var(--border-main)] flex-shrink-0">
             <div className="flex-1">
               {title && (
                 <h3 className="text-base font-semibold tracking-tight text-[var(--text-main)]">
@@ -64,7 +65,7 @@ export default function Modal({ isOpen, onClose, title, description, children, s
           </div>
         )}
 
-        <div className="px-6 py-5">
+        <div className="px-6 py-5 overflow-y-auto flex-1">
           {children}
         </div>
       </div>

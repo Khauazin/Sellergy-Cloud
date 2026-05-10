@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Save, Plus, Trash2, Package, Tag, ListPlus, Check } from 'lucide-react';
 import catalogoService from '../../services/catalogoService';
 import financeiroService from '../../services/financeiroService';
+import { UploadImagem } from '../ui';
 import clsx from 'clsx';
 
 export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
@@ -10,6 +11,8 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
   const [creatingCat, setCreatingCat] = useState(false);
   const [novaCat, setNovaCat] = useState({ nome: '', tipo: 'RECEITA' });
   const [savingCat, setSavingCat] = useState(false);
+  // Imagens temp subidas neste modal — limpa em caso de cancelar/fechar.
+  const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -17,8 +20,9 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
     tipo: 'FISICO',
     visibilidade: 'ATIVO',
     categoriaId: '',
+    imagemUrl: '',
     variacoes: [
-      { nome: 'Padrão', preco: '', estoqueAtual: 0, sku: '', estoqueMinimo: 0, estoqueIdeal: 0 }
+      { nome: 'Padrão', preco: '', estoqueAtual: 0, sku: '', estoqueMinimo: 0, estoqueIdeal: 0, imagemUrl: '' }
     ]
   });
 
@@ -56,8 +60,55 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
   const addVariacao = () => {
     setFormData({
       ...formData,
-      variacoes: [...formData.variacoes, { nome: '', preco: '', estoqueAtual: 0, sku: '', estoqueMinimo: 0, estoqueIdeal: 0 }]
+      variacoes: [...formData.variacoes, { nome: '', preco: '', estoqueAtual: 0, sku: '', estoqueMinimo: 0, estoqueIdeal: 0, imagemUrl: '' }]
     });
+  };
+
+  // ===== Uploads (todos sao temp porque produto/variacao ainda nao existem) =====
+  const handleUploadProduto = async (file) => {
+    const url = await catalogoService.uploadImagemTemp(file);
+    setTempsParaLimpar((prev) => [...prev, url]);
+    setFormData((prev) => ({ ...prev, imagemUrl: url }));
+  };
+
+  const handleRemoverImagemProduto = async () => {
+    if (formData.imagemUrl) {
+      await catalogoService.removerImagemTemp(formData.imagemUrl);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== formData.imagemUrl));
+    }
+    setFormData((prev) => ({ ...prev, imagemUrl: '' }));
+  };
+
+  const handleUploadVariacao = async (idx, file) => {
+    const url = await catalogoService.uploadImagemTemp(file);
+    setTempsParaLimpar((prev) => [...prev, url]);
+    setFormData((prev) => {
+      const newVars = [...prev.variacoes];
+      newVars[idx] = { ...newVars[idx], imagemUrl: url };
+      return { ...prev, variacoes: newVars };
+    });
+  };
+
+  const handleRemoverImagemVariacao = async (idx) => {
+    const urlAtual = formData.variacoes[idx]?.imagemUrl;
+    if (urlAtual) {
+      await catalogoService.removerImagemTemp(urlAtual);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== urlAtual));
+    }
+    setFormData((prev) => {
+      const newVars = [...prev.variacoes];
+      newVars[idx] = { ...newVars[idx], imagemUrl: '' };
+      return { ...prev, variacoes: newVars };
+    });
+  };
+
+  // Cleanup quando o modal fecha sem salvar.
+  const handleClose = () => {
+    for (const url of tempsParaLimpar) {
+      catalogoService.removerImagemTemp(url);
+    }
+    setTempsParaLimpar([]);
+    onClose();
   };
 
   const removeVariacao = (index) => {
@@ -101,6 +152,8 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
         }))
       };
       await catalogoService.criar(dataToSave);
+      // Sucesso: imagens deixam de ser orfas (foram commitadas no produto).
+      setTempsParaLimpar([]);
       onSuccess();
       onClose();
     } catch (err) {
@@ -117,7 +170,7 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 transition-colors duration-300">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
       
       <div className="relative bg-[var(--bg-card)] border border-[var(--border-main)] w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-[var(--border-main)] flex justify-between items-center bg-gray-50/50 dark:bg-black/20">
@@ -130,7 +183,7 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
               <p className="text-[var(--text-muted)] text-[10px] font-bold uppercase tracking-widest">Catálogo & Inventário</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-all text-[var(--text-muted)] hover:text-[var(--text-main)]">
+          <button onClick={handleClose} type="button" className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-all text-[var(--text-muted)] hover:text-[var(--text-main)]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -187,26 +240,39 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
           </div>
 
           <div className="space-y-5">
-            <div>
-              <label className={labelCls}>Nome Comercial do Produto</label>
-              <input
-                required
-                type="text"
-                placeholder="Ex: Camiseta Cotton Premium"
-                className={inputCls}
-                value={formData.nome}
-                onChange={e => setFormData({...formData, nome: e.target.value})}
-              />
-            </div>
-            
-            <div>
-              <label className={labelCls}>Descrição para Venda</label>
-              <textarea
-                placeholder="Destaque as principais características para o time de vendas..."
-                className={clsx(inputCls, "h-24 resize-none font-medium")}
-                value={formData.descricao}
-                onChange={e => setFormData({...formData, descricao: e.target.value})}
-              />
+            <div className="flex items-start gap-5">
+              <div className="flex-shrink-0">
+                <label className={labelCls}>Imagem do Produto</label>
+                <UploadImagem
+                  imagemUrl={formData.imagemUrl || null}
+                  onUpload={handleUploadProduto}
+                  onRemover={handleRemoverImagemProduto}
+                  tamanho="md"
+                />
+              </div>
+              <div className="flex-1 min-w-0 space-y-5">
+                <div>
+                  <label className={labelCls}>Nome Comercial do Produto</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="Ex: Camiseta Cotton Premium"
+                    className={inputCls}
+                    value={formData.nome}
+                    onChange={e => setFormData({...formData, nome: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Descrição para Venda</label>
+                  <textarea
+                    placeholder="Destaque as principais características para o time de vendas..."
+                    className={clsx(inputCls, "h-24 resize-none font-medium")}
+                    value={formData.descricao}
+                    onChange={e => setFormData({...formData, descricao: e.target.value})}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-5">
@@ -253,7 +319,7 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
               {formData.variacoes.map((v, idx) => (
                 <div key={idx} className="bg-gray-50 dark:bg-black/40 border border-[var(--border-main)] rounded-3xl p-5 space-y-4 relative group/v shadow-sm transition-all hover:border-blue-500/20">
                   {formData.variacoes.length > 1 && (
-                    <button 
+                    <button
                       type="button"
                       onClick={() => removeVariacao(idx)}
                       className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 opacity-0 group-hover/v:opacity-100 transition-all bg-white dark:bg-black/40 rounded-xl border border-[var(--border-main)]"
@@ -261,32 +327,43 @@ export default function ModalNovoProduto({ isOpen, onClose, onSuccess }) {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                       <p className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Identificador (Ex: Azul / G)</p>
-                       <input
-                        placeholder="Nome da variação..."
-                        className="w-full bg-white dark:bg-black/20 border border-[var(--border-main)] rounded-xl py-2.5 px-4 text-sm text-[var(--text-main)] focus:border-blue-500 outline-none font-bold shadow-inner"
-                        value={v.nome}
-                        onChange={e => handleVariacaoChange(idx, 'nome', e.target.value)}
-                        required
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1 mb-1.5">Foto</p>
+                      <UploadImagem
+                        imagemUrl={v.imagemUrl || null}
+                        onUpload={(file) => handleUploadVariacao(idx, file)}
+                        onRemover={() => handleRemoverImagemVariacao(idx)}
+                        tamanho="sm"
                       />
                     </div>
-                    <div className="space-y-1.5">
-                       <p className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Preço Sugerido</p>
-                       <div className="relative">
-                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[10px] font-black">R$</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="0,00"
-                            className="w-full bg-white dark:bg-black/20 border border-[var(--border-main)] rounded-xl py-2.5 pl-10 pr-4 text-sm text-emerald-600 dark:text-emerald-400 focus:border-blue-500 outline-none font-black shadow-inner"
-                            value={v.preco}
-                            onChange={e => handleVariacaoChange(idx, 'preco', e.target.value)}
-                            required
-                          />
-                       </div>
+                    <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
+                      <div className="space-y-1.5">
+                         <p className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Identificador (Ex: Azul / G)</p>
+                         <input
+                          placeholder="Nome da variação..."
+                          className="w-full bg-white dark:bg-black/20 border border-[var(--border-main)] rounded-xl py-2.5 px-4 text-sm text-[var(--text-main)] focus:border-blue-500 outline-none font-bold shadow-inner"
+                          value={v.nome}
+                          onChange={e => handleVariacaoChange(idx, 'nome', e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                         <p className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Preço Sugerido</p>
+                         <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[10px] font-black">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0,00"
+                              className="w-full bg-white dark:bg-black/20 border border-[var(--border-main)] rounded-xl py-2.5 pl-10 pr-4 text-sm text-emerald-600 dark:text-emerald-400 focus:border-blue-500 outline-none font-black shadow-inner"
+                              value={v.preco}
+                              onChange={e => handleVariacaoChange(idx, 'preco', e.target.value)}
+                              required
+                            />
+                         </div>
+                      </div>
                     </div>
                   </div>
 

@@ -6,9 +6,10 @@ import api from '../services/api';
 import {
   Card, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast,
-  Switch
+  Switch, UploadImagem
 } from '../components/ui';
 import Modal from '../components/Modal';
+import catalogoService from '../services/catalogoService';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const TIPOS = [
@@ -277,13 +278,57 @@ export default function CatalogoPage() {
 
 function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
   const [form, setForm] = useState({
-    nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '',
+    nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '', imagemUrl: '',
   });
+  // Track imagens temp subidas neste modal pra cleanup em caso de cancelar.
+  // Em modo de edicao isso fica vazio porque o upload e direto no produto existente.
+  const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   useEffect(() => {
-    if (produto) setForm({ ...produto, descricao: produto.descricao || '', categoriaId: produto.categoriaId || '' });
-    else setForm({ nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '' });
+    if (produto) setForm({ ...produto, descricao: produto.descricao || '', categoriaId: produto.categoriaId || '', imagemUrl: produto.imagemUrl || '' });
+    else setForm({ nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '', imagemUrl: '' });
+    setTempsParaLimpar([]);
   }, [produto, isOpen]);
+
+  // Quando o modal fecha sem salvar, remove as imagens temp orfas (best-effort).
+  const handleClose = async () => {
+    // Em modo CRIACAO: as URLs sao temp; remove. Em EDICAO: nao toca.
+    if (!produto) {
+      for (const url of tempsParaLimpar) {
+        catalogoService.removerImagemTemp(url);
+      }
+    }
+    onClose();
+  };
+
+  const handleUpload = async (file) => {
+    try {
+      let url;
+      if (produto) {
+        // Edicao: upload direto no produto existente
+        url = await catalogoService.uploadImagemProduto(produto.id, file);
+      } else {
+        // Criacao: upload temp; URL vai no body do submit
+        url = await catalogoService.uploadImagemTemp(file);
+        setTempsParaLimpar((prev) => [...prev, url]);
+      }
+      setForm((prev) => ({ ...prev, imagemUrl: url }));
+    } catch (e) {
+      throw e; // o componente UploadImagem mostra o erro
+    }
+  };
+
+  const handleRemoverImagem = async () => {
+    if (produto) {
+      // Edicao: remove no backend
+      await catalogoService.removerImagemProduto(produto.id);
+    } else if (form.imagemUrl) {
+      // Criacao: a URL atual e temp; remove no backend
+      await catalogoService.removerImagemTemp(form.imagemUrl);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== form.imagemUrl));
+    }
+    setForm((prev) => ({ ...prev, imagemUrl: '' }));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -291,14 +336,27 @@ function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
       alert('Selecione uma categoria financeira (necessaria para CMV/relatorios).');
       return;
     }
-    onSalvar(form);
+    // Em criacao, a imagemUrl atual e a "definitiva" — ela vai pro body.
+    // Remove ela da lista de temps a limpar (ja foi commitada).
+    onSalvar({ ...form, imagemUrl: form.imagemUrl || null });
+    setTempsParaLimpar([]);
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={produto ? 'Editar produto' : 'Novo produto'} size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title={produto ? 'Editar produto' : 'Novo produto'} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
-        <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={3} />
+        <div className="flex items-start gap-4">
+          <UploadImagem
+            imagemUrl={form.imagemUrl || null}
+            onUpload={handleUpload}
+            onRemover={handleRemoverImagem}
+            tamanho="md"
+          />
+          <div className="flex-1 space-y-3 min-w-0">
+            <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
+            <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={3} />
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Select label="Tipo" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} options={TIPOS} placeholder="" />
           <Select label="Visibilidade" value={form.visibilidade} onChange={(e) => setForm({ ...form, visibilidade: e.target.value })} options={VISIBILIDADES} placeholder="" />
@@ -313,7 +371,7 @@ function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>
           <Button variant="primary" type="submit">{produto ? 'Salvar' : 'Criar produto'}</Button>
         </div>
       </form>
@@ -325,8 +383,9 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
   const [form, setForm] = useState({
     nome: '', sku: '', preco: 0, precoCusto: 0,
     precoCatalogo: '', usarPrecoCatalogo: false,
-    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
+    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '', imagemUrl: '',
   });
+  const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   useEffect(() => {
     if (variacao) setForm({
@@ -338,13 +397,45 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
       estoqueMinimo: variacao.estoqueMinimo || 0,
       estoqueIdeal: variacao.estoqueIdeal || 0,
       localizacao: variacao.localizacao || '',
+      imagemUrl: variacao.imagemUrl || '',
     });
     else setForm({
       nome: '', sku: '', preco: 0, precoCusto: 0,
       precoCatalogo: '', usarPrecoCatalogo: false,
-      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
+      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '', imagemUrl: '',
     });
+    setTempsParaLimpar([]);
   }, [variacao, isOpen]);
+
+  const handleClose = async () => {
+    if (!variacao) {
+      for (const url of tempsParaLimpar) {
+        catalogoService.removerImagemTemp(url);
+      }
+    }
+    onClose();
+  };
+
+  const handleUpload = async (file) => {
+    let url;
+    if (variacao) {
+      url = await catalogoService.uploadImagemVariacao(variacao.id, file);
+    } else {
+      url = await catalogoService.uploadImagemTemp(file);
+      setTempsParaLimpar((prev) => [...prev, url]);
+    }
+    setForm((prev) => ({ ...prev, imagemUrl: url }));
+  };
+
+  const handleRemoverImagem = async () => {
+    if (variacao) {
+      await catalogoService.removerImagemVariacao(variacao.id);
+    } else if (form.imagemUrl) {
+      await catalogoService.removerImagemTemp(form.imagemUrl);
+      setTempsParaLimpar((prev) => prev.filter((u) => u !== form.imagemUrl));
+    }
+    setForm((prev) => ({ ...prev, imagemUrl: '' }));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -357,7 +448,9 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
       estoqueAtual: parseInt(form.estoqueAtual) || 0,
       estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
       estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
+      imagemUrl: form.imagemUrl || null,
     });
+    setTempsParaLimpar([]);
   };
 
   const precoEfetivo = form.usarPrecoCatalogo && form.precoCatalogo
@@ -365,11 +458,21 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
     : parseFloat(form.preco);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={variacao ? 'Editar variacao' : 'Nova variacao'} size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title={variacao ? 'Editar variacao' : 'Nova variacao'} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-start gap-4">
+          <UploadImagem
+            imagemUrl={form.imagemUrl || null}
+            onUpload={handleUpload}
+            onRemover={handleRemoverImagem}
+            tamanho="sm"
+          />
+          <div className="flex-1 space-y-3 min-w-0">
+            <Input label="Nome da variacao" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Tamanho P, Cor Azul" required autoFocus />
+            <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Nome da variacao" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Tamanho P, Cor Azul" required autoFocus />
-          <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
           <Input label="Preco de venda (R$)" type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required hint="Preco padrao do estoque" />
           <Input label="Preco de custo (R$)" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
         </div>
@@ -412,7 +515,7 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
         <Input label="Localizacao" value={form.localizacao} onChange={(e) => setForm({ ...form, localizacao: e.target.value })} placeholder="Ex: Corredor A, Prateleira 2" />
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>
           <Button variant="primary" type="submit">{variacao ? 'Salvar' : 'Criar variacao'}</Button>
         </div>
       </form>

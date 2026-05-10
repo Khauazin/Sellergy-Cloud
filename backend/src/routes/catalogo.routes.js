@@ -35,6 +35,22 @@ async function produtoDoTenant(produtoId, usuario) {
   return prisma.produto.findFirst({ where });
 }
 
+/**
+ * Valida que uma URL de imagem pertence ao tenant (impede passar URL de outro
+ * cliente no body de criacao). A key extraida deve comecar com `produtos/<clienteId>/`.
+ *
+ * Retorna `null` se valido, ou string com motivo de rejeicao.
+ */
+function validarImagemUrlDoTenant(imagemUrl, clienteId) {
+  if (imagemUrl === null || imagemUrl === undefined || imagemUrl === '') return null;
+  if (typeof imagemUrl !== 'string') return 'imagemUrl invalida.';
+  const key = chaveDeUrl(imagemUrl);
+  if (!key) return 'URL nao reconhecida pelo storage.';
+  const prefixo = `produtos/${clienteId}/`;
+  if (!key.startsWith(prefixo)) return 'imagemUrl nao pertence a este tenant.';
+  return null;
+}
+
 async function variacaoDoTenant(variacaoId, usuario) {
   if (typeof variacaoId !== 'string' || !variacaoId) return null;
   const where = ehAdmin(usuario)
@@ -60,6 +76,57 @@ roteador.get('/variacoes/:id/preco', requerPermissao('CATALOGO', 'visualizar'), 
   } catch (erro) {
     console.error('[catalogo/preco]', erro);
     res.status(500).json({ erro: 'Erro ao resolver preco.' });
+  }
+});
+
+// ==========================================
+// Upload TEMPORARIO (usado no modal de criacao de produto/variacao,
+// quando ainda nao existe ID). A URL retornada pode ser passada no body
+// de POST /catalogo (ou /:produtoId/variacoes) como imagemUrl.
+// Key: produtos/<clienteId>/temp/<uuid>-<timestamp>.<ext>
+// Imagens orfas (subiu e nao virou produto) podem ser limpas via
+// cron futuro ou pelo proprio cliente via DELETE /imagens-temp.
+// ==========================================
+const crypto = require('crypto');
+
+roteador.post(
+  '/imagens-temp',
+  requerPermissao('CATALOGO', 'criar'),
+  aceitarUmaImagem('imagem'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ erro: 'Arquivo "imagem" obrigatorio.' });
+      const { clienteId } = req.usuario;
+      if (!clienteId) return res.status(403).json({ erro: 'Tenant indefinido.' });
+
+      const ext = extensaoDeMime(req.file.mimetype);
+      const id = crypto.randomBytes(8).toString('hex');
+      const key = `produtos/${clienteId}/temp/${id}-${Date.now()}.${ext}`;
+      const url = await upload({ key, body: req.file.buffer, contentType: req.file.mimetype });
+      res.status(201).json({ imagemUrl: url });
+    } catch (erro) {
+      console.error('[catalogo/imagens-temp]', erro);
+      res.status(500).json({ erro: 'Erro ao subir imagem temporaria.' });
+    }
+  }
+);
+
+// Cleanup explicito quando o usuario cancela o modal sem criar o produto.
+// Best-effort: aceita falhas do storage silenciosamente.
+roteador.delete('/imagens-temp', requerPermissao('CATALOGO', 'criar'), async (req, res) => {
+  try {
+    const { url } = req.query;
+    const { clienteId } = req.usuario;
+    const motivo = validarImagemUrlDoTenant(url, clienteId);
+    if (motivo) return res.status(400).json({ erro: motivo });
+    const k = chaveDeUrl(url);
+    if (k && k.startsWith(`produtos/${clienteId}/temp/`)) {
+      await remover(k).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (erro) {
+    console.error('[catalogo/imagens-temp/delete]', erro);
+    res.json({ ok: true }); // sempre 200 — best-effort
   }
 });
 
