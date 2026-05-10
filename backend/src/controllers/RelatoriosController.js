@@ -987,9 +987,272 @@ async function relatorioVendas(req, res) {
   }
 }
 
+// =====================================================================
+// ESTOQUE & CMV — patrimonio, margem, curva ABC, parado, reposicao
+// =====================================================================
+async function relatorioEstoque(req, res) {
+  try {
+    const { clienteId } = req.usuario;
+    if (!clienteId) return res.status(403).json({ error: 'Tenant indefinido.' });
+
+    const periodo = resolverPeriodo(req.query);
+    const hoje = new Date();
+    const sessentaDiasAtras = new Date(hoje.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+    const [variacoes, movimentacoesPeriodo, ultimasMovimentacoes] = await Promise.all([
+      // Todas variacoes do tenant + categoria
+      prisma.variacaoProduto.findMany({
+        where: { produto: { clienteId } },
+        include: {
+          produto: {
+            select: {
+              id: true, nome: true, tipo: true, imagemUrl: true, visibilidade: true,
+              categoria: { select: { id: true, nome: true } },
+            },
+          },
+        },
+      }),
+
+      // Movimentacoes no periodo (pra ABC, lucro, fluxo)
+      prisma.movimentacaoEstoque.findMany({
+        where: {
+          data: { gte: periodo.inicio, lte: periodo.fim },
+          variacao: { produto: { clienteId } },
+        },
+        select: {
+          tipo: true, quantidade: true, data: true, vendaId: true,
+          variacao: {
+            select: {
+              id: true, nome: true, preco: true, precoCusto: true, imagemUrl: true,
+              produto: { select: { id: true, nome: true, imagemUrl: true } },
+            },
+          },
+        },
+      }),
+
+      // Ultima movimentacao por variacao (pra "estoque parado")
+      // Pega a mais recente de cada variacao do tenant.
+      prisma.movimentacaoEstoque.groupBy({
+        by: ['variacaoId'],
+        where: { variacao: { produto: { clienteId } } },
+        _max: { data: true },
+      }),
+    ]);
+
+    // ============== KPIs ==============
+    const fisicos = variacoes.filter((v) => v.produto?.tipo === 'FISICO');
+    let patrimonioImobilizado = 0;
+    let valorVarejo = 0;
+    let itensAbaixoMinimo = 0;
+    let itensZerados = 0;
+    for (const v of fisicos) {
+      const qtd = Number(v.estoqueAtual || 0);
+      const custo = Number(v.precoCusto || 0);
+      patrimonioImobilizado += qtd * custo;
+      valorVarejo += qtd * Number(v.preco || 0);
+      if (v.estoqueMinimo != null && qtd < v.estoqueMinimo) itensAbaixoMinimo += 1;
+      if (qtd <= 0) itensZerados += 1;
+    }
+    const indiceRuptura = fisicos.length > 0
+      ? Number(((itensZerados / fisicos.length) * 100).toFixed(1))
+      : 0;
+    const lucroPotencialEstoque = valorVarejo - patrimonioImobilizado;
+
+    // ============== MARGEM POR PRODUTO ==============
+    const margemPorVariacao = variacoes.map((v) => {
+      const preco = Number(v.preco || 0);
+      const custo = Number(v.precoCusto || 0);
+      const margem = preco - custo;
+      const margemPct = preco > 0 ? (margem / preco) * 100 : 0;
+      const ehVar = !v.nome || v.nome === 'Padrão' || v.nome === 'Padrao';
+      return {
+        variacaoId: v.id,
+        produtoId: v.produto?.id,
+        nome: v.produto?.nome,
+        variacao: ehVar ? null : v.nome,
+        categoria: v.produto?.categoria?.nome || 'Sem categoria',
+        imagemUrl: v.imagemUrl || v.produto?.imagemUrl || null,
+        preco,
+        precoCusto: custo,
+        margemAbsoluta: Number(margem.toFixed(2)),
+        margemPercentual: Number(margemPct.toFixed(1)),
+        estoqueAtual: v.estoqueAtual,
+      };
+    });
+    margemPorVariacao.sort((a, b) => b.margemPercentual - a.margemPercentual);
+
+    // ============== CURVA ABC ==============
+    // Agrupa vendas por variacao no periodo, ordena por receita.
+    // Acumula percentual: ate 80% = A, 80-95% = B, 95-100% = C.
+    const vendaPorVariacao = new Map();
+    for (const m of movimentacoesPeriodo) {
+      if (m.tipo !== 'VENDA') continue;
+      const v = m.variacao;
+      if (!v) continue;
+      const qtd = Math.abs(m.quantidade || 0);
+      const valor = qtd * Number(v.preco || 0);
+      const custo = qtd * Number(v.precoCusto || 0);
+      const key = v.id;
+      if (!vendaPorVariacao.has(key)) {
+        vendaPorVariacao.set(key, {
+          variacaoId: v.id,
+          nome: v.produto?.nome,
+          variacao: v.nome === 'Padrão' || v.nome === 'Padrao' ? null : v.nome,
+          imagemUrl: v.imagemUrl || v.produto?.imagemUrl || null,
+          quantidade: 0,
+          receita: 0,
+          custo: 0,
+        });
+      }
+      const item = vendaPorVariacao.get(key);
+      item.quantidade += qtd;
+      item.receita += valor;
+      item.custo += custo;
+    }
+    const ordenadoABC = [...vendaPorVariacao.values()].sort((a, b) => b.receita - a.receita);
+    const totalReceitaABC = ordenadoABC.reduce((acc, i) => acc + i.receita, 0);
+    let acumulado = 0;
+    const curvaABC = ordenadoABC.map((item) => {
+      acumulado += item.receita;
+      const pctAcumulado = totalReceitaABC > 0 ? (acumulado / totalReceitaABC) * 100 : 0;
+      let classe;
+      if (pctAcumulado <= 80) classe = 'A';
+      else if (pctAcumulado <= 95) classe = 'B';
+      else classe = 'C';
+      return {
+        ...item,
+        lucro: item.receita - item.custo,
+        pctReceita: totalReceitaABC > 0 ? Number(((item.receita / totalReceitaABC) * 100).toFixed(2)) : 0,
+        pctAcumulado: Number(pctAcumulado.toFixed(2)),
+        classe,
+      };
+    });
+    const resumoABC = {
+      A: { qtd: 0, receita: 0 },
+      B: { qtd: 0, receita: 0 },
+      C: { qtd: 0, receita: 0 },
+    };
+    for (const item of curvaABC) {
+      resumoABC[item.classe].qtd += 1;
+      resumoABC[item.classe].receita += item.receita;
+    }
+
+    // ============== ESTOQUE PARADO ==============
+    // Variacoes sem movimentacao em > 60 dias (ou nunca movimentadas).
+    const ultimaMovMap = new Map(
+      ultimasMovimentacoes.map((u) => [u.variacaoId, u._max.data])
+    );
+    const estoqueParado = fisicos
+      .filter((v) => Number(v.estoqueAtual || 0) > 0)
+      .map((v) => {
+        const ultimaMov = ultimaMovMap.get(v.id);
+        const diasParado = ultimaMov
+          ? Math.floor((hoje.getTime() - new Date(ultimaMov).getTime()) / (24 * 60 * 60 * 1000))
+          : null; // null = nunca movimentada
+        const ehVar = !v.nome || v.nome === 'Padrão' || v.nome === 'Padrao';
+        const valorParado = Number(v.estoqueAtual) * Number(v.precoCusto || 0);
+        return {
+          variacaoId: v.id,
+          nome: v.produto?.nome,
+          variacao: ehVar ? null : v.nome,
+          categoria: v.produto?.categoria?.nome || 'Sem categoria',
+          imagemUrl: v.imagemUrl || v.produto?.imagemUrl || null,
+          estoqueAtual: v.estoqueAtual,
+          valorParado,
+          diasParado, // null = nunca movimentada
+        };
+      })
+      .filter((v) => v.diasParado === null || v.diasParado > 60)
+      .sort((a, b) => {
+        // Nunca movimentada em primeiro
+        if (a.diasParado === null && b.diasParado !== null) return -1;
+        if (b.diasParado === null && a.diasParado !== null) return 1;
+        if (a.diasParado === null && b.diasParado === null) return b.valorParado - a.valorParado;
+        return b.diasParado - a.diasParado;
+      })
+      .slice(0, 30);
+
+    // ============== LISTA DE REPOSICAO ==============
+    const reposicao = fisicos
+      .filter((v) => v.estoqueMinimo != null && Number(v.estoqueAtual || 0) < v.estoqueMinimo)
+      .map((v) => {
+        const ehVar = !v.nome || v.nome === 'Padrão' || v.nome === 'Padrao';
+        const ideal = Number(v.estoqueIdeal || 0);
+        const atual = Number(v.estoqueAtual || 0);
+        const necessidade = Math.max(1, ideal - atual);
+        const custoReposicao = necessidade * Number(v.precoCusto || 0);
+        const urgencia = atual <= 0 ? 'CRITICO' : atual <= (v.estoqueMinimo / 2) ? 'ALTA' : 'MEDIA';
+        return {
+          variacaoId: v.id,
+          nome: v.produto?.nome,
+          variacao: ehVar ? null : v.nome,
+          imagemUrl: v.imagemUrl || v.produto?.imagemUrl || null,
+          estoqueAtual: atual,
+          estoqueMinimo: v.estoqueMinimo,
+          estoqueIdeal: ideal,
+          necessidade,
+          custoReposicao,
+          urgencia,
+        };
+      })
+      .sort((a, b) => {
+        const ordemUrg = { CRITICO: 0, ALTA: 1, MEDIA: 2 };
+        if (ordemUrg[a.urgencia] !== ordemUrg[b.urgencia]) {
+          return ordemUrg[a.urgencia] - ordemUrg[b.urgencia];
+        }
+        return b.custoReposicao - a.custoReposicao;
+      });
+
+    const custoTotalReposicao = reposicao.reduce((acc, r) => acc + r.custoReposicao, 0);
+
+    // ============== MOVIMENTO DE INVENTARIO POR DIA ==============
+    const fluxoMap = new Map();
+    for (const m of movimentacoesPeriodo) {
+      const data = new Date(m.data);
+      const chave = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+      if (!fluxoMap.has(chave)) {
+        fluxoMap.set(chave, { data: chave, entradas: 0, saidas: 0 });
+      }
+      const item = fluxoMap.get(chave);
+      const qtd = Number(m.quantidade || 0);
+      if (qtd > 0) item.entradas += qtd;
+      else item.saidas += Math.abs(qtd);
+    }
+    const movimentoDiario = [...fluxoMap.values()].sort((a, b) => a.data.localeCompare(b.data));
+
+    res.json({
+      periodo: {
+        inicio: periodo.inicio.toISOString(),
+        fim: periodo.fim.toISOString(),
+      },
+      kpis: {
+        patrimonioImobilizado: Number(patrimonioImobilizado.toFixed(2)),
+        valorVarejo: Number(valorVarejo.toFixed(2)),
+        lucroPotencial: Number(lucroPotencialEstoque.toFixed(2)),
+        totalProdutos: variacoes.length,
+        totalFisicos: fisicos.length,
+        itensAbaixoMinimo,
+        itensZerados,
+        indiceRuptura,
+      },
+      margemPorVariacao: margemPorVariacao.slice(0, 50), // top + bottom 50 por margem
+      curvaABC,
+      resumoABC,
+      estoqueParado,
+      reposicao,
+      custoTotalReposicao,
+      movimentoDiario,
+    });
+  } catch (erro) {
+    console.error('[relatorios/estoque]', erro);
+    res.status(500).json({ error: 'Erro ao gerar relatorio de estoque.' });
+  }
+}
+
 module.exports = {
   visaoExecutiva,
   relatorioCRM,
   relatorioFinanceiro,
   relatorioVendas,
+  relatorioEstoque,
 };

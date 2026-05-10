@@ -111,6 +111,7 @@ export default function RelatoriosPage() {
           <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="vendas">Vendas</TabsTrigger>
+          <TabsTrigger value="estoque">Estoque & CMV</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executiva">
@@ -127,6 +128,10 @@ export default function RelatoriosPage() {
 
         <TabsContent value="vendas">
           <AbaVendas intervalo={intervalo} />
+        </TabsContent>
+
+        <TabsContent value="estoque">
+          <AbaEstoque intervalo={intervalo} />
         </TabsContent>
       </Tabs>
     </div>
@@ -424,6 +429,402 @@ function AbaFinanceiro({ intervalo }) {
         <TabelaMetodosPagamento itens={dados?.porMetodo} carregando={carregando} />
       </Card>
     </div>
+  );
+}
+
+// ============================================================
+// ABA: Estoque & CMV
+// ============================================================
+function AbaEstoque({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/estoque', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={Package} color="info" label="Patrimônio em estoque"
+          valor={fmtBRL(dados?.kpis.patrimonioImobilizado)}
+          subvalor={dados ? `${dados.kpis.totalFisicos} produtos físicos` : null}
+          carregando={carregando} />
+        <KpiCard icon={DollarSign} color="success" label="Lucro potencial"
+          valor={fmtBRL(dados?.kpis.lucroPotencial)}
+          subvalor={dados ? `Se vender tudo: ${fmtBRL(dados.kpis.valorVarejo)}` : null}
+          carregando={carregando} />
+        <KpiCard icon={AlertCircle} color={dados?.kpis.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} label="Itens abaixo do mínimo"
+          valor={fmtNum(dados?.kpis.itensAbaixoMinimo)}
+          subvalor={dados ? `${dados.kpis.itensZerados} zerados` : null}
+          carregando={carregando} />
+        <KpiCard icon={TrendingDown} color={dados?.kpis.indiceRuptura > 10 ? 'danger' : 'neutral'} label="Índice de ruptura"
+          valor={dados ? fmtPct(dados.kpis.indiceRuptura) : '—'}
+          subvalor="% itens zerados"
+          carregando={carregando} />
+      </div>
+
+      {/* Lista de reposicao */}
+      {dados?.reposicao && dados.reposicao.length > 0 && (
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)] flex items-center justify-between">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Lista de reposição</div>
+              <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+                Comprar: {fmtBRL(dados.custoTotalReposicao)} ({dados.reposicao.length} produto{dados.reposicao.length === 1 ? '' : 's'})
+              </div>
+            </div>
+            <Badge variant="warning" size="sm">Atenção</Badge>
+          </div>
+          <TabelaReposicao itens={dados.reposicao} />
+        </Card>
+      )}
+
+      {/* Movimento de inventario por dia */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Movimento de inventário</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas e saídas por dia (em unidades)</div>
+        </div>
+        <GraficoMovimentoInventario movimento={dados?.movimentoDiario} carregando={carregando} />
+      </Card>
+
+      {/* Curva ABC */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Curva ABC</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">
+            <strong>A</strong> = produtos que geram 80% da receita ·
+            <strong> B</strong> = próximos 15% ·
+            <strong> C</strong> = últimos 5%
+          </div>
+        </div>
+        <BlocoCurvaABC curva={dados?.curvaABC} resumo={dados?.resumoABC} carregando={carregando} />
+      </Card>
+
+      {/* Margem por produto */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Margem por produto</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 50 ordenados por margem percentual (maior pra menor)</div>
+        </div>
+        <TabelaMargem itens={dados?.margemPorVariacao} carregando={carregando} />
+      </Card>
+
+      {/* Estoque parado */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Estoque parado</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Produtos sem movimentação há mais de 60 dias</div>
+        </div>
+        <TabelaEstoqueParado itens={dados?.estoqueParado} carregando={carregando} />
+      </Card>
+    </div>
+  );
+}
+
+// ====== Componentes da aba Estoque ======
+function TabelaReposicao({ itens }) {
+  const corUrgencia = {
+    CRITICO: 'var(--danger)',
+    ALTA: 'var(--warning)',
+    MEDIA: 'var(--accent)',
+  };
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Atual / Mín</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Comprar</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo estimado</th>
+          <th className="text-center text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Urgência</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((r) => (
+          <tr key={r.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              {r.imagemUrl ? (
+                <img src={r.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={14} />
+                </div>
+              )}
+            </td>
+            <td className="py-3 px-5 text-sm">
+              <div className="font-semibold text-[var(--text-main)]">{r.nome}</div>
+              {r.variacao && <div className="text-[11px] text-[var(--text-muted)]">{r.variacao}</div>}
+            </td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums">
+              <span className={r.estoqueAtual <= 0 ? 'text-[var(--danger)] font-bold' : 'text-[var(--text-main)]'}>
+                {r.estoqueAtual}
+              </span>
+              <span className="text-[var(--text-muted)]"> / {r.estoqueMinimo}</span>
+            </td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">
+              +{fmtNum(r.necessidade)}
+            </td>
+            <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums text-[var(--text-main)]">
+              {fmtBRL(r.custoReposicao)}
+            </td>
+            <td className="py-3 px-5 text-center">
+              <span
+                className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${corUrgencia[r.urgencia]} 15%, transparent)`,
+                  color: corUrgencia[r.urgencia],
+                }}
+              >
+                {r.urgencia}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function GraficoMovimentoInventario({ movimento, carregando }) {
+  if (carregando && !movimento) return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!movimento || movimento.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem movimentações no período.</div>;
+  }
+  const dadosGrafico = movimento.map((m) => ({
+    ...m,
+    label: m.data.split('-').slice(1).reverse().join('/'),
+  }));
+
+  return (
+    <div className="px-5 py-4">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={dadosGrafico}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-main)" />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-main)', borderRadius: 8 }}
+            formatter={(v, name) => [fmtNum(v) + ' un.', name]}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="entradas" name="Entradas" fill="var(--success)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="saidas" name="Saídas" fill="var(--danger)" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function BlocoCurvaABC({ curva, resumo, carregando }) {
+  if (carregando && !curva) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!curva || curva.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem vendas no período.</div>;
+  }
+  const totalReceita = (resumo?.A?.receita || 0) + (resumo?.B?.receita || 0) + (resumo?.C?.receita || 0);
+  const corClasse = { A: 'var(--success)', B: 'var(--accent)', C: 'var(--text-muted)' };
+
+  return (
+    <div className="px-5 py-4 space-y-4">
+      {/* Resumo das classes */}
+      <div className="grid grid-cols-3 gap-3">
+        {['A', 'B', 'C'].map((c) => {
+          const r = resumo[c] || { qtd: 0, receita: 0 };
+          const pct = totalReceita > 0 ? (r.receita / totalReceita) * 100 : 0;
+          return (
+            <div key={c} className="p-3 rounded-xl border border-[var(--border-main)]">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black text-white"
+                  style={{ backgroundColor: corClasse[c] }}
+                >
+                  {c}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-[var(--text-main)]">{r.qtd} produto{r.qtd === 1 ? '' : 's'}</div>
+                  <div className="text-[10px] text-[var(--text-muted)]">{fmtPct(pct)} da receita</div>
+                </div>
+              </div>
+              <div className="text-sm font-bold tabular-nums mt-2" style={{ color: corClasse[c] }}>
+                {fmtBRL(r.receita)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tabela */}
+      <div className="border-t border-[var(--border-main)] -mx-5">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-[var(--border-main)]">
+              <th className="text-center text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-12">Classe</th>
+              <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+              <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Receita</th>
+              <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Acumulado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {curva.slice(0, 30).map((p) => (
+              <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
+                <td className="py-3 px-5 text-center">
+                  <span
+                    className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-black text-white"
+                    style={{ backgroundColor: corClasse[p.classe] }}
+                  >
+                    {p.classe}
+                  </span>
+                </td>
+                <td className="py-3 px-5 text-sm">
+                  <div className="font-semibold text-[var(--text-main)]">{p.nome}</div>
+                  {p.variacao && <div className="text-[11px] text-[var(--text-muted)]">{p.variacao}</div>}
+                </td>
+                <td className="py-3 px-5 text-right text-sm font-bold tabular-nums">{fmtBRL(p.receita)}</td>
+                <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">
+                  {fmtPct(p.pctAcumulado)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {curva.length > 30 && (
+          <div className="px-5 py-2 text-[10px] text-center text-[var(--text-muted)] border-t border-[var(--border-subtle)]">
+            +{curva.length - 30} produtos a mais (não exibidos)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabelaMargem({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Cadastre produtos pra ver margens.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Margem</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((p) => (
+          <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5">
+              {p.imagemUrl ? (
+                <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={14} />
+                </div>
+              )}
+            </td>
+            <td className="py-3 px-5 text-sm">
+              <div className="font-semibold text-[var(--text-main)]">{p.nome}</div>
+              <div className="text-[11px] text-[var(--text-muted)]">
+                {p.variacao && <span className="mr-2">{p.variacao}</span>}
+                <span>{p.categoria}</span>
+              </div>
+            </td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-secondary)]">{fmtBRL(p.precoCusto)}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-main)]">{fmtBRL(p.preco)}</td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums text-[var(--success)]">{fmtBRL(p.margemAbsoluta)}</td>
+            <td className={`py-3 px-5 text-right text-sm tabular-nums font-bold ${
+              p.margemPercentual < 20 ? 'text-[var(--warning)]' :
+              p.margemPercentual >= 50 ? 'text-[var(--success)]' :
+              'text-[var(--text-main)]'
+            }`}>
+              {fmtPct(p.margemPercentual)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaEstoqueParado({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">🎉 Nenhum produto parado!</div>;
+  }
+  const valorTotal = itens.reduce((acc, i) => acc + i.valorParado, 0);
+  return (
+    <>
+      <div className="px-5 py-2.5 bg-[var(--bg-subtle)]/30 border-b border-[var(--border-main)] flex items-baseline justify-between text-xs">
+        <span className="text-[var(--text-muted)]">Capital travado em estoque parado:</span>
+        <span className="font-bold tabular-nums text-[var(--warning)]">{fmtBRL(valorTotal)}</span>
+      </div>
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-[var(--border-main)]">
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
+            <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Estoque</th>
+            <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Capital travado</th>
+            <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Tempo parado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((p) => (
+            <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
+              <td className="py-3 px-5">
+                {p.imagemUrl ? (
+                  <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
+                    <ImageIcon size={14} />
+                  </div>
+                )}
+              </td>
+              <td className="py-3 px-5 text-sm">
+                <div className="font-semibold text-[var(--text-main)]">{p.nome}</div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  {p.variacao && <span className="mr-2">{p.variacao}</span>}
+                  <span>{p.categoria}</span>
+                </div>
+              </td>
+              <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums">{fmtNum(p.estoqueAtual)}</td>
+              <td className="py-3 px-5 text-right text-sm font-bold tabular-nums text-[var(--warning)]">{fmtBRL(p.valorParado)}</td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums">
+                {p.diasParado === null ? (
+                  <span className="text-[var(--danger)] font-bold">Nunca movimentado</span>
+                ) : (
+                  <span className={p.diasParado > 180 ? 'text-[var(--danger)] font-bold' : 'text-[var(--text-secondary)]'}>
+                    {p.diasParado} dias
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
 
