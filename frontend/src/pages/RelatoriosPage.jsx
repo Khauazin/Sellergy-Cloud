@@ -10,8 +10,11 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart,
   Users, Package, AlertCircle, Image as ImageIcon, Calendar,
-  Filter, Clock, Phone, Mail,
+  Filter, Clock, Phone, Mail, Wallet, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
+} from 'recharts';
 import api from '../services/api';
 import {
   Card, Badge, Select, Input,
@@ -106,6 +109,7 @@ export default function RelatoriosPage() {
         <TabsList>
           <TabsTrigger value="executiva">Visão executiva</TabsTrigger>
           <TabsTrigger value="crm">CRM</TabsTrigger>
+          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executiva">
@@ -114,6 +118,10 @@ export default function RelatoriosPage() {
 
         <TabsContent value="crm">
           <AbaCRM intervalo={intervalo} />
+        </TabsContent>
+
+        <TabsContent value="financeiro">
+          <AbaFinanceiro intervalo={intervalo} />
         </TabsContent>
       </Tabs>
     </div>
@@ -309,6 +317,323 @@ function AbaCRM({ intervalo }) {
         />
       </Card>
     </div>
+  );
+}
+
+// ============================================================
+// ABA: Financeiro
+// ============================================================
+function AbaFinanceiro({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/financeiro', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      {/* KPIs do topo */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={DollarSign} color="success" label="Resultado líquido"
+          valor={fmtBRL(dados?.dre.resultadoLiquido)}
+          subvalor={dados ? `Margem ${fmtPct(dados.dre.margemLiquida)}` : null}
+          carregando={carregando} />
+        <KpiCard icon={Wallet} color="info" label="Receita bruta"
+          valor={fmtBRL(dados?.dre.receitaBruta)} carregando={carregando} />
+        <KpiCard icon={AlertCircle} color={dados?.kpis.saldoEmRisco > 0 ? 'danger' : 'neutral'} label="A receber em atraso"
+          valor={fmtBRL(dados?.kpis.saldoEmRisco)}
+          subvalor={dados ? `${dados.kpis.saldoEmRiscoQtd} título(s)` : null}
+          carregando={carregando} />
+        <KpiCard icon={TrendingUp} color="accent" label="Índice de eficácia"
+          valor={dados ? fmtPct(dados.kpis.indiceEficacia) : '—'}
+          subvalor={dados ? `Previsão recuperar ${fmtBRL(dados.kpis.previsaoRecuperacao)}` : null}
+          carregando={carregando} />
+      </div>
+
+      {/* DRE */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">DRE — Demonstrativo de resultado</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">No período selecionado (apenas lançamentos pagos)</div>
+        </div>
+        <BlocoDRE dre={dados?.dre} carregando={carregando} />
+      </Card>
+
+      {/* Fluxo de caixa diario */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Fluxo de caixa diário</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas, saídas e saldo acumulado por dia</div>
+        </div>
+        <GraficoFluxoCaixa fluxo={dados?.fluxoDiario} carregando={carregando} />
+      </Card>
+
+      {/* Aging de inadimplencia */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Aging de inadimplência</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Receitas pendentes vencidas, separadas por tempo de atraso</div>
+        </div>
+        <BlocoAging aging={dados?.aging} carregando={carregando} />
+      </Card>
+
+      {/* Por categoria */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Receitas por categoria</div>
+          </div>
+          <TabelaCategorias itens={dados?.porCategoriaReceita} cor="success" carregando={carregando} />
+        </Card>
+
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Despesas por categoria</div>
+          </div>
+          <TabelaCategorias itens={dados?.porCategoriaDespesa} cor="danger" carregando={carregando} />
+        </Card>
+      </div>
+
+      {/* Por metodo de pagamento */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Recebimentos por método de pagamento</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Apenas receitas pagas no período</div>
+        </div>
+        <TabelaMetodosPagamento itens={dados?.porMetodo} carregando={carregando} />
+      </Card>
+    </div>
+  );
+}
+
+// ====== Componentes da aba Financeiro ======
+function BlocoDRE({ dre, carregando }) {
+  if (carregando && !dre) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!dre) return null;
+
+  const linhas = [
+    { label: 'Receita bruta', valor: dre.receitaBruta, cor: 'success', destaque: false },
+    { label: '(−) Despesas variáveis', valor: -dre.despesasVariaveis, cor: 'danger', sublabel: 'Categorias com "venda" ou "imposto"' },
+    { label: '(=) Margem de contribuição', valor: dre.receitaBruta - dre.despesasVariaveis, cor: 'neutral', destaque: true },
+    { label: '(−) Despesas fixas', valor: -dre.despesasFixas, cor: 'danger', sublabel: 'Demais categorias de despesa' },
+    { label: '(=) Resultado líquido', valor: dre.resultadoLiquido, cor: dre.resultadoLiquido >= 0 ? 'success' : 'danger', destaque: true },
+  ];
+
+  return (
+    <div className="px-5 py-4 space-y-1">
+      {linhas.map((l) => (
+        <div
+          key={l.label}
+          className={`flex items-baseline justify-between gap-3 py-2 ${
+            l.destaque ? 'border-t border-[var(--border-main)] mt-1 pt-3' : ''
+          }`}
+        >
+          <div>
+            <div className={`text-sm ${l.destaque ? 'font-bold text-[var(--text-main)]' : 'text-[var(--text-secondary)]'}`}>
+              {l.label}
+            </div>
+            {l.sublabel && (
+              <div className="text-[10px] text-[var(--text-muted)] mt-0.5">{l.sublabel}</div>
+            )}
+          </div>
+          <div className={`tabular-nums ${l.destaque ? 'text-base font-bold' : 'text-sm font-semibold'} ${
+            l.cor === 'success' ? 'text-[var(--success)]' :
+            l.cor === 'danger' ? 'text-[var(--danger)]' :
+            'text-[var(--text-main)]'
+          }`}>
+            {l.valor < 0 ? '−' : ''}{fmtBRL(Math.abs(l.valor))}
+          </div>
+        </div>
+      ))}
+      <div className="text-[11px] text-[var(--text-muted)] pt-2 border-t border-[var(--border-main)] mt-2">
+        Margem líquida do período: <strong>{fmtPct(dre.margemLiquida)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function GraficoFluxoCaixa({ fluxo, carregando }) {
+  if (carregando && !fluxo) return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!fluxo || fluxo.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem movimentações no período.</div>;
+  }
+  // Reformata a data pra DD/MM (mais legivel no eixo)
+  const dadosGrafico = fluxo.map((f) => ({
+    ...f,
+    label: f.data.split('-').slice(1).reverse().join('/'),
+  }));
+
+  return (
+    <div className="px-5 py-4">
+      <ResponsiveContainer width="100%" height={280}>
+        <LineChart data={dadosGrafico}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-main)" />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            tickFormatter={(v) => Number(v).toLocaleString('pt-BR', { notation: 'compact' })}
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-main)', borderRadius: 8 }}
+            formatter={(v, name) => [fmtBRL(v), name]}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Line type="monotone" dataKey="receita" stroke="var(--success)" name="Receita" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="despesa" stroke="var(--danger)" name="Despesa" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="saldoAcumulado" stroke="var(--accent)" name="Saldo acumulado" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function BlocoAging({ aging, carregando }) {
+  if (carregando && !aging) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!aging) return null;
+  const total = aging.reduce((acc, a) => acc + a.valor, 0);
+  if (total === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">🎉 Nenhum vencido. Tudo em dia!</div>;
+  }
+
+  const CORES = ['var(--warning)', 'var(--accent)', 'var(--danger)', 'var(--danger)'];
+
+  return (
+    <div className="px-5 py-4 space-y-4">
+      {/* Grafico de barras das 4 faixas */}
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={aging}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-main)" />
+          <XAxis dataKey="faixa" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            tickFormatter={(v) => Number(v).toLocaleString('pt-BR', { notation: 'compact' })}
+          />
+          <Tooltip
+            contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-main)', borderRadius: 8 }}
+            formatter={(v) => [fmtBRL(v), 'Valor']}
+          />
+          <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+            {aging.map((_, i) => (
+              <Bar key={i} fill={CORES[i]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Detalhamento por faixa (top 5 itens de cada) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {aging.map((bucket, idx) => (
+          bucket.qtd > 0 && (
+            <div key={bucket.faixa} className="border border-[var(--border-main)] rounded-xl overflow-hidden">
+              <div className="px-3 py-2 bg-[var(--bg-subtle)]/50 border-b border-[var(--border-main)] flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-[var(--text-main)]">{bucket.faixa}</div>
+                  <div className="text-[10px] text-[var(--text-muted)]">{bucket.qtd} título(s)</div>
+                </div>
+                <div className="text-sm font-bold tabular-nums" style={{ color: CORES[idx] }}>
+                  {fmtBRL(bucket.valor)}
+                </div>
+              </div>
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {bucket.itens.map((item) => (
+                  <div key={item.id} className="px-3 py-2 flex items-baseline justify-between gap-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-[var(--text-main)] truncate">{item.descricao}</div>
+                      {item.lead && <div className="text-[10px] text-[var(--text-muted)] truncate">{item.lead}</div>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-bold tabular-nums">{fmtBRL(item.valor)}</div>
+                      <div className="text-[10px] text-[var(--text-muted)]">{item.diasAtraso}d atraso</div>
+                    </div>
+                  </div>
+                ))}
+                {bucket.qtd > bucket.itens.length && (
+                  <div className="px-3 py-1.5 text-[10px] text-[var(--text-muted)] text-center">
+                    +{bucket.qtd - bucket.itens.length} a mais
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TabelaCategorias({ itens, cor = 'success', carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhum lançamento no período.</div>;
+  }
+  const total = itens.reduce((acc, i) => acc + i.valor, 0);
+  const corHex = cor === 'success' ? 'var(--success)' : 'var(--danger)';
+  return (
+    <div className="px-5 py-4 space-y-2">
+      {itens.map((c) => {
+        const pct = total > 0 ? (c.valor / total) * 100 : 0;
+        return (
+          <div key={c.categoria} className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <div className="truncate">
+                <span className="font-semibold text-[var(--text-main)]">{c.categoria}</span>
+                <span className="ml-2 text-[var(--text-muted)]">{c.qtd} lanç.</span>
+              </div>
+              <div className="flex-shrink-0">
+                <span className="font-bold tabular-nums" style={{ color: corHex }}>{fmtBRL(c.valor)}</span>
+                <span className="ml-2 text-[var(--text-muted)] tabular-nums">{fmtPct(pct)}</span>
+              </div>
+            </div>
+            <div className="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: corHex }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabelaMetodosPagamento({ itens, carregando }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Sem recebimentos no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Método</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Recebimentos</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {itens.map((m) => (
+          <tr key={m.metodo} className="border-b border-[var(--border-subtle)] last:border-b-0">
+            <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)]">{m.metodo}</td>
+            <td className="py-3 px-5 text-right text-sm tabular-nums">{fmtNum(m.qtd)}</td>
+            <td className="py-3 px-5 text-right text-sm font-bold tabular-nums text-[var(--success)]">{fmtBRL(m.valor)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

@@ -18,5 +18,6 @@ const podeVer = requerPermissao('RELATORIOS', 'visualizar');
 
 roteador.get('/visao-executiva', podeVer, RelatoriosController.visaoExecutiva);
 roteador.get('/crm', podeVer, RelatoriosController.relatorioCRM);
+roteador.get('/financeiro', podeVer, RelatoriosController.relatorioFinanceiro);
 
 module.exports = roteador;

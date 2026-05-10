@@ -571,7 +571,196 @@ async function relatorioCRM(req, res) {
   }
 }
 
+// =====================================================================
+// FINANCEIRO — DRE, fluxo de caixa diario, aging, por categoria
+// =====================================================================
+async function relatorioFinanceiro(req, res) {
+  try {
+    const { clienteId } = req.usuario;
+    if (!clienteId) return res.status(403).json({ error: 'Tenant indefinido.' });
+
+    const periodo = resolverPeriodo(req.query);
+    const hoje = new Date();
+
+    const [
+      lancamentosPagos,        // tudo que foi PAGO no periodo (DRE + por categoria + fluxo)
+      receitasPendentesVencidas, // pra aging (vence em datas passadas, nao paga)
+      kpis,                     // contadores resumidos
+    ] = await Promise.all([
+      prisma.lancamentoFinanceiro.findMany({
+        where: {
+          clienteId,
+          status: 'PAGO',
+          dataPagamento: { gte: periodo.inicio, lte: periodo.fim },
+        },
+        include: { categoria: true },
+        orderBy: { dataPagamento: 'asc' },
+      }),
+
+      prisma.lancamentoFinanceiro.findMany({
+        where: {
+          clienteId,
+          tipo: 'RECEITA',
+          status: 'PENDENTE',
+          dataVencimento: { lt: hoje },
+        },
+        select: {
+          id: true,
+          descricao: true,
+          valor: true,
+          dataVencimento: true,
+          lead: { select: { nome: true } },
+        },
+      }),
+
+      // Indice de eficacia (mesma logica do dashboard financeiro)
+      (async () => {
+        const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const [recuperados, totalVencidosSemana, saldoEmRiscoAg] = await Promise.all([
+          prisma.lancamentoFinanceiro.count({
+            where: { clienteId, status: 'PAGO', atualizadoEm: { gte: seteDiasAtras }, dataVencimento: { lt: hoje } },
+          }),
+          prisma.lancamentoFinanceiro.count({
+            where: { clienteId, tipo: 'RECEITA', dataVencimento: { gte: seteDiasAtras, lt: hoje } },
+          }),
+          prisma.lancamentoFinanceiro.aggregate({
+            where: { clienteId, tipo: 'RECEITA', status: 'PENDENTE', dataVencimento: { lt: hoje } },
+            _sum: { valor: true }, _count: true,
+          }),
+        ]);
+        const indiceEficacia = totalVencidosSemana > 0 ? (recuperados / totalVencidosSemana) * 100 : 0;
+        const saldoEmRisco = saldoEmRiscoAg._sum.valor || 0;
+        return {
+          saldoEmRisco,
+          saldoEmRiscoQtd: saldoEmRiscoAg._count || 0,
+          indiceEficacia: Number(indiceEficacia.toFixed(1)),
+          previsaoRecuperacao: Number((saldoEmRisco * (indiceEficacia / 100)).toFixed(2)),
+        };
+      })(),
+    ]);
+
+    // ============== DRE ==============
+    // Categorias com "venda" ou "imposto" no nome viram despesa variavel.
+    // O resto vira despesa fixa. (Mesma regra do FinanceiroController.relatorioDRE.)
+    const dre = { receitaBruta: 0, despesasVariaveis: 0, despesasFixas: 0, resultadoLiquido: 0 };
+    for (const l of lancamentosPagos) {
+      const cat = l.categoria?.nome?.toLowerCase() || '';
+      const valor = Number(l.valor || 0);
+      if (l.tipo === 'RECEITA') dre.receitaBruta += valor;
+      else if (cat.includes('venda') || cat.includes('imposto')) dre.despesasVariaveis += valor;
+      else dre.despesasFixas += valor;
+    }
+    dre.resultadoLiquido = dre.receitaBruta - dre.despesasVariaveis - dre.despesasFixas;
+    dre.margemLiquida = dre.receitaBruta > 0 ? Number(((dre.resultadoLiquido / dre.receitaBruta) * 100).toFixed(2)) : 0;
+
+    // ============== FLUXO DE CAIXA POR DIA ==============
+    // Agrega receita/despesa por dia (formato YYYY-MM-DD). Saldo acumulado
+    // a partir do inicio do periodo.
+    const fluxoMap = new Map();
+    for (const l of lancamentosPagos) {
+      const data = new Date(l.dataPagamento || l.dataVencimento);
+      const chave = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+      if (!fluxoMap.has(chave)) {
+        fluxoMap.set(chave, { data: chave, receita: 0, despesa: 0 });
+      }
+      const item = fluxoMap.get(chave);
+      const valor = Number(l.valor || 0);
+      if (l.tipo === 'RECEITA') item.receita += valor;
+      else item.despesa += valor;
+    }
+    const fluxoOrdenado = [...fluxoMap.values()].sort((a, b) => a.data.localeCompare(b.data));
+    let acumulado = 0;
+    for (const f of fluxoOrdenado) {
+      f.saldoDia = f.receita - f.despesa;
+      acumulado += f.saldoDia;
+      f.saldoAcumulado = acumulado;
+    }
+
+    // ============== AGING DE INADIMPLENCIA ==============
+    // Agrupa receitas pendentes vencidas em faixas de dias.
+    const aging = {
+      'Vencidas 1-7 dias': { faixa: '1-7 dias', valor: 0, qtd: 0, itens: [] },
+      'Vencidas 8-30 dias': { faixa: '8-30 dias', valor: 0, qtd: 0, itens: [] },
+      'Vencidas 31-60 dias': { faixa: '31-60 dias', valor: 0, qtd: 0, itens: [] },
+      'Vencidas 60+ dias': { faixa: '60+ dias', valor: 0, qtd: 0, itens: [] },
+    };
+    for (const r of receitasPendentesVencidas) {
+      const dias = Math.floor((hoje.getTime() - new Date(r.dataVencimento).getTime()) / (24 * 60 * 60 * 1000));
+      let bucket;
+      if (dias <= 7) bucket = aging['Vencidas 1-7 dias'];
+      else if (dias <= 30) bucket = aging['Vencidas 8-30 dias'];
+      else if (dias <= 60) bucket = aging['Vencidas 31-60 dias'];
+      else bucket = aging['Vencidas 60+ dias'];
+      bucket.valor += Number(r.valor || 0);
+      bucket.qtd += 1;
+      // Mantem so os primeiros 5 de cada faixa pra resposta nao explodir
+      if (bucket.itens.length < 5) {
+        bucket.itens.push({
+          id: r.id,
+          descricao: r.descricao,
+          valor: Number(r.valor || 0),
+          dataVencimento: r.dataVencimento,
+          lead: r.lead?.nome || null,
+          diasAtraso: dias,
+        });
+      }
+    }
+    const agingArray = [
+      aging['Vencidas 1-7 dias'],
+      aging['Vencidas 8-30 dias'],
+      aging['Vencidas 31-60 dias'],
+      aging['Vencidas 60+ dias'],
+    ];
+
+    // ============== POR CATEGORIA ==============
+    // Top categorias receita e top categorias despesa.
+    const catReceita = new Map();
+    const catDespesa = new Map();
+    for (const l of lancamentosPagos) {
+      const nome = l.categoria?.nome || 'Sem categoria';
+      const mapa = l.tipo === 'RECEITA' ? catReceita : catDespesa;
+      if (!mapa.has(nome)) mapa.set(nome, { categoria: nome, valor: 0, qtd: 0 });
+      const item = mapa.get(nome);
+      item.valor += Number(l.valor || 0);
+      item.qtd += 1;
+    }
+    const porCategoriaReceita = [...catReceita.values()].sort((a, b) => b.valor - a.valor);
+    const porCategoriaDespesa = [...catDespesa.values()].sort((a, b) => b.valor - a.valor);
+
+    // ============== POR METODO DE PAGAMENTO ==============
+    // So receitas (mais util pra entender mix de cobranca).
+    const metodoMap = new Map();
+    for (const l of lancamentosPagos) {
+      if (l.tipo !== 'RECEITA') continue;
+      const m = l.metodoPagamento || 'Não informado';
+      if (!metodoMap.has(m)) metodoMap.set(m, { metodo: m, valor: 0, qtd: 0 });
+      const item = metodoMap.get(m);
+      item.valor += Number(l.valor || 0);
+      item.qtd += 1;
+    }
+    const porMetodo = [...metodoMap.values()].sort((a, b) => b.valor - a.valor);
+
+    res.json({
+      periodo: {
+        inicio: periodo.inicio.toISOString(),
+        fim: periodo.fim.toISOString(),
+      },
+      kpis,
+      dre,
+      fluxoDiario: fluxoOrdenado,
+      aging: agingArray,
+      porCategoriaReceita,
+      porCategoriaDespesa,
+      porMetodo,
+    });
+  } catch (erro) {
+    console.error('[relatorios/financeiro]', erro);
+    res.status(500).json({ error: 'Erro ao gerar relatorio financeiro.' });
+  }
+}
+
 module.exports = {
   visaoExecutiva,
   relatorioCRM,
+  relatorioFinanceiro,
 };
