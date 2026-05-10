@@ -612,21 +612,28 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
           </div>
         </div>
 
-        <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={2} />
+        <Textarea
+          label="Descrição (opcional)"
+          value={form.descricao}
+          onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+          rows={2}
+          placeholder="Detalhes que ajudam na venda (ex.: 100% algodão, fabricado em SP)"
+        />
 
         <Select
-          label="Tipo"
+          label="Tipo de produto"
           value={form.tipo}
           onChange={(e) => setForm({ ...form, tipo: e.target.value })}
           options={[
-            { value: 'FISICO', label: 'Fisico (controla estoque)' },
-            { value: 'SERVICO', label: 'Servico' },
+            { value: 'FISICO', label: 'Físico (controla estoque)' },
+            { value: 'SERVICO', label: 'Serviço (sem estoque)' },
           ]}
           placeholder=""
+          hint="Físico tem estoque (ex.: camiseta). Serviço não (ex.: corte de cabelo)."
         />
 
         <div className="border-t border-[var(--border-main)] pt-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Detalhes da variacao</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Detalhes do produto</div>
 
           <div className="flex items-start gap-4 mb-3">
             <UploadImagem
@@ -636,48 +643,99 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
               tamanho="sm"
             />
             <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input label="Nome da variacao" value={form.nomeVariacao} onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })} placeholder="Padrao, Tamanho M, Cor azul..." required />
-              <Input label="SKU (opcional)" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+              <Input
+                label="Versão / Modelo"
+                value={form.nomeVariacao}
+                onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })}
+                placeholder="Padrão, Tamanho M, Cor azul..."
+                required
+                hint="Deixe 'Padrão' se o produto não tem versões."
+              />
+              <Input
+                label="Código interno (opcional)"
+                value={form.sku}
+                onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                placeholder="Ex.: CAM-AZUL-M"
+                hint="Identificador interno seu (SKU)."
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input label="Preco de venda (R$)" type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required hint="Preco padrao do estoque" />
-            <Input label="Preco de custo (R$) - CMV" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
+            <Input
+              label="Preço de venda (R$)"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.preco}
+              onChange={(e) => setForm({ ...form, preco: e.target.value })}
+              required
+              hint="Preço que você cobra normalmente."
+            />
+            <Input
+              label="Preço de custo (R$)"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.precoCusto}
+              onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
+              hint="Quanto você paga ao fornecedor por unidade."
+            />
           </div>
 
-          {/* Preco para catalogo */}
+          {/* Preco diferente no catalogo publico */}
           <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40 mt-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-[var(--text-main)]">Preco diferenciado para catalogo</div>
+                <div className="text-sm font-semibold text-[var(--text-main)]">Preço diferente no catálogo público</div>
                 <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Use quando o preco do catalogo (publico) for diferente do estoque.
+                  Ative se vende em 2 lugares com preços diferentes (ex.: balcão R$ 10, site R$ 12).
                 </div>
               </div>
               <Switch
                 checked={form.usarPrecoCatalogo}
                 onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
-                ariaLabel="Usar preco de catalogo como principal"
+                ariaLabel="Usar preço diferente no catálogo público"
               />
             </div>
             <Input
-              label="Preco catalogo (R$)"
+              label="Preço para o catálogo público (R$)"
               type="number"
               step="0.01"
               min="0"
               value={form.precoCatalogo}
               onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
               disabled={!form.usarPrecoCatalogo}
-              placeholder="Em branco = usa o do estoque"
+              placeholder="Em branco = usa o mesmo preço acima"
             />
           </div>
 
           {form.tipo === 'FISICO' && (
             <div className="grid grid-cols-3 gap-3 mt-3">
-              <Input label="Estoque atual" type="number" min="0" value={form.estoqueAtual} onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })} />
-              <Input label="Estoque minimo" type="number" min="0" value={form.estoqueMinimo} onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })} hint="Alerta de falta" />
-              <Input label="Estoque ideal" type="number" min="0" value={form.estoqueIdeal} onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })} hint="Alvo de reposicao" />
+              <Input
+                label="Estoque atual"
+                type="number"
+                min="0"
+                value={form.estoqueAtual}
+                onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
+                hint="Quantidade que tem hoje."
+              />
+              <Input
+                label="Estoque mínimo"
+                type="number"
+                min="0"
+                value={form.estoqueMinimo}
+                onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
+                hint="Quando avisar que está acabando."
+              />
+              <Input
+                label="Estoque ideal"
+                type="number"
+                min="0"
+                value={form.estoqueIdeal}
+                onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
+                hint="Quanto comprar quando faltar."
+              />
             </div>
           )}
         </div>
