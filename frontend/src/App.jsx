@@ -39,6 +39,7 @@ import BotCanalPage from './pages/BotCanalPage';
 import BuilderPage from './pages/BuilderPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
+import RelatoriosPage from './pages/RelatoriosPage';
 import UsersPage from './pages/UsersPage';
 import ConfiguracoesAdminPage from './pages/ConfiguracoesAdminPage';
 
@@ -46,7 +47,7 @@ import ConfiguracoesAdminPage from './pages/ConfiguracoesAdminPage';
 const MensagensPlaceholder = () => <PlaceholderPage titulo="Mensagens" descricao="Inbox unificada estilo whatsapp web. Isolada por tenant." pacote="Pacote 4 — Novidades" />;
 const CampanhasClientePlaceholder = () => <PlaceholderPage titulo="Campanhas" descricao="Disparos em massa via bot." pacote="Pacote 4 — Novidades" />;
 const BotsClientePlaceholder = () => <PlaceholderPage titulo="Bots" descricao="Configurar IA do bot." pacote="Pacote 4 — Novidades" />;
-const RelatoriosClientePlaceholder = () => <PlaceholderPage titulo="Relatorios" descricao="Em breve: dashboards consolidados." pacote="Pacote 3 — Cliente" />;
+// `RelatoriosClientePlaceholder` removido — agora usa RelatoriosPage real.
 
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -172,7 +173,7 @@ export default function App() {
             <Route path="/app/estoque" element={<EstoquePage />} />
             <Route path="/app/financeiro" element={<FinanceiroPage />} />
             <Route path="/app/mensagens" element={<MensagensPlaceholder />} />
-            <Route path="/app/relatorios" element={<RelatoriosClientePlaceholder />} />
+            <Route path="/app/relatorios" element={<RelatoriosPage />} />
             <Route path="/app/bots" element={<BotsClientePlaceholder />} />
             <Route path="/app/campanhas" element={<CampanhasClientePlaceholder />} />
             <Route path="/app/usuarios" element={<CrmUsersPage />} />

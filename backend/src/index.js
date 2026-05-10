@@ -37,6 +37,7 @@ const rotasEstoque = require('./routes/estoque.routes');
 const rotasFinanceiro = require('./routes/financeiro.routes');
 const rotasVendas = require('./routes/vendas.routes');
 const rotasCmv = require('./routes/cmv.routes');
+const rotasRelatorios = require('./routes/relatorios.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
@@ -134,6 +135,7 @@ app.use('/catalogo', rotasCatalogo);
 app.use('/estoque', rotasEstoque);
 app.use('/financeiro', rotasFinanceiro);
 app.use('/vendas', rotasVendas);
+app.use('/relatorios', rotasRelatorios);
 
 // Rota de Teste de Saude (Health Check)
 app.get('/saude', (req, res) => {
