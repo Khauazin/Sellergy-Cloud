@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Box, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, TrendingUp,
-  Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag
+  Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag, Image as ImageIcon, ArrowLeftRight
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -35,6 +35,7 @@ export default function EstoquePage() {
 
   const [modalMov, setModalMov] = useState({ open: false });
   const [modalProduto, setModalProduto] = useState({ open: false, data: null });
+  const [modalEditarVar, setModalEditarVar] = useState({ open: false, variacao: null });
   const [modalCategoria, setModalCategoria] = useState({ open: false, data: null });
 
   useEffect(() => {
@@ -199,6 +200,7 @@ export default function EstoquePage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[var(--border-main)]">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
                     <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
                     <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Categoria</th>
                     <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Variacao / SKU</th>
@@ -206,14 +208,29 @@ export default function EstoquePage() {
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor total</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {variacoesFiltered.map((v) => {
                     const abaixo = v.estoqueAtual < (v.estoqueMinimo || 0);
                     const cat = categorias.find((c) => c.id === v.produto?.categoriaId);
+                    const imagemUrl = v.imagemUrl || v.produto?.imagemUrl;
                     return (
                       <tr key={v.id} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50">
+                        <td className="py-3 px-5">
+                          {imagemUrl ? (
+                            <img
+                              src={imagemUrl}
+                              alt=""
+                              className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
+                              <ImageIcon size={14} />
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-5 text-sm font-semibold text-[var(--text-main)] tracking-tight">{v.produto?.nome}</td>
                         <td className="py-3 px-5 text-xs">{cat ? <Badge variant="neutral" size="sm">{cat.nome}</Badge> : '—'}</td>
                         <td className="py-3 px-5 text-xs">
@@ -227,6 +244,22 @@ export default function EstoquePage() {
                         <td className="py-3 px-5 text-right text-sm text-[var(--text-secondary)] tabular-nums">{fmtBRL(v.precoCusto)}</td>
                         <td className="py-3 px-5 text-right text-sm text-[var(--text-main)] tabular-nums">{fmtBRL(v.preco)}</td>
                         <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(v.estoqueAtual * (v.precoCusto || 0))}</td>
+                        <td className="py-3 px-5 text-right">
+                          <Dropdown trigger={<IconButton icon={MoreHorizontal} size="sm" variant="ghost" ariaLabel="Acoes" />} align="right">
+                            <DropdownItem
+                              icon={ArrowLeftRight}
+                              onClick={() => setModalMov({ open: true, variacaoIdInicial: v.id })}
+                            >
+                              Nova movimentação
+                            </DropdownItem>
+                            <DropdownItem
+                              icon={Edit2}
+                              onClick={() => setModalEditarVar({ open: true, variacao: v })}
+                            >
+                              Editar produto
+                            </DropdownItem>
+                          </Dropdown>
+                        </td>
                       </tr>
                     );
                   })}
@@ -330,6 +363,16 @@ export default function EstoquePage() {
         onClose={() => setModalMov({ open: false })}
         variacoes={variacoesFlat}
         onSalvar={handleMovimentar}
+        variacaoIdInicial={modalMov.variacaoIdInicial}
+      />
+      <ModalEditarVariacao
+        isOpen={modalEditarVar.open}
+        onClose={() => setModalEditarVar({ open: false, variacao: null })}
+        variacao={modalEditarVar.variacao}
+        onSucesso={() => {
+          carregar();
+          setModalEditarVar({ open: false, variacao: null });
+        }}
       />
       <ModalProduto
         isOpen={modalProduto.open}
@@ -416,15 +459,18 @@ const TIPOS_MOVIMENTACAO = [
 
 const fmtBRL2 = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
+function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar, variacaoIdInicial }) {
   const [form, setForm] = useState({
     variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '',
     precoCusto: '', precoVenda: '',
   });
 
   useEffect(() => {
-    if (isOpen) setForm({ variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '', precoCusto: '', precoVenda: '' });
-  }, [isOpen]);
+    if (isOpen) setForm({
+      variacaoId: variacaoIdInicial || '',
+      tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '', precoCusto: '', precoVenda: ''
+    });
+  }, [isOpen, variacaoIdInicial]);
 
   const variacaoSel = variacoes.find((v) => v.id === form.variacaoId);
   const tipoCfg = TIPOS_MOVIMENTACAO.find((t) => t.value === form.tipo);
@@ -591,6 +637,186 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar }) {
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
           <Button variant="primary" type="submit">Registrar</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// Modal de edicao rapida da variacao (foto, preco, custo, estoque, sku).
+// Usa PUT /catalogo/variacoes/:id ja existente. Imagem usa o endpoint
+// definitivo (variacao ja existe). Categoria/tipo do produto pai nao
+// sao editaveis aqui — pra isso o cliente vai na tela de Catalogo.
+function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    nome: '', sku: '', preco: 0, precoCusto: 0,
+    precoCatalogo: '', usarPrecoCatalogo: false,
+    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
+    imagemUrl: '',
+  });
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && variacao) {
+      setForm({
+        nome: variacao.nome || '',
+        sku: variacao.sku || '',
+        preco: variacao.preco ?? 0,
+        precoCusto: variacao.precoCusto ?? 0,
+        precoCatalogo: variacao.precoCatalogo ?? '',
+        usarPrecoCatalogo: !!variacao.usarPrecoCatalogo,
+        estoqueAtual: variacao.estoqueAtual ?? 0,
+        estoqueMinimo: variacao.estoqueMinimo ?? 0,
+        estoqueIdeal: variacao.estoqueIdeal ?? 0,
+        imagemUrl: variacao.imagemUrl || '',
+      });
+    }
+  }, [isOpen, variacao]);
+
+  if (!variacao) return null;
+
+  const handleUploadImagem = async (file) => {
+    const url = await catalogoService.uploadImagemVariacao(variacao.id, file);
+    setForm((prev) => ({ ...prev, imagemUrl: url }));
+  };
+
+  const handleRemoverImagem = async () => {
+    await catalogoService.removerImagemVariacao(variacao.id);
+    setForm((prev) => ({ ...prev, imagemUrl: '' }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSalvando(true);
+    try {
+      await api.put(`/catalogo/variacoes/${variacao.id}`, {
+        nome: form.nome,
+        sku: form.sku || null,
+        preco: parseFloat(form.preco) || 0,
+        precoCusto: parseFloat(form.precoCusto) || 0,
+        precoCatalogo: form.precoCatalogo === '' ? null : (parseFloat(form.precoCatalogo) || null),
+        usarPrecoCatalogo: !!form.usarPrecoCatalogo,
+        estoqueAtual: parseInt(form.estoqueAtual, 10) || 0,
+        estoqueMinimo: parseInt(form.estoqueMinimo, 10) || 0,
+        estoqueIdeal: parseInt(form.estoqueIdeal, 10) || 0,
+      });
+      toast.success?.('Produto atualizado.');
+      onSucesso?.();
+    } catch (err) {
+      toast.error?.(err?.response?.data?.error || 'Erro ao salvar.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Editar produto" description={variacao.produto?.nome} size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-start gap-4">
+          <UploadImagem
+            imagemUrl={form.imagemUrl || null}
+            onUpload={handleUploadImagem}
+            onRemover={handleRemoverImagem}
+            tamanho="md"
+          />
+          <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              label="Versão / Modelo"
+              value={form.nome}
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              required
+              hint="Deixe 'Padrão' se o produto não tem versões."
+            />
+            <Input
+              label="Código interno (SKU)"
+              value={form.sku}
+              onChange={(e) => setForm({ ...form, sku: e.target.value })}
+              placeholder="Opcional"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input
+            label="Preço de venda (R$)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.preco}
+            onChange={(e) => setForm({ ...form, preco: e.target.value })}
+            required
+            hint="Preço que você cobra normalmente."
+          />
+          <Input
+            label="Preço de custo (R$)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.precoCusto}
+            onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
+            hint="Quanto você paga ao fornecedor."
+          />
+        </div>
+
+        <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[var(--text-main)]">Preço diferente no catálogo público</div>
+              <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                Ative se vende em 2 lugares com preços diferentes.
+              </div>
+            </div>
+            <Switch
+              checked={form.usarPrecoCatalogo}
+              onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
+              ariaLabel="Usar preço diferente no catálogo público"
+            />
+          </div>
+          <Input
+            label="Preço para o catálogo público (R$)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.precoCatalogo}
+            onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
+            disabled={!form.usarPrecoCatalogo}
+            placeholder="Em branco = usa o mesmo preço acima"
+          />
+        </div>
+
+        {variacao.produto?.tipo === 'FISICO' && (
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label="Estoque atual"
+              type="number"
+              min="0"
+              value={form.estoqueAtual}
+              onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
+              hint="Quantidade atual."
+            />
+            <Input
+              label="Estoque mínimo"
+              type="number"
+              min="0"
+              value={form.estoqueMinimo}
+              onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
+              hint="Quando avisar."
+            />
+            <Input
+              label="Estoque ideal"
+              type="number"
+              min="0"
+              value={form.estoqueIdeal}
+              onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
+              hint="Quanto comprar."
+            />
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
+          <Button variant="primary" type="submit" loading={salvando}>Salvar</Button>
         </div>
       </form>
     </Modal>
