@@ -11,6 +11,7 @@ import {
   Combobox
 } from '../components/ui';
 import Modal from '../components/Modal';
+import { formatarTelefoneIntl } from '../utils/formatTelefone';
 
 const STATUS_LABELS = {
   ONLINE: { label: 'Online', variant: 'success', icon: Wifi },
@@ -299,7 +300,15 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
             options={clientes.map((c) => ({ value: c.id, label: c.nome, sublabel: c.email }))}
           />
           <Select label="Canal" value={form.canal} onChange={(e) => setForm({ ...form, canal: e.target.value })} options={CANAIS} placeholder="" />
-          <Input label="Telefone (canal)" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="+55..." />
+          <Input
+            label="Telefone (canal)"
+            value={form.telefone}
+            onChange={(e) => setForm({ ...form, telefone: formatarTelefoneIntl(e.target.value) })}
+            placeholder="+5511999999999"
+            maxLength={16}
+            inputMode="tel"
+            hint="Formato internacional E.164 (com +). Maximo 15 digitos."
+          />
         </div>
 
         <div className="border-t border-[var(--border-main)] pt-4">

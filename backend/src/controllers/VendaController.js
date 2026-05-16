@@ -1,5 +1,11 @@
 const prisma = require('../prisma');
 
+// Numero maximo de retentativas em caso de colisao da unique
+// constraint [clienteId, numero] — acontece quando 2 vendas do mesmo
+// tenant sao criadas em paralelo. Em pratica e raro (precisa colidir
+// dentro do mesmo milissegundo) mas o retry torna a operacao segura.
+const MAX_RETRIES_NUMERO = 5;
+
 class VendaController {
 
   async registrarVenda(req, res) {
@@ -47,59 +53,89 @@ class VendaController {
         });
       }
 
-      const resultado = await prisma.$transaction(async (tx) => {
+      // Retry loop: cobre o caso de 2 vendas paralelas do mesmo tenant
+      // colidirem na unique [clienteId, numero]. O Prisma joga P2002 nesse
+      // caso e o catch refaz a transacao com o proximo numero.
+      let resultado;
+      let tentativa = 0;
+      while (true) {
+        try {
+          // Pre-calcula o proximo numero fora da transaction (operacao read).
+          // Dentro da transaction o INSERT pode colidir se outro thread inserir
+          // ao mesmo tempo — o catch trata.
+          const ultimaDoTenant = await prisma.venda.findFirst({
+            where: { clienteId },
+            orderBy: { numero: 'desc' },
+            select: { numero: true },
+          });
+          const proximoNumero = (ultimaDoTenant?.numero || 0) + 1;
 
-        // 1. Criar a Venda
-        const venda = await tx.venda.create({
-          data: {
-            clienteId,
-            leadId,
-            valor: valorTotal,
-            metodoPagamento,
-            descricao: observacoes,
-            status: 'COMPLETED'
+          resultado = await prisma.$transaction(async (tx) => {
+            // 1. Criar a Venda
+            const venda = await tx.venda.create({
+              data: {
+                clienteId,
+                numero: proximoNumero,
+                leadId,
+                valor: valorTotal,
+                metodoPagamento,
+                descricao: observacoes,
+                status: 'COMPLETED'
+              }
+            });
+
+            // 2. Registrar Saída de Estoque. O motivo agora inclui o numero
+            // humano-legivel da venda (ex.: "Venda #42"). O link tecnico
+            // continua sendo o `vendaId`.
+            const movimentacao = await tx.movimentacaoEstoque.create({
+              data: {
+                variacaoId,
+                tipo: 'VENDA',
+                quantidade: -Math.abs(quantidade),
+                motivo: `Venda #${venda.numero}`,
+                vendaId: venda.id
+              }
+            });
+
+            // Atualizar saldo na Variação
+            await tx.variacaoProduto.update({
+              where: { id: variacaoId },
+              data: {
+                estoqueAtual: {
+                  increment: -Math.abs(quantidade)
+                }
+              }
+            });
+
+            // 3. Criar Lançamento Financeiro com vínculo de categoria
+            const lancamento = await tx.lancamentoFinanceiro.create({
+              data: {
+                clienteId,
+                leadId,
+                vendaId: venda.id,
+                categoriaId: categoriaId || null,
+                descricao: `Receita Venda #${venda.numero}: ${variacao.produto.nome} (${variacao.nome})`,
+                valor: valorTotal,
+                tipo: 'RECEITA',
+                status: 'PAGO',
+                dataVencimento: new Date(),
+                dataPagamento: new Date()
+              }
+            });
+
+            return { venda, movimentacao, lancamento };
+          });
+          break; // sucesso — sai do retry loop
+        } catch (err) {
+          // P2002 = unique constraint violation. Se foi no [clienteId, numero],
+          // refaz com proximo numero.
+          if (err?.code === 'P2002' && tentativa < MAX_RETRIES_NUMERO) {
+            tentativa += 1;
+            continue;
           }
-        });
-
-        // 2. Registrar Saída de Estoque
-        const movimentacao = await tx.movimentacaoEstoque.create({
-          data: {
-            variacaoId,
-            tipo: 'VENDA',
-            quantidade: -Math.abs(quantidade),
-            motivo: `Venda #${venda.id}`,
-            vendaId: venda.id
-          }
-        });
-
-        // Atualizar saldo na Variação
-        await tx.variacaoProduto.update({
-          where: { id: variacaoId },
-          data: {
-            estoqueAtual: {
-              increment: -Math.abs(quantidade)
-            }
-          }
-        });
-
-        // 3. Criar Lançamento Financeiro com vínculo de categoria
-        const lancamento = await tx.lancamentoFinanceiro.create({
-          data: {
-            clienteId,
-            leadId,
-            vendaId: venda.id,
-            categoriaId: categoriaId || null,
-            descricao: `Receita Venda: ${variacao.produto.nome} (${variacao.nome})`,
-            valor: valorTotal,
-            tipo: 'RECEITA',
-            status: 'PAGO',
-            dataVencimento: new Date(),
-            dataPagamento: new Date()
-          }
-        });
-
-        return { venda, movimentacao, lancamento };
-      });
+          throw err;
+        }
+      }
 
       return res.status(201).json({ success: true, data: resultado });
 
@@ -163,7 +199,9 @@ class VendaController {
               variacaoId: m.variacaoId,
               tipo: 'DEVOLUCAO',
               quantidade: qtdEstorno,
-              motivo: `Cancelamento da venda #${venda.id}${motivo ? ` — ${motivo}` : ''}`,
+              motivo: motivo
+                ? `Cancelamento da venda #${venda.numero} — ${motivo}`
+                : `Cancelamento da venda #${venda.numero}`,
               vendaId: venda.id,
             },
           });
@@ -183,8 +221,8 @@ class VendaController {
               status: 'CANCELADO',
               dataCancelamento: agora,
               motivoCancelamento: motivo
-                ? `Cancelamento da venda — ${motivo}`
-                : 'Cancelamento da venda',
+                ? `Cancelamento da venda #${venda.numero} — ${motivo}`
+                : `Cancelamento da venda #${venda.numero}`,
             },
           });
         }

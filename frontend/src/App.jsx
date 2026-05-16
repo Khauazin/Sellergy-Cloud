@@ -170,10 +170,12 @@ export default function App() {
             <Route path="/app/agenda" element={<AgendaPage />} />
             <Route path="/app/vendas" element={<VendasPage />} />
             <Route path="/app/catalogo" element={<CatalogoPage />} />
-            <Route path="/app/estoque" element={<EstoquePage />} />
+            <Route path="/app/estoque" element={<Navigate to="/app/estoque/visao-geral" replace />} />
+            <Route path="/app/estoque/:aba" element={<EstoquePage />} />
             <Route path="/app/financeiro" element={<FinanceiroPage />} />
             <Route path="/app/mensagens" element={<MensagensPlaceholder />} />
-            <Route path="/app/relatorios" element={<RelatoriosPage />} />
+            <Route path="/app/relatorios" element={<Navigate to="/app/relatorios/visao-executiva" replace />} />
+            <Route path="/app/relatorios/:aba" element={<RelatoriosPage />} />
             <Route path="/app/bots" element={<BotsClientePlaceholder />} />
             <Route path="/app/campanhas" element={<CampanhasClientePlaceholder />} />
             <Route path="/app/usuarios" element={<CrmUsersPage />} />

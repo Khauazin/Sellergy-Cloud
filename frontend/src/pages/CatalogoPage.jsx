@@ -250,11 +250,13 @@ export default function CatalogoPage() {
         onSalvar={handleSalvar}
       />
 
-      {/* Modal Variacao */}
+      {/* Modal Variacao — passa o tipo do produto pai pra controlar campos
+          condicionais (duracaoMin so aparece pra SERVICO). */}
       <ModalVariacao
         isOpen={modalVariacao.open}
         onClose={() => setModalVariacao({ open: false, data: null, produtoId: null })}
         variacao={modalVariacao.data}
+        tipoProduto={produtos.find((p) => p.id === modalVariacao.produtoId)?.tipo || modalVariacao.data?.produto?.tipo}
         onSalvar={handleSalvarVariacao}
       />
 
@@ -379,11 +381,13 @@ function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
   );
 }
 
-function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
+function ModalVariacao({ isOpen, onClose, variacao, tipoProduto, onSalvar }) {
+  const ehServico = tipoProduto === 'SERVICO';
   const [form, setForm] = useState({
     nome: '', sku: '', preco: 0, precoCusto: 0,
     precoCatalogo: '', usarPrecoCatalogo: false,
-    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '', imagemUrl: '',
+    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
+    duracaoMin: '', imagemUrl: '',
   });
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
@@ -397,12 +401,14 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
       estoqueMinimo: variacao.estoqueMinimo || 0,
       estoqueIdeal: variacao.estoqueIdeal || 0,
       localizacao: variacao.localizacao || '',
+      duracaoMin: variacao.duracaoMin ?? '',
       imagemUrl: variacao.imagemUrl || '',
     });
     else setForm({
       nome: '', sku: '', preco: 0, precoCusto: 0,
       precoCatalogo: '', usarPrecoCatalogo: false,
-      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '', imagemUrl: '',
+      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
+      duracaoMin: '', imagemUrl: '',
     });
     setTempsParaLimpar([]);
   }, [variacao, isOpen]);
@@ -448,6 +454,9 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
       estoqueAtual: parseInt(form.estoqueAtual) || 0,
       estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
       estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
+      // duracaoMin so e enviada quando o produto pai e SERVICO; em produto
+      // fisico vai null pra nao poluir o banco.
+      duracaoMin: ehServico && form.duracaoMin !== '' ? (parseInt(form.duracaoMin, 10) || null) : null,
       imagemUrl: form.imagemUrl || null,
     });
     setTempsParaLimpar([]);
@@ -513,6 +522,22 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
           <Input label="Estoque ideal" type="number" min="0" value={form.estoqueIdeal} onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })} hint="Alvo de reposicao" />
         </div>
         <Input label="Localizacao" value={form.localizacao} onChange={(e) => setForm({ ...form, localizacao: e.target.value })} placeholder="Ex: Corredor A, Prateleira 2" />
+
+        {/* Duracao do atendimento — so aparece quando o produto pai e SERVICO.
+            Usada pela Agenda pra pre-preencher e calcular conflito de horario. */}
+        {ehServico && (
+          <Input
+            label="Duração do atendimento (min)"
+            type="number"
+            min="5"
+            max="600"
+            step="5"
+            value={form.duracaoMin}
+            onChange={(e) => setForm({ ...form, duracaoMin: e.target.value })}
+            placeholder="Ex.: 30, 45, 60"
+            hint="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário."
+          />
+        )}
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>

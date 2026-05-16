@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Sun, Moon, Upload, ImageIcon, Trash2, Save, User, ShieldCheck,
-  Building2, ExternalLink, AlertCircle, Key
+  Building2, ChevronRight, AlertCircle, Key
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
@@ -34,7 +34,7 @@ export default function ConfiguracoesPage() {
   const [tab, setTab] = useState('aparencia');
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5 max-w-5xl">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="pills">
           <TabsTrigger value="aparencia" variant="pills">Aparencia</TabsTrigger>
@@ -58,10 +58,12 @@ export default function ConfiguracoesPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="conta" className="mt-5 space-y-2">
-          <ConfigLink icon={User} titulo="Meu perfil" descricao="Editar foto, nome, e-mail e senha" onClick={() => navigate('/app/configuracoes/perfil')} />
-          <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e definir permissoes" onClick={() => navigate('/app/usuarios')} />
-          <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de API (OpenAI, WhatsApp, etc.) cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
+        <TabsContent value="conta" className="mt-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <ConfigLink icon={User} titulo="Meu perfil" descricao="Editar foto, nome, e-mail e senha" onClick={() => navigate('/app/configuracoes/perfil')} />
+            <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e definir permissões" onClick={() => navigate('/app/usuarios')} />
+            <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de API (OpenAI, WhatsApp, etc.) cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
+          </div>
         </TabsContent>
 
         <TabsContent value="plano" className="mt-5">
@@ -255,16 +257,18 @@ function ConfigLink({ icon: Icon, titulo, descricao, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] hover:border-[var(--text-muted)] hover:bg-[var(--bg-subtle)]/50 transition-colors text-left"
+      className="group w-full flex flex-col items-start gap-3 p-5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] hover:border-[var(--accent)] hover:bg-[var(--bg-subtle)]/50 transition-colors text-left h-full"
     >
-      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0">
-        <Icon size={16} className="text-[var(--text-secondary)]" strokeWidth={1.75} />
+      <div className="w-10 h-10 rounded-xl bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 group-hover:bg-[var(--accent-soft)] group-hover:text-[var(--accent)] transition-colors">
+        <Icon size={18} className="text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" strokeWidth={1.75} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{titulo}</div>
-        <div className="text-xs text-[var(--text-muted)]">{descricao}</div>
+        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight flex items-center gap-1">
+          {titulo}
+          <ChevronRight size={14} className="text-[var(--text-muted)] group-hover:text-[var(--accent)] group-hover:translate-x-0.5 transition-all" />
+        </div>
+        <div className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">{descricao}</div>
       </div>
-      <ExternalLink size={14} className="text-[var(--text-muted)]" />
     </button>
   );
 }

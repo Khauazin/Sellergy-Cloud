@@ -180,7 +180,7 @@ export default function VendasPage() {
                         </div>
                         <div>
                           <div className={`text-sm font-semibold tracking-tight ${cancelada ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>
-                            {v.descricao || `Venda #${v.id.slice(0, 8)}`}
+                            {v.descricao || `Venda #${v.numero ?? v.id.slice(0, 8)}`}
                           </div>
                           <div className="text-[11px] text-[var(--text-muted)]">
                             {v.movimentacoesEstoque?.length || 0} itens

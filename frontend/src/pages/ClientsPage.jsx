@@ -10,6 +10,7 @@ import {
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast
 } from '../components/ui';
 import Modal from '../components/Modal';
+import { formatarTelefoneBR } from '../utils/formatTelefone';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const PLANOS = [
@@ -244,7 +245,14 @@ function ModalCliente({ isOpen, onClose, cliente, onSalvar }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label="Nome / Razao social" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
           <Input label="E-mail" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required={!cliente} />
-          <Input label="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+          <Input
+            label="Telefone"
+            value={form.telefone}
+            onChange={(e) => setForm({ ...form, telefone: formatarTelefoneBR(e.target.value) })}
+            placeholder="(11) 99999-9999"
+            maxLength={15}
+            inputMode="tel"
+          />
           <Input label="Segmento" value={form.segmento} onChange={(e) => setForm({ ...form, segmento: e.target.value })} placeholder="Ex: Loja, Clinica, Barbearia" />
           <Select label="Plano" value={form.plano} onChange={(e) => setForm({ ...form, plano: e.target.value })} options={PLANOS} placeholder="" />
           <Input label="Mensalidade (R$)" type="number" step="0.01" min="0" value={form.mensalidade} onChange={(e) => setForm({ ...form, mensalidade: e.target.value })} />

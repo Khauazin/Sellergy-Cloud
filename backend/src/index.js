@@ -99,6 +99,12 @@ app.use('/canais', rotasCanaisPublico);
 
 app.use(express.json({ limit: '1mb' }));
 
+// Imagens — intercepta `res.json` e troca `imagemUrl` por URL assinada
+// (bucket privado + pre-signed URL). Plugado APOS o parser e ANTES das
+// rotas autenticadas pra cobrir todas elas.
+const imagensAssinadasMiddleware = require('./middlewares/imagensAssinadas.middleware');
+app.use(imagensAssinadasMiddleware);
+
 // Injecao do Socket.io nas requisicoes
 app.use((req, res, next) => {
   req.io = io;
@@ -186,8 +192,16 @@ eventosExecucao.on('failed', ({ jobId, failedReason }) => {
 
 const PORTA = process.env.BACKEND_PORT || 3333;
 
-servidor.listen(PORTA, () => {
+servidor.listen(PORTA, async () => {
   console.log(`Servidor rodando na porta ${PORTA}`);
+  // Garante que o bucket de midias existe (privado — acesso via URL assinada).
+  try {
+    const { garantirBucket } = require('./storage/minio');
+    const r = await garantirBucket();
+    if (r.criado) console.log('[boot] Bucket de midias criado.');
+  } catch (e) {
+    console.error('[boot] Falha ao garantir bucket:', e?.message);
+  }
 });
 
 const { fecharFilas } = require('./filas');

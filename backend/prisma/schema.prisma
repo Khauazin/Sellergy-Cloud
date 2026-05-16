@@ -352,15 +352,45 @@ model Agendamento {
   criadoEm        DateTime          @default(now())
   atualizadoEm    DateTime          @updatedAt
 
-  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  lead    Lead?   @relation(fields: [leadId], references: [id])
+  cliente   Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead      Lead?                  @relation(fields: [leadId], references: [id])
+  historico HistoricoAgendamento[]
 
   @@map("agendamentos")
+}
+
+// Log auditavel de toda mudanca em agendamento.
+// acao: CRIADO | EDITADO | STATUS_MUDADO | EXCLUIDO
+// alteracoes: JSON com { campo: { de, para } } pra cada campo modificado
+// usuarioId/usuarioNome: quem fez. Null pra acoes do bot (origem AI).
+//
+// agendamentoId e nullable + ON DELETE SET NULL pra log de EXCLUIDO sobreviver
+// a delete do proprio agendamento (auditoria precisa preservar o trail mesmo
+// depois). Quando isso acontece, identificamos pelo snapshot guardado nas
+// alteracoes.
+model HistoricoAgendamento {
+  id            String   @id @default(uuid())
+  agendamentoId String?
+  acao          String
+  alteracoes    Json?
+  usuarioId     String?
+  usuarioNome   String?
+  origem        String?
+  criadoEm      DateTime @default(now())
+
+  agendamento Agendamento? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
+
+  @@index([agendamentoId, criadoEm])
+  @@map("agendamento_historico")
 }
 
 model Venda {
   id                     String                 @id @default(uuid())
   clienteId              String
+  // Numero sequencial humano-legivel por tenant. Cada tenant comeca em 1.
+  // O `id` UUID continua sendo a chave tecnica (relacionamentos seguros).
+  // O `numero` e o que aparece pra cliente final ("Venda #42").
+  numero                 Int
   leadId                 String?
   valor                  Float
   metodoPagamento        String?
@@ -377,6 +407,7 @@ model Venda {
   lancamentosFinanceiros LancamentoFinanceiro[]
   movimentacoesEstoque   MovimentacaoEstoque[]
 
+  @@unique([clienteId, numero])
   @@map("vendas")
 }
 
@@ -416,6 +447,10 @@ model VariacaoProduto {
   estoqueMinimo     Int?     @default(0)
   estoqueIdeal      Int?     @default(0)
   localizacao       String?
+  // Duracao em minutos — so faz sentido pra produtos do tipo SERVICO (ex.:
+  // "Corte de cabelo: 30min"). Usado pela Agenda pra pre-preencher e
+  // calcular conflito de horario. Null pra produtos fisicos.
+  duracaoMin        Int?
   imagemUrl         String? // imagem opcional da variacao (ex.: cor azul vs cor vermelha)
   criadoEm          DateTime @default(now())
   atualizadoEm      DateTime @updatedAt

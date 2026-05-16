@@ -268,11 +268,13 @@ class EstoqueController {
         orderBy: { estoqueAtual: 'asc' }
       });
 
-      // Cálculo da necessidade
+      // Cálculo da necessidade. Inclui imagemUrl (da variacao ou fallback pro
+      // produto) pra UI exibir thumb na lista de reposicao.
       const resultado = itensParaRepor.map(item => ({
         id: item.id,
         produto: item.produto.nome,
         variacao: item.nome,
+        imagemUrl: item.imagemUrl || item.produto.imagemUrl || null,
         estoqueAtual: item.estoqueAtual,
         estoqueMinimo: item.estoqueMinimo,
         estoqueIdeal: item.estoqueIdeal,

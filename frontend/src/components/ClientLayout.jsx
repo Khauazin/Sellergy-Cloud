@@ -18,9 +18,34 @@ const NAV_TENANT = [
   { to: '/app/agenda', label: 'Agenda', icon: Calendar, modulo: 'AGENDA' },
   { to: '/app/vendas', label: 'Vendas', icon: ShoppingBag, modulo: 'VENDAS' },
   { to: '/app/catalogo', label: 'Catalogo', icon: Package, modulo: 'CATALOGO' },
-  { to: '/app/estoque', label: 'Estoque', icon: Box, modulo: 'ESTOQUE' },
+  {
+    to: '/app/estoque',
+    label: 'Estoque',
+    icon: Box,
+    modulo: 'ESTOQUE',
+    subItems: [
+      { to: '/app/estoque/visao-geral', label: 'Visão geral' },
+      { to: '/app/estoque/produtos', label: 'Produtos' },
+      { to: '/app/estoque/movimentacoes', label: 'Movimentações' },
+      { to: '/app/estoque/reposicao', label: 'Reposição' },
+      { to: '/app/estoque/categorias', label: 'Categorias' },
+    ],
+  },
   { to: '/app/financeiro', label: 'Financeiro', icon: DollarSign, modulo: 'FINANCEIRO' },
-  { to: '/app/relatorios', label: 'Relatorios', icon: BarChart3, modulo: 'RELATORIOS' },
+  {
+    to: '/app/relatorios',
+    label: 'Relatorios',
+    icon: BarChart3,
+    modulo: 'RELATORIOS',
+    subItems: [
+      { to: '/app/relatorios/visao-executiva', label: 'Visão executiva' },
+      { to: '/app/relatorios/crm', label: 'CRM' },
+      { to: '/app/relatorios/financeiro', label: 'Financeiro' },
+      { to: '/app/relatorios/vendas', label: 'Vendas' },
+      { to: '/app/relatorios/estoque', label: 'Estoque & CMV' },
+      { to: '/app/relatorios/bots', label: 'Bots / IA' },
+    ],
+  },
 ];
 
 const NAV_AUTOMACAO = [
@@ -36,8 +61,19 @@ const TITULOS = {
   '/app/vendas': { titulo: 'Vendas', breadcrumb: 'Operacao' },
   '/app/catalogo': { titulo: 'Catalogo', breadcrumb: 'Produtos' },
   '/app/estoque': { titulo: 'Estoque', breadcrumb: 'Produtos' },
+  '/app/estoque/visao-geral': { titulo: 'Estoque · Visão geral', breadcrumb: 'Estoque · Produtos' },
+  '/app/estoque/produtos': { titulo: 'Estoque · Produtos', breadcrumb: 'Estoque · Produtos' },
+  '/app/estoque/movimentacoes': { titulo: 'Estoque · Movimentações', breadcrumb: 'Estoque · Produtos' },
+  '/app/estoque/reposicao': { titulo: 'Estoque · Reposição', breadcrumb: 'Estoque · Produtos' },
+  '/app/estoque/categorias': { titulo: 'Estoque · Categorias', breadcrumb: 'Estoque · Produtos' },
   '/app/financeiro': { titulo: 'Financeiro', breadcrumb: 'Gestao' },
   '/app/relatorios': { titulo: 'Relatorios', breadcrumb: 'Gestao' },
+  '/app/relatorios/visao-executiva': { titulo: 'Relatório · Visão executiva', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/crm': { titulo: 'Relatório · CRM', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/financeiro': { titulo: 'Relatório · Financeiro', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/vendas': { titulo: 'Relatório · Vendas', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/estoque': { titulo: 'Relatório · Estoque & CMV', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/bots': { titulo: 'Relatório · Bots / IA', breadcrumb: 'Relatórios · Gestão' },
   '/app/bots': { titulo: 'Bots', breadcrumb: 'Automacao' },
   '/app/campanhas': { titulo: 'Campanhas', breadcrumb: 'Automacao' },
   '/app/usuarios': { titulo: 'Equipe', breadcrumb: 'Conta' },
@@ -86,9 +122,11 @@ export default function ClientLayout() {
           onMenuClick={() => setSidebarOpen(true)}
         />
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-          <div className="max-w-[1400px] mx-auto">
-            <Outlet />
-          </div>
+          {/* Full-width: o conteudo ocupa toda a largura disponivel. Paginas
+              com formulario (Configuracoes, PerfilPage, CrmUsersPage) tem
+              max-w proprio e continuam centradas — listas/tabelas/dashboards
+              esticam pra aproveitar a tela inteira. */}
+          <Outlet />
         </main>
       </div>
     </div>

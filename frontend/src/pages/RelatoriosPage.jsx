@@ -7,6 +7,7 @@
 //   - GLOBAL: vale pra todas as abas — quando troca, todas refazem queries.
 
 import { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart,
   Users, Package, AlertCircle, Image as ImageIcon, Calendar,
@@ -19,7 +20,6 @@ import {
 import api from '../services/api';
 import {
   Card, Badge, Select, Input,
-  Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../components/ui';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -74,8 +74,43 @@ function calcularIntervalo(preset, customInicio, customFim) {
   }
 }
 
+// Mapeia o slug da URL pro componente da aba e seus metadados.
+const ABAS = {
+  'visao-executiva': {
+    titulo: 'Visão executiva',
+    descricao: 'Visão consolidada do que está acontecendo no seu negócio.',
+    Componente: AbaVisaoExecutiva,
+  },
+  'crm': {
+    titulo: 'CRM',
+    descricao: 'Funil, origem dos leads, tempo médio por etapa e quem está parado.',
+    Componente: AbaCRM,
+  },
+  'financeiro': {
+    titulo: 'Financeiro',
+    descricao: 'DRE, fluxo de caixa, inadimplência e detalhamento por categoria.',
+    Componente: AbaFinanceiro,
+  },
+  'vendas': {
+    titulo: 'Vendas',
+    descricao: 'Por canal, sazonalidade, categoria e ranking de lucratividade.',
+    Componente: AbaVendas,
+  },
+  'estoque': {
+    titulo: 'Estoque & CMV',
+    descricao: 'Patrimônio, curva ABC, margem por produto e estoque parado.',
+    Componente: AbaEstoque,
+  },
+  'bots': {
+    titulo: 'Bots / IA',
+    descricao: 'Mensagens, ferramentas usadas, custo de IA e saúde das execuções.',
+    Componente: AbaBots,
+  },
+};
+
 export default function RelatoriosPage() {
-  const [aba, setAba] = useState('executiva');
+  const { aba } = useParams();
+  const config = ABAS[aba] || ABAS['visao-executiva'];
   const [preset, setPreset] = useState('30d');
   const [customInicio, setCustomInicio] = useState('');
   const [customFim, setCustomFim] = useState('');
@@ -85,15 +120,20 @@ export default function RelatoriosPage() {
     [preset, customInicio, customFim]
   );
 
+  const Componente = config.Componente;
+
   return (
     <div className="space-y-5">
-      {/* Header com filtro de periodo */}
+      {/* Header com título dinâmico + filtro de periodo */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-[var(--text-main)]">Relatórios</h1>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Visão consolidada do que está acontecendo no seu negócio.
-          </p>
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+            Relatório
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-main)] mt-0.5">
+            {config.titulo}
+          </h1>
+          <p className="text-xs text-[var(--text-muted)] mt-1">{config.descricao}</p>
         </div>
         <FiltroPeriodo
           preset={preset}
@@ -106,40 +146,7 @@ export default function RelatoriosPage() {
         />
       </div>
 
-      <Tabs value={aba} onValueChange={setAba}>
-        <TabsList>
-          <TabsTrigger value="executiva">Visão executiva</TabsTrigger>
-          <TabsTrigger value="crm">CRM</TabsTrigger>
-          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
-          <TabsTrigger value="vendas">Vendas</TabsTrigger>
-          <TabsTrigger value="estoque">Estoque & CMV</TabsTrigger>
-          <TabsTrigger value="bots">Bots / IA</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="executiva">
-          <AbaVisaoExecutiva intervalo={intervalo} />
-        </TabsContent>
-
-        <TabsContent value="crm">
-          <AbaCRM intervalo={intervalo} />
-        </TabsContent>
-
-        <TabsContent value="financeiro">
-          <AbaFinanceiro intervalo={intervalo} />
-        </TabsContent>
-
-        <TabsContent value="vendas">
-          <AbaVendas intervalo={intervalo} />
-        </TabsContent>
-
-        <TabsContent value="estoque">
-          <AbaEstoque intervalo={intervalo} />
-        </TabsContent>
-
-        <TabsContent value="bots">
-          <AbaBots intervalo={intervalo} />
-        </TabsContent>
-      </Tabs>
+      <Componente intervalo={intervalo} />
     </div>
   );
 }
@@ -229,6 +236,17 @@ function AbaCRM({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
+  const [etapas, setEtapas] = useState([]);
+  const [filtros, setFiltros] = useState({ etapaId: '', origem: '' });
+
+  // Carrega lista de etapas pro select.
+  useEffect(() => {
+    let ativo = true;
+    api.get('/crm/stages').then((r) => {
+      if (ativo) setEtapas(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => { if (ativo) setEtapas([]); });
+    return () => { ativo = false; };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -238,17 +256,37 @@ function AbaCRM({ intervalo }) {
       params: {
         inicio: intervalo.inicio.toISOString(),
         fim: intervalo.fim.toISOString(),
+        ...(filtros.etapaId ? { etapaId: filtros.etapaId } : {}),
+        ...(filtros.origem ? { origem: filtros.origem } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.etapaId, filtros.origem]);
 
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <BlocoFiltros>
+        <Select
+          size="sm"
+          label="Etapa do funil"
+          value={filtros.etapaId}
+          onChange={(e) => setFiltros({ ...filtros, etapaId: e.target.value })}
+          options={[{ value: '', label: 'Todas as etapas' }, ...etapas.map((s) => ({ value: s.id, label: s.nome }))]}
+          placeholder=""
+        />
+        <Input
+          size="sm"
+          label="Origem"
+          value={filtros.origem}
+          onChange={(e) => setFiltros({ ...filtros, origem: e.target.value })}
+          placeholder="Ex.: Telegram, Manual, AI..."
+        />
+      </BlocoFiltros>
 
       {/* KPIs do CRM */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -343,6 +381,16 @@ function AbaFinanceiro({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
+  const [categorias, setCategorias] = useState([]);
+  const [filtros, setFiltros] = useState({ categoriaId: '', tipo: '' });
+
+  useEffect(() => {
+    let ativo = true;
+    api.get('/financeiro/categorias').then((r) => {
+      if (ativo) setCategorias(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => { if (ativo) setCategorias([]); });
+    return () => { ativo = false; };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -352,17 +400,42 @@ function AbaFinanceiro({ intervalo }) {
       params: {
         inicio: intervalo.inicio.toISOString(),
         fim: intervalo.fim.toISOString(),
+        ...(filtros.categoriaId ? { categoriaId: filtros.categoriaId } : {}),
+        ...(filtros.tipo ? { tipo: filtros.tipo } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.categoriaId, filtros.tipo]);
 
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <BlocoFiltros>
+        <Select
+          size="sm"
+          label="Categoria"
+          value={filtros.categoriaId}
+          onChange={(e) => setFiltros({ ...filtros, categoriaId: e.target.value })}
+          options={[{ value: '', label: 'Todas as categorias' }, ...categorias.map((c) => ({ value: c.id, label: `${c.nome} (${c.tipo})` }))]}
+          placeholder=""
+        />
+        <Select
+          size="sm"
+          label="Tipo"
+          value={filtros.tipo}
+          onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}
+          options={[
+            { value: '', label: 'Receita e despesa' },
+            { value: 'RECEITA', label: 'Apenas receitas' },
+            { value: 'DESPESA', label: 'Apenas despesas' },
+          ]}
+          placeholder=""
+        />
+      </BlocoFiltros>
 
       {/* KPIs do topo */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -445,6 +518,16 @@ function AbaEstoque({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
+  const [categorias, setCategorias] = useState([]);
+  const [filtros, setFiltros] = useState({ categoriaId: '' });
+
+  useEffect(() => {
+    let ativo = true;
+    api.get('/financeiro/categorias').then((r) => {
+      if (ativo) setCategorias(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => { if (ativo) setCategorias([]); });
+    return () => { ativo = false; };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -454,17 +537,29 @@ function AbaEstoque({ intervalo }) {
       params: {
         inicio: intervalo.inicio.toISOString(),
         fim: intervalo.fim.toISOString(),
+        ...(filtros.categoriaId ? { categoriaId: filtros.categoriaId } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.categoriaId]);
 
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <BlocoFiltros>
+        <Select
+          size="sm"
+          label="Categoria de produto"
+          value={filtros.categoriaId}
+          onChange={(e) => setFiltros({ ...filtros, categoriaId: e.target.value })}
+          options={[{ value: '', label: 'Todas as categorias' }, ...categorias.map((c) => ({ value: c.id, label: c.nome }))]}
+          placeholder=""
+        />
+      </BlocoFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -556,7 +651,7 @@ function TabelaReposicao({ itens }) {
     <table className="w-full">
       <thead>
         <tr className="border-b border-[var(--border-main)]">
-          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-28"></th>
           <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
           <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Atual / Mín</th>
           <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Comprar</th>
@@ -569,10 +664,10 @@ function TabelaReposicao({ itens }) {
           <tr key={r.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
             <td className="py-3 px-5">
               {r.imagemUrl ? (
-                <img src={r.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+                <img src={r.imagemUrl} alt="" className="w-24 h-24 object-contain" />
               ) : (
-                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
-                  <ImageIcon size={14} />
+                <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={28} />
                 </div>
               )}
             </td>
@@ -730,7 +825,7 @@ function TabelaMargem({ itens, carregando }) {
     <table className="w-full">
       <thead>
         <tr className="border-b border-[var(--border-main)]">
-          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-28"></th>
           <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
           <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo</th>
           <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
@@ -743,10 +838,10 @@ function TabelaMargem({ itens, carregando }) {
           <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
             <td className="py-3 px-5">
               {p.imagemUrl ? (
-                <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+                <img src={p.imagemUrl} alt="" className="w-24 h-24 object-contain" />
               ) : (
-                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
-                  <ImageIcon size={14} />
+                <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={28} />
                 </div>
               )}
             </td>
@@ -789,7 +884,7 @@ function TabelaEstoqueParado({ itens, carregando }) {
       <table className="w-full">
         <thead>
           <tr className="border-b border-[var(--border-main)]">
-            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+            <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-28"></th>
             <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
             <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Estoque</th>
             <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Capital travado</th>
@@ -801,10 +896,10 @@ function TabelaEstoqueParado({ itens, carregando }) {
             <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
               <td className="py-3 px-5">
                 {p.imagemUrl ? (
-                  <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+                  <img src={p.imagemUrl} alt="" className="w-24 h-24 object-contain" />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
-                    <ImageIcon size={14} />
+                  <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                    <ImageIcon size={28} />
                   </div>
                 )}
               </td>
@@ -841,6 +936,7 @@ function AbaVendas({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
+  const [filtros, setFiltros] = useState({ origem: '', metodoPagamento: '' });
 
   useEffect(() => {
     let ativo = true;
@@ -850,17 +946,36 @@ function AbaVendas({ intervalo }) {
       params: {
         inicio: intervalo.inicio.toISOString(),
         fim: intervalo.fim.toISOString(),
+        ...(filtros.origem ? { origem: filtros.origem } : {}),
+        ...(filtros.metodoPagamento ? { metodoPagamento: filtros.metodoPagamento } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.origem, filtros.metodoPagamento]);
 
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <BlocoFiltros>
+        <Input
+          size="sm"
+          label="Canal de origem"
+          value={filtros.origem}
+          onChange={(e) => setFiltros({ ...filtros, origem: e.target.value })}
+          placeholder="Ex.: Telegram, Manual..."
+        />
+        <Input
+          size="sm"
+          label="Método de pagamento"
+          value={filtros.metodoPagamento}
+          onChange={(e) => setFiltros({ ...filtros, metodoPagamento: e.target.value })}
+          placeholder="Ex.: PIX, Cartão..."
+        />
+      </BlocoFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1500,7 +1615,7 @@ function TabelaTopProdutos({ itens, carregando, colunas, mensagemVazia = 'Nenhum
     <table className="w-full">
       <thead>
         <tr className="border-b border-[var(--border-main)]">
-          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-28"></th>
           <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
           {colunas.map((c) => (
             <th key={c.label} className={`text-${c.align || 'right'} text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5`}>{c.label}</th>
@@ -1512,10 +1627,10 @@ function TabelaTopProdutos({ itens, carregando, colunas, mensagemVazia = 'Nenhum
           <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
             <td className="py-3 px-5">
               {p.imagemUrl ? (
-                <img src={p.imagemUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-[var(--border-main)]" />
+                <img src={p.imagemUrl} alt="" className="w-24 h-24 object-contain" />
               ) : (
-                <div className="w-10 h-10 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center text-[var(--text-muted)]">
-                  <ImageIcon size={14} />
+                <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                  <ImageIcon size={28} />
                 </div>
               )}
             </td>
@@ -1545,6 +1660,16 @@ function AbaBots({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
+  const [bots, setBots] = useState([]);
+  const [filtros, setFiltros] = useState({ botId: '', canal: '' });
+
+  useEffect(() => {
+    let ativo = true;
+    api.get('/bots').then((r) => {
+      if (ativo) setBots(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => { if (ativo) setBots([]); });
+    return () => { ativo = false; };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -1554,13 +1679,15 @@ function AbaBots({ intervalo }) {
       params: {
         inicio: intervalo.inicio.toISOString(),
         fim: intervalo.fim.toISOString(),
+        ...(filtros.botId ? { botId: filtros.botId } : {}),
+        ...(filtros.canal ? { canal: filtros.canal } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.botId, filtros.canal]);
 
   const fmtMs = (ms) => {
     if (!ms || ms < 1000) return `${ms || 0}ms`;
@@ -1570,6 +1697,31 @@ function AbaBots({ intervalo }) {
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <BlocoFiltros>
+        <Select
+          size="sm"
+          label="Bot"
+          value={filtros.botId}
+          onChange={(e) => setFiltros({ ...filtros, botId: e.target.value })}
+          options={[{ value: '', label: 'Todos os bots' }, ...bots.map((b) => ({ value: b.id, label: `${b.nome} (${b.canal})` }))]}
+          placeholder=""
+        />
+        <Select
+          size="sm"
+          label="Canal"
+          value={filtros.canal}
+          onChange={(e) => setFiltros({ ...filtros, canal: e.target.value })}
+          options={[
+            { value: '', label: 'Todos os canais' },
+            { value: 'WHATSAPP', label: 'WhatsApp' },
+            { value: 'TELEGRAM', label: 'Telegram' },
+            { value: 'INSTAGRAM', label: 'Instagram' },
+            { value: 'WEBSITE', label: 'Website' },
+          ]}
+          placeholder=""
+        />
+      </BlocoFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1967,6 +2119,24 @@ function ErroBox({ mensagem }) {
       <div className="flex items-center gap-2 text-sm text-[var(--danger)]">
         <AlertCircle size={16} />
         <span>{mensagem}</span>
+      </div>
+    </Card>
+  );
+}
+
+// Bloco de filtros adicionais por aba. Cada filho e um <Select> ou <Input>
+// com size="sm". Layout em grid responsivo.
+function BlocoFiltros({ children }) {
+  return (
+    <Card padding="md">
+      <div className="flex items-center gap-2 mb-2.5">
+        <Filter size={13} className="text-[var(--text-muted)]" />
+        <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
+          Filtros
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {children}
       </div>
     </Card>
   );

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   User, Mail, Lock, Save, AlertCircle, CheckCircle2, ShieldCheck,
-  Upload, Trash2, ImageIcon
+  Upload, Trash2, ImageIcon, ArrowLeft
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
@@ -94,6 +95,10 @@ export default function PerfilPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
+        <ArrowLeft size={12} /> Voltar para configurações
+      </Link>
+
       {/* Header com avatar real */}
       <Card padding="lg">
         <div className="flex items-center gap-4">

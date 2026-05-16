@@ -1,6 +1,6 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
-import { Bot } from 'lucide-react';
+import { Bot, ChevronRight } from 'lucide-react';
 
 /**
  * Sidebar do design system v2 com comportamento "hover-to-expand":
@@ -73,7 +73,79 @@ export default function Sidebar({ sections = [], mobileOpen = false, onClose, fo
   );
 }
 
-function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false }) {
+function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subItems }) {
+  const location = useLocation();
+
+  // Item com sub-itens: vira "menu pai" — clica no proprio parent leva pra `to`
+  // se ele for navegavel, e os sub-itens ficam indentados visiveis quando o
+  // sidebar esta expandido (hover ou mobile aberto).
+  if (Array.isArray(subItems) && subItems.length > 0) {
+    const algumSubAtivo = subItems.some((s) => location.pathname.startsWith(s.to));
+    return (
+      <li>
+        <NavLink
+          to={to}
+          end={end}
+          onClick={onClick}
+          title={label}
+          className={({ isActive }) =>
+            clsx(
+              'group/item relative flex items-center gap-3 h-10 px-3 rounded-lg',
+              'transition-colors duration-150',
+              'text-sm font-medium tracking-tight',
+              (isActive || algumSubAtivo)
+                ? 'bg-[var(--bg-subtle)] text-[var(--text-main)]'
+                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]/60 hover:text-[var(--text-main)]'
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {(isActive || algumSubAtivo) && (
+                <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--accent)]" />
+              )}
+              {Icon && (
+                <Icon
+                  size={18}
+                  strokeWidth={1.75}
+                  className={clsx(
+                    'flex-shrink-0',
+                    (isActive || algumSubAtivo) ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)] group-hover/item:text-[var(--text-secondary)]'
+                  )}
+                />
+              )}
+              <span className="flex-1 truncate opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 delay-75 whitespace-nowrap">
+                {label}
+              </span>
+              <ChevronRight
+                size={14}
+                className={clsx(
+                  'flex-shrink-0 text-[var(--text-muted)] transition-transform duration-200',
+                  'opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 delay-75',
+                  algumSubAtivo && 'rotate-90'
+                )}
+              />
+            </>
+          )}
+        </NavLink>
+        {/* Sub-itens — so visiveis QUANDO algum sub-item esta ativo (na rota).
+            Se o user nao esta numa sub-rota, o dropdown fica fechado mesmo no hover. */}
+        <ul
+          className={clsx(
+            'space-y-0.5 transition-all duration-200 overflow-hidden',
+            algumSubAtivo
+              ? 'mt-0.5 mb-1 opacity-100 max-h-96 lg:opacity-0 lg:max-h-0 lg:group-hover/sidebar:opacity-100 lg:group-hover/sidebar:max-h-96 lg:delay-100'
+              : 'opacity-0 max-h-0'
+          )}
+        >
+          {subItems.map((s) => (
+            <SidebarSubItem key={s.to} {...s} onClick={onClick} />
+          ))}
+        </ul>
+      </li>
+    );
+  }
+
   return (
     <li>
       <NavLink
@@ -123,6 +195,30 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false }) {
             )}
           </>
         )}
+      </NavLink>
+    </li>
+  );
+}
+
+function SidebarSubItem({ to, label, onClick, end = false }) {
+  return (
+    <li>
+      <NavLink
+        to={to}
+        end={end}
+        onClick={onClick}
+        className={({ isActive }) =>
+          clsx(
+            'flex items-center h-8 pl-11 pr-3 rounded-lg',
+            'text-[13px] font-medium tracking-tight',
+            'transition-colors duration-150',
+            isActive
+              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'text-[var(--text-muted)] hover:bg-[var(--bg-subtle)]/60 hover:text-[var(--text-secondary)]'
+          )
+        }
+      >
+        <span className="truncate whitespace-nowrap">{label}</span>
       </NavLink>
     </li>
   );

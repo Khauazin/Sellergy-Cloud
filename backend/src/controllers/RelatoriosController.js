@@ -34,6 +34,22 @@ function periodoAnterior({ inicio, fim }) {
   };
 }
 
+// Agrega lancamentos PAGOS de um tipo (RECEITA/DESPESA) num intervalo.
+// Retorna a Promise do prisma.aggregate — pode ser usado em Promise.all.
+// Se `contar=true`, inclui `_count: true` (usado em KPIs que mostram qtd).
+function somarLancamentosPagos({ clienteId, tipo, inicio, fim, contar = false }) {
+  return prisma.lancamentoFinanceiro.aggregate({
+    where: {
+      clienteId,
+      tipo,
+      status: 'PAGO',
+      dataPagamento: { gte: inicio, lte: fim },
+    },
+    _sum: { valor: true },
+    ...(contar ? { _count: true } : {}),
+  });
+}
+
 // =====================================================================
 // VISAO EXECUTIVA — KPIs consolidados de todos os modulos
 // =====================================================================
@@ -56,48 +72,11 @@ async function visaoExecutiva(req, res) {
       vendasPeriodo,
       topProdutos,
     ] = await Promise.all([
-      // 1. Receita PAGA no periodo
-      prisma.lancamentoFinanceiro.aggregate({
-        where: {
-          clienteId,
-          tipo: 'RECEITA',
-          status: 'PAGO',
-          dataPagamento: { gte: periodo.inicio, lte: periodo.fim },
-        },
-        _sum: { valor: true },
-        _count: true,
-      }),
-
-      // 2. Despesa PAGA no periodo
-      prisma.lancamentoFinanceiro.aggregate({
-        where: {
-          clienteId,
-          tipo: 'DESPESA',
-          status: 'PAGO',
-          dataPagamento: { gte: periodo.inicio, lte: periodo.fim },
-        },
-        _sum: { valor: true },
-      }),
-
-      // 3-4. Receita/Despesa do periodo anterior (pra delta)
-      prisma.lancamentoFinanceiro.aggregate({
-        where: {
-          clienteId,
-          tipo: 'RECEITA',
-          status: 'PAGO',
-          dataPagamento: { gte: anterior.inicio, lte: anterior.fim },
-        },
-        _sum: { valor: true },
-      }),
-      prisma.lancamentoFinanceiro.aggregate({
-        where: {
-          clienteId,
-          tipo: 'DESPESA',
-          status: 'PAGO',
-          dataPagamento: { gte: anterior.inicio, lte: anterior.fim },
-        },
-        _sum: { valor: true },
-      }),
+      // 1-4. Receita/Despesa PAGAS — periodo atual (com _count) + anterior (pra delta)
+      somarLancamentosPagos({ clienteId, tipo: 'RECEITA', inicio: periodo.inicio, fim: periodo.fim, contar: true }),
+      somarLancamentosPagos({ clienteId, tipo: 'DESPESA', inicio: periodo.inicio, fim: periodo.fim }),
+      somarLancamentosPagos({ clienteId, tipo: 'RECEITA', inicio: anterior.inicio, fim: anterior.fim }),
+      somarLancamentosPagos({ clienteId, tipo: 'DESPESA', inicio: anterior.inicio, fim: anterior.fim }),
 
       // 5. Saldo em risco (receitas pendentes vencidas, hoje)
       prisma.lancamentoFinanceiro.aggregate({
@@ -285,7 +264,10 @@ async function relatorioCRM(req, res) {
     const periodo = resolverPeriodo(req.query);
     const hoje = new Date();
     const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const trintaDiasAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Filtros extras (opcionais).
+    const filtroEtapa = typeof req.query.etapaId === 'string' && req.query.etapaId ? req.query.etapaId : null;
+    const filtroOrigem = typeof req.query.origem === 'string' && req.query.origem ? req.query.origem : null;
 
     const [
       etapas,
@@ -305,7 +287,11 @@ async function relatorioCRM(req, res) {
 
       // 2. Todos os leads ATUAIS — pra montar o funil
       prisma.lead.findMany({
-        where: { clienteId },
+        where: {
+          clienteId,
+          ...(filtroEtapa ? { etapaId: filtroEtapa } : {}),
+          ...(filtroOrigem ? { origem: filtroOrigem } : {}),
+        },
         select: {
           id: true,
           etapaId: true,
@@ -322,6 +308,8 @@ async function relatorioCRM(req, res) {
         where: {
           clienteId,
           criadoEm: { gte: periodo.inicio, lte: periodo.fim },
+          ...(filtroEtapa ? { etapaId: filtroEtapa } : {}),
+          ...(filtroOrigem ? { origem: filtroOrigem } : {}),
         },
         select: { id: true, origem: true, valor: true },
       }),
@@ -335,6 +323,8 @@ async function relatorioCRM(req, res) {
             { ultimoContato: null, criadoEm: { lt: seteDiasAtras } },
             { ultimoContato: { lt: seteDiasAtras } },
           ],
+          ...(filtroEtapa ? { etapaId: filtroEtapa } : {}),
+          ...(filtroOrigem ? { origem: filtroOrigem } : {}),
         },
         orderBy: [{ ultimoContato: 'asc' }, { criadoEm: 'asc' }],
         take: 50,
@@ -582,6 +572,10 @@ async function relatorioFinanceiro(req, res) {
     const periodo = resolverPeriodo(req.query);
     const hoje = new Date();
 
+    // Filtros extras
+    const filtroCategoria = typeof req.query.categoriaId === 'string' && req.query.categoriaId ? req.query.categoriaId : null;
+    const filtroTipo = req.query.tipo === 'RECEITA' || req.query.tipo === 'DESPESA' ? req.query.tipo : null;
+
     const [
       lancamentosPagos,        // tudo que foi PAGO no periodo (DRE + por categoria + fluxo)
       receitasPendentesVencidas, // pra aging (vence em datas passadas, nao paga)
@@ -592,17 +586,22 @@ async function relatorioFinanceiro(req, res) {
           clienteId,
           status: 'PAGO',
           dataPagamento: { gte: periodo.inicio, lte: periodo.fim },
+          ...(filtroCategoria ? { categoriaId: filtroCategoria } : {}),
+          ...(filtroTipo ? { tipo: filtroTipo } : {}),
         },
         include: { categoria: true },
         orderBy: { dataPagamento: 'asc' },
       }),
 
+      // Aging so faz sentido pra receitas — nao filtra por tipo aqui, mas
+      // categoria filtra se passada.
       prisma.lancamentoFinanceiro.findMany({
         where: {
           clienteId,
           tipo: 'RECEITA',
           status: 'PENDENTE',
           dataVencimento: { lt: hoje },
+          ...(filtroCategoria ? { categoriaId: filtroCategoria } : {}),
         },
         select: {
           id: true,
@@ -769,6 +768,13 @@ async function relatorioVendas(req, res) {
 
     const periodo = resolverPeriodo(req.query);
 
+    // Filtros extras
+    const filtroOrigem = typeof req.query.origem === 'string' && req.query.origem ? req.query.origem : null;
+    const filtroMetodo = typeof req.query.metodoPagamento === 'string' && req.query.metodoPagamento ? req.query.metodoPagamento : null;
+
+    // Pra filtrar por origem da venda (que vem do lead): precisa join com Lead.
+    const filtroLead = filtroOrigem ? { lead: { is: { origem: filtroOrigem } } } : {};
+
     const [vendas, movimentacoesVenda, leadsCriadosPeriodo] = await Promise.all([
       // Todas vendas COMPLETED no periodo, com lead pra agregar por origem.
       prisma.venda.findMany({
@@ -776,6 +782,8 @@ async function relatorioVendas(req, res) {
           clienteId,
           status: 'COMPLETED',
           data: { gte: periodo.inicio, lte: periodo.fim },
+          ...(filtroMetodo ? { metodoPagamento: filtroMetodo } : {}),
+          ...filtroLead,
         },
         include: {
           lead: { select: { id: true, origem: true } },
@@ -784,13 +792,18 @@ async function relatorioVendas(req, res) {
       }),
 
       // Movimentacoes VENDA do periodo — usadas pra CMV e categoria.
-      // Filtra explicitamente por vendaId nao nulo.
       prisma.movimentacaoEstoque.findMany({
         where: {
           tipo: 'VENDA',
           vendaId: { not: null },
           data: { gte: periodo.inicio, lte: periodo.fim },
           variacao: { produto: { clienteId } },
+          ...(filtroOrigem || filtroMetodo
+            ? { venda: {
+                ...(filtroMetodo ? { metodoPagamento: filtroMetodo } : {}),
+                ...filtroLead,
+              } }
+            : {}),
         },
         include: {
           variacao: {
@@ -997,12 +1010,15 @@ async function relatorioEstoque(req, res) {
 
     const periodo = resolverPeriodo(req.query);
     const hoje = new Date();
-    const sessentaDiasAtras = new Date(hoje.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+    // Filtros extras — categoria do produto
+    const filtroCategoria = typeof req.query.categoriaId === 'string' && req.query.categoriaId ? req.query.categoriaId : null;
+    const filtroProduto = filtroCategoria ? { categoriaId: filtroCategoria } : {};
 
     const [variacoes, movimentacoesPeriodo, ultimasMovimentacoes] = await Promise.all([
       // Todas variacoes do tenant + categoria
       prisma.variacaoProduto.findMany({
-        where: { produto: { clienteId } },
+        where: { produto: { clienteId, ...filtroProduto } },
         include: {
           produto: {
             select: {
@@ -1017,7 +1033,7 @@ async function relatorioEstoque(req, res) {
       prisma.movimentacaoEstoque.findMany({
         where: {
           data: { gte: periodo.inicio, lte: periodo.fim },
-          variacao: { produto: { clienteId } },
+          variacao: { produto: { clienteId, ...filtroProduto } },
         },
         select: {
           tipo: true, quantidade: true, data: true, vendaId: true,
@@ -1034,7 +1050,7 @@ async function relatorioEstoque(req, res) {
       // Pega a mais recente de cada variacao do tenant.
       prisma.movimentacaoEstoque.groupBy({
         by: ['variacaoId'],
-        where: { variacao: { produto: { clienteId } } },
+        where: { variacao: { produto: { clienteId, ...filtroProduto } } },
         _max: { data: true },
       }),
     ]);
@@ -1259,6 +1275,18 @@ async function relatorioBots(req, res) {
 
     const periodo = resolverPeriodo(req.query);
 
+    // Filtros extras
+    const filtroBot = typeof req.query.botId === 'string' && req.query.botId ? req.query.botId : null;
+    const canaisValidos = ['WHATSAPP', 'INSTAGRAM', 'TELEGRAM', 'WEBSITE'];
+    const filtroCanal = canaisValidos.includes(req.query.canal) ? req.query.canal : null;
+
+    // Mapeamento dos filtros pra cada query.
+    const filtroConversaWhere = {
+      ...(filtroBot ? { botId: filtroBot } : {}),
+      ...(filtroCanal ? { canal: filtroCanal } : {}),
+    };
+    const filtroBotWhere = filtroBot ? { id: filtroBot } : {};
+
     const [
       mensagens,
       conversasComMsg,
@@ -1270,6 +1298,7 @@ async function relatorioBots(req, res) {
         where: {
           clienteId,
           criadoEm: { gte: periodo.inicio, lte: periodo.fim },
+          ...(Object.keys(filtroConversaWhere).length > 0 ? { conversa: filtroConversaWhere } : {}),
         },
         select: {
           sentido: true, autor: true, criadoEm: true,
@@ -1278,11 +1307,11 @@ async function relatorioBots(req, res) {
       }),
 
       // Conversas com pelo menos 1 msg no periodo (pra contar ativas)
-      // Usa o ultimaMsgEm pra filtrar.
       prisma.conversa.findMany({
         where: {
           clienteId,
           ultimaMsgEm: { gte: periodo.inicio, lte: periodo.fim },
+          ...filtroConversaWhere,
         },
         select: {
           id: true, canal: true, identificador: true,
@@ -1297,7 +1326,7 @@ async function relatorioBots(req, res) {
       prisma.execucao.findMany({
         where: {
           iniciadaEm: { gte: periodo.inicio, lte: periodo.fim },
-          fluxo: { bot: { clienteId } },
+          fluxo: { bot: { clienteId, ...filtroBotWhere } },
         },
         select: {
           id: true, status: true, modo: true, duracaoMs: true,
@@ -1310,7 +1339,7 @@ async function relatorioBots(req, res) {
         where: {
           tipo: 'AI_AGENT',
           iniciadoEm: { gte: periodo.inicio, lte: periodo.fim },
-          execucao: { fluxo: { bot: { clienteId } } },
+          execucao: { fluxo: { bot: { clienteId, ...filtroBotWhere } } },
         },
         select: {
           status: true, saida: true, duracaoMs: true, iniciadoEm: true,

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Users, Plus, Edit2, Trash2, MoreHorizontal, Crown, BadgeCheck,
-  ShieldAlert, Mail, Sparkles
+  ShieldAlert, Mail, Sparkles, ArrowLeft
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
@@ -92,6 +93,10 @@ export default function CrmUsersPage() {
 
   return (
     <div className="space-y-5">
+      <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
+        <ArrowLeft size={12} /> Voltar para configurações
+      </Link>
+
       {/* Cabecalho explicativo */}
       <Card padding="lg">
         <div className="flex items-start gap-4">

@@ -10,6 +10,7 @@ import {
   useToast, Tabs, TabsList, TabsTrigger
 } from '../components/ui';
 import Modal from '../components/Modal';
+import { formatarTelefoneBR } from '../utils/formatTelefone';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const PRIORIDADES = [
@@ -449,7 +450,14 @@ function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-          <Input label="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+          <Input
+            label="Telefone"
+            value={form.telefone}
+            onChange={(e) => setForm({ ...form, telefone: formatarTelefoneBR(e.target.value) })}
+            placeholder="(11) 99999-9999"
+            maxLength={15}
+            inputMode="tel"
+          />
           <Input label="E-mail" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input label="Valor estimado (R$)" type="number" step="0.01" value={form.valor} onChange={(e) => setForm({ ...form, valor: parseFloat(e.target.value) || 0 })} />
           <Select label="Etapa" value={form.etapaId || ''} onChange={(e) => setForm({ ...form, etapaId: e.target.value })} placeholder="Sem etapa" options={stages.map((s) => ({ value: s.id, label: s.nome }))} />
