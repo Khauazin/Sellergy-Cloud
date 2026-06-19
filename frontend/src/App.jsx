@@ -34,19 +34,14 @@ import CredenciaisPage from './pages/CredenciaisPage';
 import ClientsPage from './pages/ClientsPage';
 import AdminPermissoesClientePage from './pages/AdminPermissoesClientePage';
 import BotsPage from './pages/BotsPage';
-import BotToolsPage from './pages/BotToolsPage';
 import BotCanalPage from './pages/BotCanalPage';
-import BotConfigPage from './pages/BotConfigPage';
-import MensagensPage from './pages/MensagensPage';
 import EspecialistasPage from './pages/EspecialistasPage';
-import BuilderPage from './pages/BuilderPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import RelatoriosPage from './pages/RelatoriosPage';
 import RelatorioMensalDetalhePage from './pages/RelatorioMensalDetalhePage';
 import UsersPage from './pages/UsersPage';
 import ConfiguracoesAdminPage from './pages/ConfiguracoesAdminPage';
-import AdminIaPage from './pages/AdminIaPage';
 import CampanhasPage from './pages/CampanhasPage';
 
 // Pacote 4 - placeholders.
@@ -145,14 +140,10 @@ export default function App() {
             <Route path="/admin/clientes/permissoes" element={<AdminPermissoesClientePage />} />
             <Route path="/admin/clientes/:id" element={<ClientsPage />} />
             <Route path="/admin/bots" element={<BotsPage />} />
-            <Route path="/admin/bots/:botId/tools" element={<BotToolsPage />} />
             <Route path="/admin/bots/:botId/canal" element={<BotCanalPage />} />
-            <Route path="/admin/bots/:botId/config" element={<BotConfigPage />} />
-            <Route path="/admin/builder/:botId" element={<BuilderPage />} />
             <Route path="/admin/alertas" element={<AlertsPage />} />
             <Route path="/admin/relatorios" element={<ReportsPage />} />
             <Route path="/admin/usuarios" element={<UsersPage />} />
-            <Route path="/admin/ia" element={<AdminIaPage />} />
             <Route path="/admin/configuracoes" element={<ConfiguracoesAdminPage />} />
             <Route path="/admin/configuracoes/perfil" element={<PerfilPage />} />
             <Route path="/admin/_design" element={<DesignShowcasePage />} />
@@ -181,7 +172,6 @@ export default function App() {
             <Route path="/app/estoque/:aba" element={<EstoquePage />} />
             <Route path="/app/financeiro" element={<Navigate to="/app/financeiro/lancamentos" replace />} />
             <Route path="/app/financeiro/:aba" element={<FinanceiroPage />} />
-            <Route path="/app/mensagens" element={<MensagensPage />} />
             <Route path="/app/relatorios" element={<Navigate to="/app/relatorios/visao-executiva" replace />} />
             {/* Detalhe do snapshot mensal — rota mais específica precisa vir ANTES da :aba. */}
             <Route path="/app/relatorios/mensais/:periodo" element={<RelatorioMensalDetalhePage />} />

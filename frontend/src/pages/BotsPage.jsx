@@ -220,15 +220,6 @@ export default function BotsPage() {
                     <td onClick={(e) => e.stopPropagation()} className="py-3 px-3">
                       <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
                         <DropdownItem icon={Edit2} onClick={() => setModal({ open: true, data: b })}>Editar</DropdownItem>
-                        <DropdownItem icon={Settings}>
-                          <Link to={`/admin/bots/${b.id}/config`}>Configurar bot</Link>
-                        </DropdownItem>
-                        <DropdownItem icon={Workflow}>
-                          <Link to={`/admin/builder/${b.id}`}>Construtor de fluxo</Link>
-                        </DropdownItem>
-                        <DropdownItem icon={Wrench}>
-                          <Link to={`/admin/bots/${b.id}/tools`}>Ferramentas do agente</Link>
-                        </DropdownItem>
                         <DropdownItem icon={MessageCircle}>
                           <Link to={`/admin/bots/${b.id}/canal`}>Canal externo</Link>
                         </DropdownItem>
@@ -461,13 +452,7 @@ function DrawerBot({ isOpen, onClose, bot, cliente, onEditar, onExcluir, onDupli
         <div className="grid grid-cols-2 gap-3">
           <InfoBox label="Mensagens hoje" valor={bot.mensagensHoje || 0} />
           <InfoBox label="Total" valor={(bot.totalMensagens || 0).toLocaleString('pt-BR')} />
-          <InfoBox label="Provedor IA" valor={bot.provedorIa || '—'} />
-          <InfoBox label="Modelo" valor={bot.modeloIa || '—'} />
         </div>
-
-        <Link to={`/admin/builder/${bot.id}`}>
-          <Button variant="primary" icon={Workflow} fullWidth>Abrir construtor de fluxo</Button>
-        </Link>
 
         {/* Publicar/despublicar: deixa o bot online (atendendo) ou offline. */}
         <Button

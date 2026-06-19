@@ -33,7 +33,6 @@ const SECTIONS = [
     titulo: 'Sistema',
     items: [
       { to: '/admin/usuarios', label: 'Equipe', icon: Users },
-      { to: '/admin/ia', label: 'Inteligencia (IA)', icon: Sparkles },
       { to: '/admin/configuracoes', label: 'Configuracoes', icon: Settings },
     ],
   },
@@ -48,7 +47,6 @@ const TITULOS = {
   '/admin/alertas': { titulo: 'Alertas', breadcrumb: 'Operacao' },
   '/admin/relatorios': { titulo: 'Relatorios', breadcrumb: 'Operacao' },
   '/admin/usuarios': { titulo: 'Equipe', breadcrumb: 'Sistema' },
-  '/admin/ia': { titulo: 'Inteligencia Artificial', breadcrumb: 'Sistema' },
   '/admin/configuracoes': { titulo: 'Configuracoes', breadcrumb: 'Sistema' },
   '/admin/_design': { titulo: 'Design system', breadcrumb: 'Sistema' },
 };
@@ -92,8 +90,6 @@ export default function AdminLayout() {
 
 function resolveDinamico(path) {
   if (path.startsWith('/admin/clientes/')) return { titulo: 'Detalhes do cliente', breadcrumb: 'Clientes' };
-  if (path.startsWith('/admin/builder/')) return { titulo: 'Construtor de fluxo', breadcrumb: 'Bots' };
-  if (path.match(/^\/admin\/bots\/[^/]+\/tools$/)) return { titulo: 'Ferramentas do agente', breadcrumb: 'Bots' };
   if (path.match(/^\/admin\/bots\/[^/]+\/canal$/)) return { titulo: 'Canal do bot', breadcrumb: 'Bots' };
   return { titulo: 'Sellergy Cloud', breadcrumb: 'Admin' };
 }

@@ -1,20 +1,16 @@
-// Helper para o ENGINE acessar credenciais do tenant just-in-time.
-// Usado por executores de no (HTTP_REQUEST, futuro AI_AGENT, etc.).
+// Helper para acessar credenciais cifradas do tenant just-in-time.
+// Pós-pivô ERP-first: será usado pelos adaptadores de PSP (pagamento) e fiscal
+// para decifrar a chave de API do tenant no momento da chamada externa.
 //
 // Filosofia: credenciais saem do banco em texto cifrado, sao decifradas
-// no momento do uso, e o resultado em claro NUNCA e logado, persistido
-// em ExecucaoNo.entrada/saida (registroLog ja trunca/sumariza), nem
+// no momento do uso, e o resultado em claro NUNCA e logado, persistido nem
 // retornado pelas rotas de leitura.
 //
 // Ao usar uma credencial, atualizamos `ultimoUsoEm` em background
-// (best-effort, nao bloqueia execucao).
+// (best-effort, nao bloqueia o uso).
 
 const prisma = require('./prisma');
 const { decifrarPayload } = require('./cripto/cofreCredenciais');
-
-// clienteId "virtual" pra cifrar/decifrar credenciais de PLATAFORMA (clienteId
-// null no banco). Chave de cifra estavel, ja que nao ha tenant pra derivar.
-const CLIENTE_ID_PLATAFORMA = '__PLATAFORMA__';
 
 async function carregarCredencialDecifrada({ credencialId, clienteId }) {
   if (!credencialId) return null;
@@ -24,8 +20,12 @@ async function carregarCredencialDecifrada({ credencialId, clienteId }) {
   if (!credencial) {
     throw new Error(`Credencial ${credencialId} nao encontrada (ou nao pertence ao tenant).`);
   }
-  // Plataforma (clienteId null) usa a chave estavel; tenant usa seu clienteId.
-  const chaveCripto = credencial.clienteId || CLIENTE_ID_PLATAFORMA;
+  // Cifra derivada por tenant. Credenciais de plataforma (clienteId null) foram
+  // removidas no pivô — toda credencial agora pertence a um tenant.
+  if (!credencial.clienteId) {
+    throw new Error(`Credencial ${credencialId} sem tenant — credenciais de plataforma foram removidas.`);
+  }
+  const chaveCripto = credencial.clienteId;
   let dados;
   try {
     dados = decifrarPayload(chaveCripto, credencial);
@@ -79,30 +79,7 @@ function aplicarCredencialEmCabecalhos(cabecalhos, credencialDecifrada) {
   return out;
 }
 
-// Resolve a credencial de PLATAFORMA (clienteId null) de um tipo — a IA padrao
-// fornecida pelo admin, usada quando o bot nao tem credencial propria.
-async function carregarCredencialPlataformaPorTipo({ tipo }) {
-  if (!tipo) return null;
-  const credencial = await prisma.credencial.findFirst({
-    where: { clienteId: null, tipo },
-    orderBy: { criadoEm: 'desc' },
-  });
-  if (!credencial) return null;
-  let dados;
-  try {
-    dados = decifrarPayload(CLIENTE_ID_PLATAFORMA, credencial);
-  } catch (err) {
-    throw new Error(`Falha ao decifrar credencial de plataforma: ${err.message}`);
-  }
-  prisma.credencial
-    .update({ where: { id: credencial.id }, data: { ultimoUsoEm: new Date() } })
-    .catch((e) => console.error('[credencial/stats]', e?.message || e));
-  return { id: credencial.id, tipo: credencial.tipo, nome: credencial.nome, dados };
-}
-
 module.exports = {
   carregarCredencialDecifrada,
-  carregarCredencialPlataformaPorTipo,
   aplicarCredencialEmCabecalhos,
-  CLIENTE_ID_PLATAFORMA,
 };

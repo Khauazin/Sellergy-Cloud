@@ -1,17 +1,16 @@
-// Filas BullMQ do Sellergy Cloud (Sub-fase 2.1).
-// O backend HTTP enfileira jobs aqui; o processo `worker.js` os processa.
+// Infra de filas BullMQ (esqueleto pós-pivô ERP-first).
+//
+// A execução de fluxo do bot-vendedor foi removida na limpeza do pivô. Esta
+// camada permanece como base para os jobs do ERP que entram nas próximas fases:
+// lembrete de agendamento, disparo de campanha, emissão fiscal, conciliação de
+// pagamento e expiração de cobrança (ver erp-arquitetura-e-operacao.md §8.4).
+//
+// Para adicionar um job: crie a Queue aqui, registre o consumidor no worker.js
+// e exporte os helpers de enfileiramento.
 
-const { Queue } = require('bullmq');
 const IORedis = require('ioredis');
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-
-const NOME_QUEUE_EXECUCAO = 'execucao-fluxo';
-const NOME_JOB_EXECUTAR = 'executar';
-const NOME_QUEUE_AGENDAMENTO = 'agendamento-disparo';
-const NOME_JOB_DISPARAR = 'disparar';
-const NOME_QUEUE_RETENCAO = 'retencao-execucoes';
-const NOME_JOB_LIMPAR = 'limpar';
 
 // Producer e Worker exigem opcoes de connection diferentes:
 //  - Producer: aceita defaults
@@ -24,122 +23,13 @@ function criarConexaoRedis({ paraWorker = false } = {}) {
   });
 }
 
-const conexaoProducer = criarConexaoRedis();
-
-const filaExecucao = new Queue(NOME_QUEUE_EXECUCAO, {
-  connection: conexaoProducer,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2_000 },
-    removeOnComplete: { age: 60 * 60 * 24 * 7, count: 5_000 },
-    removeOnFail: { age: 60 * 60 * 24 * 30 },
-  },
-});
-
-// Fila de schedulings: agendamentos cadastrados viram repeatable jobs aqui.
-// Quando disparam, o worker cria Execucao e enfileira em `execucao-fluxo`.
-const filaAgendamento = new Queue(NOME_QUEUE_AGENDAMENTO, {
-  connection: conexaoProducer,
-  defaultJobOptions: {
-    attempts: 1,
-    removeOnComplete: { age: 60 * 60 * 24 * 7, count: 1_000 },
-    removeOnFail: { age: 60 * 60 * 24 * 30 },
-  },
-});
-
-// Fila de retencao: job recorrente que apaga execucoes antigas de acordo com
-// `Fluxo.diasRetencaoSucesso` e `Fluxo.diasRetencaoErro`.
-const filaRetencao = new Queue(NOME_QUEUE_RETENCAO, {
-  connection: conexaoProducer,
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 30_000 },
-    removeOnComplete: { age: 60 * 60 * 24 * 7, count: 100 },
-    removeOnFail: { age: 60 * 60 * 24 * 30 },
-  },
-});
-
-// Job recorrente diario as 03:00 UTC. JobId fixo evita duplicacao.
-async function garantirJobRetencaoDiario() {
-  const jobId = 'retencao:diaria';
-  // Limpa repeatable antigo (caso o pattern tenha mudado entre deploys).
-  const repeatables = await filaRetencao.getRepeatableJobs();
-  for (const r of repeatables) {
-    if ((r.id || '').startsWith('retencao:')) {
-      await filaRetencao.removeRepeatableByKey(r.key);
-    }
-  }
-  return filaRetencao.add(
-    NOME_JOB_LIMPAR,
-    {},
-    {
-      jobId,
-      repeat: { pattern: '0 3 * * *', tz: 'UTC' },
-      removeOnComplete: true,
-    }
-  );
-}
-
-// `jobId: execucaoId` evita enfileirar a mesma execucao duas vezes (idempotencia).
-async function enfileirarExecucao({ execucaoId, prioridade }) {
-  return filaExecucao.add(
-    NOME_JOB_EXECUTAR,
-    { execucaoId },
-    { jobId: execucaoId, priority: prioridade }
-  );
-}
-
-// Adiciona/atualiza um repeatable job para um agendamento.
-// O `jobId` (`agendamento:<id>`) e a `repeatJobKey` ficam estaveis: se o
-// agendamento ja existir, BullMQ atualiza o pattern em vez de duplicar.
-async function adicionarRepeatableAgendamento({ agendamentoId, expressaoCron, fusoHorario }) {
-  const jobId = `agendamento:${agendamentoId}`;
-  // Remove eventual job anterior pra forcar nova programacao com o pattern atual.
-  await removerRepeatableAgendamento({ agendamentoId });
-  return filaAgendamento.add(
-    NOME_JOB_DISPARAR,
-    { agendamentoId },
-    {
-      jobId,
-      repeat: { pattern: expressaoCron, tz: fusoHorario },
-      removeOnComplete: true,
-    }
-  );
-}
-
-async function removerRepeatableAgendamento({ agendamentoId }) {
-  const repeatables = await filaAgendamento.getRepeatableJobs();
-  const alvos = repeatables.filter((r) => {
-    const id = r.id || '';
-    return id === `agendamento:${agendamentoId}` || id.startsWith(`agendamento:${agendamentoId}:`);
-  });
-  for (const r of alvos) {
-    await filaAgendamento.removeRepeatableByKey(r.key);
-  }
-}
-
+// Fecha as filas/conexões no shutdown. Sem filas ativas ainda — no-op seguro.
 async function fecharFilas() {
-  await filaExecucao.close();
-  await filaAgendamento.close();
-  await filaRetencao.close();
-  await conexaoProducer.quit();
+  // Quando houver Queues registradas, fechá-las aqui antes de encerrar.
 }
 
 module.exports = {
-  filaExecucao,
-  filaAgendamento,
-  filaRetencao,
-  enfileirarExecucao,
-  adicionarRepeatableAgendamento,
-  removerRepeatableAgendamento,
-  garantirJobRetencaoDiario,
   criarConexaoRedis,
   fecharFilas,
-  NOME_QUEUE_EXECUCAO,
-  NOME_JOB_EXECUTAR,
-  NOME_QUEUE_AGENDAMENTO,
-  NOME_JOB_DISPARAR,
-  NOME_QUEUE_RETENCAO,
-  NOME_JOB_LIMPAR,
   REDIS_URL,
 };

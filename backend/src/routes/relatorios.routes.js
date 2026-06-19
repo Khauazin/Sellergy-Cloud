@@ -21,7 +21,6 @@ roteador.get('/crm', podeVer, RelatoriosController.relatorioCRM);
 roteador.get('/financeiro', podeVer, RelatoriosController.relatorioFinanceiro);
 roteador.get('/vendas', podeVer, RelatoriosController.relatorioVendas);
 roteador.get('/estoque', podeVer, RelatoriosController.relatorioEstoque);
-roteador.get('/bots', podeVer, RelatoriosController.relatorioBots);
 roteador.get('/caixa', podeVer, RelatoriosController.relatorioCaixa);
 
 module.exports = roteador;

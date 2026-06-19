@@ -14,7 +14,6 @@ import { moduloLiberado } from '../constants/permissoes';
 const NAV_TENANT = [
   { to: '/app/dashboard', label: 'Início', icon: LayoutDashboard, modulo: null },
   { to: '/app/crm', label: 'Clientes', icon: Kanban, modulo: 'CRM' },
-  { to: '/app/mensagens', label: 'Mensagens', icon: MessageCircle, modulo: 'MENSAGENS' },
   { to: '/app/agenda', label: 'Agenda', icon: Calendar, modulo: 'AGENDA' },
   { to: '/app/especialistas', label: 'Especialistas', icon: UserCog, modulo: 'AGENDA' },
   { to: '/app/vendas', label: 'Vendas', icon: ShoppingBag, modulo: 'VENDAS' },
@@ -70,7 +69,6 @@ const NAV_AUTOMACAO = [
 const TITULOS = {
   '/app/dashboard': { titulo: 'Início', breadcrumb: 'Painel' },
   '/app/crm': { titulo: 'Clientes', breadcrumb: 'Atendimento' },
-  '/app/mensagens': { titulo: 'Mensagens', breadcrumb: 'Atendimento' },
   '/app/agenda': { titulo: 'Agenda', breadcrumb: 'Operacao' },
   '/app/especialistas': { titulo: 'Especialistas', breadcrumb: 'Operacao' },
   '/app/vendas': { titulo: 'Vendas', breadcrumb: 'Operacao' },
