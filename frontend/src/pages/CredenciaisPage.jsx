@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Key, Plus, Trash2, Pencil, Lock, ArrowLeft, Sparkles, Globe, MessageCircle, Send,
+  Key, Plus, Trash2, Pencil, Lock, ArrowLeft, Sparkles, Globe, MessageCircle,
 } from 'lucide-react';
 import {
   Card, CardHeader, CardTitle, CardDescription, Button, Badge, EmptyState,
@@ -14,7 +14,6 @@ const ROTULOS_TIPO = {
   ANTHROPIC_API_KEY: { rotulo: 'Anthropic Claude', cor: 'accent', categoria: 'IA', icone: Sparkles },
   GEMINI_API_KEY: { rotulo: 'Google Gemini', cor: 'accent', categoria: 'IA', icone: Sparkles },
   WHATSAPP_CLOUD_TOKEN: { rotulo: 'WhatsApp Cloud API', cor: 'success', categoria: 'Canal', icone: MessageCircle },
-  TELEGRAM_BOT_TOKEN: { rotulo: 'Telegram Bot', cor: 'info', categoria: 'Canal', icone: Send },
   HTTP_BEARER: { rotulo: 'HTTP Bearer Token', cor: 'neutral', categoria: 'HTTP', icone: Globe },
   HTTP_BASIC: { rotulo: 'HTTP Basic (usuario/senha)', cor: 'neutral', categoria: 'HTTP', icone: Globe },
   HTTP_API_KEY: { rotulo: 'HTTP API Key (header customizado)', cor: 'neutral', categoria: 'HTTP', icone: Globe },

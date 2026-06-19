@@ -19,7 +19,7 @@
 const axios = require('axios');
 const prisma = require('../../prisma');
 const { interpolar } = require('../expressoes');
-const { carregarCredencialDecifrada } = require('../../credenciais');
+const { carregarCredencialDecifrada, carregarCredencialPlataformaPorTipo } = require('../../credenciais');
 const { decifrar } = require('../../cripto/cofreMensagens');
 const { listarTools } = require('../../agente/tools');
 const { invocarTool } = require('../../agente/executor');
@@ -56,21 +56,27 @@ async function executar({ no, contexto }) {
   if (typeof dados.modelo !== 'string' || !dados.modelo.trim()) {
     throw new Error('AI_AGENT: campo "modelo" obrigatorio.');
   }
-  if (!dados.credencialId) {
-    throw new Error('AI_AGENT: campo "credencialId" obrigatorio.');
-  }
-
-  const credencial = await carregarCredencialDecifrada({
-    credencialId: dados.credencialId,
-    clienteId: contexto.clienteId,
-  });
-  if (!credencial) throw new Error('AI_AGENT: credencial nao encontrada.');
   const tipoEsperado = TIPO_CREDENCIAL_POR_PROVEDOR[provedor];
+
+  // Credencial: a do no/bot (do tenant) ou, na falta, a credencial de PLATAFORMA
+  // do tipo certo (a IA fornecida pelo admin). Sem nenhuma, erro.
+  let credencial;
+  if (dados.credencialId) {
+    credencial = await carregarCredencialDecifrada({
+      credencialId: dados.credencialId,
+      clienteId: contexto.clienteId,
+    });
+  } else {
+    credencial = await carregarCredencialPlataformaPorTipo({ tipo: tipoEsperado });
+  }
+  if (!credencial) {
+    throw new Error('AI_AGENT: sem credencial de IA (nem no bot, nem de plataforma).');
+  }
   if (credencial.tipo !== tipoEsperado) {
     throw new Error(`AI_AGENT: credencial e do tipo ${credencial.tipo}, mas provedor ${provedor} exige ${tipoEsperado}.`);
   }
 
-  const promptSistema = interpolar(dados.prompt || '', contexto);
+  let promptSistema = interpolar(dados.prompt || '', contexto);
 
   // Quando a execucao foi disparada por uma conversa de canal (Telegram/WhatsApp),
   // o LLM precisa do historico pra fazer multi-turno (ex.: pergunta nome -> espera
@@ -80,6 +86,13 @@ async function executar({ no, contexto }) {
   const historico = conversaId
     ? await carregarHistoricoConversa({ conversaId, clienteId: contexto.clienteId })
     : [];
+
+  // Memoria persistida da conversa (tool conversa.lembrar) — injeta no prompt
+  // pra sobreviver a janela de historico (dados estruturados + resumo curto).
+  if (conversaId) {
+    const memoria = await carregarMemoriaConversa({ conversaId, clienteId: contexto.clienteId });
+    if (memoria) promptSistema += `\n\n${memoria}`;
+  }
 
   const mensagemUsuario = historico.length === 0
     ? interpolar(dados.mensagemUsuario || '{{entrada}}', contexto)
@@ -113,11 +126,29 @@ async function executar({ no, contexto }) {
     credencial, toolsDisponiveis, contextoTool,
   };
 
+  let resultado;
   switch (provedor) {
-    case 'OPENAI': return loopOpenAI(params);
-    case 'ANTHROPIC': return loopAnthropic(params);
-    case 'GEMINI': return loopGemini(params);
+    case 'OPENAI': resultado = await loopOpenAI(params); break;
+    case 'ANTHROPIC': resultado = await loopAnthropic(params); break;
+    case 'GEMINI': resultado = await loopGemini(params); break;
   }
+
+  // Medicao de uso de IA por tenant (best-effort; nao bloqueia a resposta).
+  const tokensUsados = resultado?.saida?.tokensUsados || 0;
+  prisma.usoIa
+    .create({
+      data: {
+        clienteId: contexto.clienteId,
+        botId: contexto.botId || null,
+        execucaoId: contexto.execucaoId || null,
+        provedor,
+        modelo,
+        tokens: tokensUsados,
+      },
+    })
+    .catch((e) => console.error('[aiAgent/usoIa]', e?.message || e));
+
+  return resultado;
 }
 
 // ===========================================================
@@ -160,6 +191,34 @@ async function carregarHistoricoConversa({ conversaId, clienteId }) {
   } catch (e) {
     console.error('[aiAgent/historico]', e?.message || e);
     return [];
+  }
+}
+
+// ===========================================================
+// Memoria persistida da conversa (Conversa.estado.memoria)
+// ===========================================================
+async function carregarMemoriaConversa({ conversaId, clienteId }) {
+  if (!conversaId || !clienteId) return null;
+  try {
+    const conversa = await prisma.conversa.findFirst({
+      where: { id: conversaId, clienteId },
+      select: { estado: true },
+    });
+    const memoria = conversa?.estado?.memoria;
+    if (!memoria || typeof memoria !== 'object') return null;
+    const partes = [];
+    if (memoria.resumo) partes.push(`Resumo: ${memoria.resumo}`);
+    if (memoria.dados && typeof memoria.dados === 'object') {
+      const linhas = Object.entries(memoria.dados)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => `- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+      if (linhas.length) partes.push(`Fatos lembrados:\n${linhas.join('\n')}`);
+    }
+    if (partes.length === 0) return null;
+    return `MEMORIA DESTA CONVERSA (o que voce ja sabe — nao pergunte de novo):\n${partes.join('\n')}`;
+  } catch (e) {
+    console.error('[aiAgent/memoria]', e?.message || e);
+    return null;
   }
 }
 

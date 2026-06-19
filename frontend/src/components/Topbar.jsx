@@ -1,6 +1,7 @@
-import { Menu, Bell, Search } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import { IconButton } from './ui';
 import UserMenu from './UserMenu';
+import NotificacoesDropdown from './NotificacoesDropdown';
 
 /**
  * Topbar premium. Recebe titulo da pagina e opcionalmente acoes a direita.
@@ -37,7 +38,7 @@ export default function Topbar({ titulo, breadcrumb, actions, onMenuClick }) {
         <div className="flex items-center gap-1 sm:gap-2">
           {actions}
           <IconButton icon={Search} variant="ghost" size="md" ariaLabel="Buscar" />
-          <IconButton icon={Bell} variant="ghost" size="md" ariaLabel="Notificacoes" />
+          <NotificacoesDropdown />
           <div className="w-px h-6 bg-[var(--border-main)] mx-1" />
           <UserMenu />
         </div>

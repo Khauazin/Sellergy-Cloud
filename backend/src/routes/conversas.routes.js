@@ -17,6 +17,7 @@ const {
   ehAdmin,
   requerModuloLiberado,
   requerPermissao,
+  escopoDoUsuario,
 } = require('../middlewares/permissoes.middleware');
 const {
   requerAcessoConteudoMensagem,
@@ -44,6 +45,28 @@ function filtroTenant(usuario) {
   return { clienteId: usuario.clienteId };
 }
 
+// Filtro de ESCOPO da inbox: ADMIN/CLIENT/ADMINISTRADOR veem todas; VENDEDOR
+// com escopo PROPRIAS ve so as conversas onde e o responsavel (direto por
+// usuarioId, ou via o especialista vinculado a ele).
+async function filtroEscopoMensagens(usuario) {
+  const base = filtroTenant(usuario);
+  if (ehAdmin(usuario) || usuario.perfil === 'CLIENT' || usuario.perfil === 'ADMINISTRADOR') {
+    return base;
+  }
+  const u = await prisma.usuario.findUnique({
+    where: { id: usuario.id }, select: { permissoes: true },
+  });
+  const escopo = escopoDoUsuario(usuario, u?.permissoes || {}, 'MENSAGENS');
+  if (escopo === 'TODAS') return base;
+  return {
+    ...base,
+    OR: [
+      { usuarioId: usuario.id },
+      { especialista: { usuarioId: usuario.id } },
+    ],
+  };
+}
+
 // ==========================================================
 // LISTA DE CONVERSAS — todos os perfis (metadata)
 // ==========================================================
@@ -51,17 +74,21 @@ function filtroTenant(usuario) {
 // GET /conversas?limite=30&cursor=<id>&leadId=<id>
 roteador.get(
   '/',
-  requerModuloLiberado('CRM'),
-  requerPermissao('CRM', 'visualizar'),
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'visualizar'),
   async (req, res) => {
     try {
       const limite = parseLimite(req.query.limite);
       const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined;
       const leadId = typeof req.query.leadId === 'string' && req.query.leadId ? req.query.leadId : undefined;
 
-      const where = { ...filtroTenant(req.usuario), ...(leadId ? { leadId } : {}) };
+      const where = { ...(await filtroEscopoMensagens(req.usuario)), ...(leadId ? { leadId } : {}) };
       const conversas = await prisma.conversa.findMany({
         where,
+        include: {
+          lead: { select: { nome: true, telefone: true } },
+          especialista: { select: { id: true, nome: true } },
+        },
         orderBy: [{ ultimaMsgEm: 'desc' }, { criadoEm: 'desc' }],
         take: limite + 1,
         ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -79,13 +106,17 @@ roteador.get(
 // GET /conversas/:id  (metadata)
 roteador.get(
   '/:id',
-  requerModuloLiberado('CRM'),
-  requerPermissao('CRM', 'visualizar'),
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'visualizar'),
   async (req, res) => {
     try {
       const { id } = req.params;
       const conversa = await prisma.conversa.findFirst({
-        where: { id, ...filtroTenant(req.usuario) },
+        where: { id, ...(await filtroEscopoMensagens(req.usuario)) },
+        include: {
+          lead: { select: { id: true, nome: true, telefone: true } },
+          especialista: { select: { id: true, nome: true } },
+        },
       });
       if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
       res.json(conversa);
@@ -106,15 +137,15 @@ roteador.get(
 
 roteador.get(
   '/:id/mensagens',
-  requerModuloLiberado('CRM'),
-  requerPermissao('CRM', 'visualizar'),
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'visualizar'),
   async (req, res) => {
     try {
       const { id } = req.params;
       const incluirConteudo = req.query.incluirConteudo === 'true';
 
       const conversa = await prisma.conversa.findFirst({
-        where: { id, ...filtroTenant(req.usuario) },
+        where: { id, ...(await filtroEscopoMensagens(req.usuario)) },
         select: { id: true, clienteId: true },
       });
       if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
@@ -189,14 +220,14 @@ roteador.get(
 
 roteador.post(
   '/:id/mensagens',
-  requerModuloLiberado('CRM'),
-  requerPermissao('CRM', 'editar'),
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'responder'),
   requerAcessoConteudoMensagem,
   async (req, res) => {
     try {
       const { id } = req.params;
       const conversa = await prisma.conversa.findFirst({
-        where: { id, ...filtroTenant(req.usuario) },
+        where: { id, ...(await filtroEscopoMensagens(req.usuario)) },
         select: { id: true, clienteId: true },
       });
       if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
@@ -279,8 +310,8 @@ roteador.post(
 
 roteador.post(
   '/',
-  requerModuloLiberado('CRM'),
-  requerPermissao('CRM', 'criar'),
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'responder'),
   async (req, res) => {
     try {
       if (ehAdmin(req.usuario)) {
@@ -303,6 +334,125 @@ roteador.post(
     } catch (erro) {
       console.error('[conversas/criar]', erro);
       res.status(500).json({ erro: 'Erro ao criar conversa.' });
+    }
+  }
+);
+
+// ==========================================================
+// HANDOFF — assumir / devolver / atribuir (Fase 2.2)
+// ==========================================================
+
+// PATCH /conversas/:id/assumir — humano assume; o bot para de responder
+// (o dispatcher respeita estado.aguardandoHumano).
+roteador.patch(
+  '/:id/assumir',
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'responder'),
+  async (req, res) => {
+    try {
+      const conversa = await prisma.conversa.findFirst({
+        where: { id: req.params.id, ...(await filtroEscopoMensagens(req.usuario)) },
+        select: { id: true, estado: true },
+      });
+      if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
+      const estado = conversa.estado && typeof conversa.estado === 'object' ? conversa.estado : {};
+      const atualizada = await prisma.conversa.update({
+        where: { id: conversa.id },
+        data: {
+          usuarioId: req.usuario.id,
+          estado: { ...estado, aguardandoHumano: true, humanoAssumiuEm: new Date().toISOString() },
+        },
+      });
+      res.json(atualizada);
+    } catch (erro) {
+      console.error('[conversas/assumir]', erro);
+      res.status(500).json({ erro: 'Erro ao assumir conversa.' });
+    }
+  }
+);
+
+// PATCH /conversas/:id/devolver — devolve o controle ao bot (limpa o handoff).
+roteador.patch(
+  '/:id/devolver',
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'responder'),
+  async (req, res) => {
+    try {
+      const conversa = await prisma.conversa.findFirst({
+        where: { id: req.params.id, ...(await filtroEscopoMensagens(req.usuario)) },
+        select: { id: true, estado: true },
+      });
+      if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
+      const estado = conversa.estado && typeof conversa.estado === 'object' ? conversa.estado : {};
+      // Remove as marcas de handoff; preserva o resto do estado da conversa.
+      const { aguardandoHumano, humanoAssumiuEm, motivoEscalada, escaladoEm, ...resto } = estado;
+      const atualizada = await prisma.conversa.update({
+        where: { id: conversa.id },
+        data: { estado: resto },
+      });
+      res.json(atualizada);
+    } catch (erro) {
+      console.error('[conversas/devolver]', erro);
+      res.status(500).json({ erro: 'Erro ao devolver conversa ao bot.' });
+    }
+  }
+);
+
+// PATCH /conversas/:id/atribuir — define o responsavel. Exige escopo TODAS
+// (so quem ve todas pode reatribuir). Body: { usuarioId?, especialistaId? }.
+roteador.patch(
+  '/:id/atribuir',
+  requerModuloLiberado('MENSAGENS'),
+  requerPermissao('MENSAGENS', 'atribuir'),
+  async (req, res) => {
+    try {
+      const u = await prisma.usuario.findUnique({
+        where: { id: req.usuario.id }, select: { permissoes: true },
+      });
+      const escopo = escopoDoUsuario(req.usuario, u?.permissoes || {}, 'MENSAGENS');
+      if (escopo !== 'TODAS') {
+        return res.status(403).json({ erro: 'Reatribuir conversas exige escopo "todas".' });
+      }
+
+      const conversa = await prisma.conversa.findFirst({
+        where: { id: req.params.id, ...filtroTenant(req.usuario) },
+        select: { id: true, clienteId: true },
+      });
+      if (!conversa) return res.status(404).json({ erro: 'Conversa nao encontrada.' });
+
+      const { usuarioId, especialistaId } = req.body || {};
+      const data = {};
+      if (usuarioId !== undefined) {
+        if (usuarioId === null) {
+          data.usuarioId = null;
+        } else {
+          const alvo = await prisma.usuario.findFirst({
+            where: { id: usuarioId, clienteId: conversa.clienteId }, select: { id: true },
+          });
+          if (!alvo) return res.status(400).json({ erro: 'Usuario nao pertence ao tenant.' });
+          data.usuarioId = alvo.id;
+        }
+      }
+      if (especialistaId !== undefined) {
+        if (especialistaId === null) {
+          data.especialistaId = null;
+        } else {
+          const esp = await prisma.especialista.findFirst({
+            where: { id: especialistaId, clienteId: conversa.clienteId }, select: { id: true },
+          });
+          if (!esp) return res.status(400).json({ erro: 'Especialista nao pertence ao tenant.' });
+          data.especialistaId = esp.id;
+        }
+      }
+      if (Object.keys(data).length === 0) {
+        return res.status(400).json({ erro: 'Informe usuarioId e/ou especialistaId.' });
+      }
+
+      const atualizada = await prisma.conversa.update({ where: { id: conversa.id }, data });
+      res.json(atualizada);
+    } catch (erro) {
+      console.error('[conversas/atribuir]', erro);
+      res.status(500).json({ erro: 'Erro ao atribuir conversa.' });
     }
   }
 );

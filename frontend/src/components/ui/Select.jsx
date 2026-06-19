@@ -23,10 +23,16 @@ const Select = forwardRef(function Select({
     lg: 'h-12 text-base pl-5 pr-11',
   };
 
+  // Label e hint maiores quando size=lg, pra acompanhar a tipografia.
+  const labelCls = size === 'lg'
+    ? 'block text-sm font-semibold tracking-wide text-[var(--text-secondary)] mb-2'
+    : 'block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5';
+  const hintCls = size === 'lg' ? 'text-sm mt-1.5 font-medium' : 'text-xs mt-1.5 font-medium';
+
   return (
     <div className={clsx(fullWidth && 'w-full')}>
       {label && (
-        <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5">
+        <label className={labelCls}>
           {label}
         </label>
       )}
@@ -60,7 +66,7 @@ const Select = forwardRef(function Select({
       </div>
       {(error || hint) && (
         <p className={clsx(
-          'text-xs mt-1.5 font-medium',
+          hintCls,
           error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'
         )}>
           {error || hint}

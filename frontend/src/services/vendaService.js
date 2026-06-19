@@ -17,6 +17,13 @@ const vendaService = {
     const response = await api.post(`/vendas/${id}/cancelar`, { motivo });
     return response.data;
   },
+
+  // Vincula (ou desvincula com leadId=null) um cliente a venda ja registrada.
+  // Backend propaga pros lancamentos financeiros vinculados.
+  vincularLead: async (id, leadId) => {
+    const response = await api.put(`/vendas/${id}/lead`, { leadId: leadId || null });
+    return response.data;
+  },
 };
 
 export default vendaService;

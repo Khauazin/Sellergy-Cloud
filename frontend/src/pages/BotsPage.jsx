@@ -2,16 +2,26 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Bot, Edit2, Trash2, MoreHorizontal, Wifi, WifiOff, AlertCircle,
-  Sparkles, Workflow, Copy, MessageCircle, Wrench
+  Sparkles, Workflow, Copy, MessageCircle, Wrench, KeyRound, ExternalLink, Settings
 } from 'lucide-react';
 import api from '../services/api';
 import {
   Card, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast,
-  Combobox
+  Combobox, KpiCard,
 } from '../components/ui';
 import Modal from '../components/Modal';
 import { formatarTelefoneIntl } from '../utils/formatTelefone';
+import credenciaisService from '../services/credenciaisService';
+
+// Espelha TIPO_POR_PROVEDOR do backend (bots.routes.js). Mantém sincronizado.
+const TIPO_CREDENCIAL_POR_PROVEDOR = {
+  OPENAI: 'OPENAI_API_KEY',
+  ANTHROPIC: 'ANTHROPIC_API_KEY',
+  GEMINI: 'GEMINI_API_KEY',
+  DEEPSEEK: 'HTTP_API_KEY',
+  CUSTOM: null,
+};
 
 const STATUS_LABELS = {
   ONLINE: { label: 'Online', variant: 'success', icon: Wifi },
@@ -21,9 +31,6 @@ const STATUS_LABELS = {
 
 const CANAIS = [
   { value: 'WHATSAPP', label: 'WhatsApp' },
-  { value: 'INSTAGRAM', label: 'Instagram' },
-  { value: 'TELEGRAM', label: 'Telegram' },
-  { value: 'WEBSITE', label: 'Website' },
 ];
 
 const PROVEDORES = [
@@ -117,13 +124,26 @@ export default function BotsPage() {
     }
   };
 
+  // Publicar/despublicar = toggle ONLINE <-> OFFLINE. ERROR e estado de sistema.
+  const handlePublicar = async (b) => {
+    const novoStatus = b.status === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+    try {
+      await api.patch(`/bots/${b.id}/status`, { status: novoStatus });
+      toast.success(novoStatus === 'ONLINE' ? 'Bot publicado (online)' : 'Bot despublicado (offline)');
+      setDrawer({ open: false, bot: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.erro || 'Erro ao mudar status');
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Total" valor={stats.total} />
-        <Kpi label="Online" valor={stats.online} variant="success" />
-        <Kpi label="Em erro" valor={stats.erro} variant="danger" />
-        <Kpi label="Mensagens" valor={stats.msgs.toLocaleString('pt-BR')} variant="accent" />
+        <KpiCard icon={Bot} color="neutral" label="Total" valor={stats.total} />
+        <KpiCard icon={Wifi} color="success" label="Online" valor={stats.online} />
+        <KpiCard icon={AlertCircle} color="danger" label="Em erro" valor={stats.erro} />
+        <KpiCard icon={MessageCircle} color="accent" label="Mensagens" valor={stats.msgs.toLocaleString('pt-BR')} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -200,6 +220,9 @@ export default function BotsPage() {
                     <td onClick={(e) => e.stopPropagation()} className="py-3 px-3">
                       <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
                         <DropdownItem icon={Edit2} onClick={() => setModal({ open: true, data: b })}>Editar</DropdownItem>
+                        <DropdownItem icon={Settings}>
+                          <Link to={`/admin/bots/${b.id}/config`}>Configurar bot</Link>
+                        </DropdownItem>
                         <DropdownItem icon={Workflow}>
                           <Link to={`/admin/builder/${b.id}`}>Construtor de fluxo</Link>
                         </DropdownItem>
@@ -210,6 +233,9 @@ export default function BotsPage() {
                           <Link to={`/admin/bots/${b.id}/canal`}>Canal externo</Link>
                         </DropdownItem>
                         <DropdownItem icon={Copy} onClick={() => handleDuplicar(b)}>Duplicar</DropdownItem>
+                        <DropdownItem icon={b.status === 'ONLINE' ? WifiOff : Wifi} onClick={() => handlePublicar(b)}>
+                          {b.status === 'ONLINE' ? 'Despublicar' : 'Publicar'}
+                        </DropdownItem>
                         <DropdownDivider />
                         <DropdownItem icon={Trash2} variant="danger" onClick={() => handleExcluir(b)}>Excluir</DropdownItem>
                       </Dropdown>
@@ -238,30 +264,21 @@ export default function BotsPage() {
         onEditar={() => { setModal({ open: true, data: drawer.bot }); setDrawer({ open: false, bot: null }); }}
         onExcluir={() => handleExcluir(drawer.bot)}
         onDuplicar={() => handleDuplicar(drawer.bot)}
+        onPublicar={() => handlePublicar(drawer.bot)}
       />
     </div>
   );
 }
 
-function Kpi({ label, valor, variant }) {
-  return (
-    <Card padding="lg">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
-      <div className={`text-2xl font-semibold tracking-tight mt-1 tabular-nums ${
-        variant === 'success' ? 'text-[var(--success)]' :
-        variant === 'danger' ? 'text-[var(--danger)]' :
-        variant === 'accent' ? 'text-[var(--accent)]' :
-        'text-[var(--text-main)]'
-      }`}>{valor}</div>
-    </Card>
-  );
-}
+// Kpi local removido — usa KpiCard compartilhado do ui/.
 
 function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
   const [form, setForm] = useState({
     nome: '', clienteId: '', canal: 'WHATSAPP', telefone: '',
-    provedorIa: 'OPENAI', modeloIa: 'gpt-4o-mini', promptSistemaIa: '', temperaturaIa: 0.7, apiKeyIa: '',
+    provedorIa: 'OPENAI', modeloIa: 'gpt-4o-mini', promptSistemaIa: '', temperaturaIa: 0.7, credencialIaId: '',
   });
+  const [credenciais, setCredenciais] = useState([]);
+  const [carregandoCredenciais, setCarregandoCredenciais] = useState(false);
 
   useEffect(() => {
     if (bot) setForm({
@@ -270,22 +287,63 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
       modeloIa: bot.modeloIa || 'gpt-4o-mini',
       promptSistemaIa: bot.promptSistemaIa || '',
       temperaturaIa: bot.temperaturaIa ?? 0.7,
-      apiKeyIa: bot.apiKeyIa || '',
+      credencialIaId: bot.credencialIaId || '',
     });
     else setForm({
       nome: '', clienteId: '', canal: 'WHATSAPP', telefone: '',
-      provedorIa: 'OPENAI', modeloIa: 'gpt-4o-mini', promptSistemaIa: '', temperaturaIa: 0.7, apiKeyIa: '',
+      provedorIa: 'OPENAI', modeloIa: 'gpt-4o-mini', promptSistemaIa: '', temperaturaIa: 0.7, credencialIaId: '',
     });
   }, [bot, isOpen]);
+
+  // Carrega credenciais ao abrir o modal. O backend já filtra por tenant
+  // quando o usuário não é ADMIN; quando é ADMIN, vêm todas e a UI filtra
+  // pelo clienteId do form (campo abaixo).
+  useEffect(() => {
+    if (!isOpen) return;
+    let ativo = true;
+    setCarregandoCredenciais(true);
+    credenciaisService.listar()
+      .then((lista) => { if (ativo) setCredenciais(Array.isArray(lista) ? lista : []); })
+      .catch(() => { if (ativo) setCredenciais([]); })
+      .finally(() => { if (ativo) setCarregandoCredenciais(false); });
+    return () => { ativo = false; };
+  }, [isOpen]);
+
+  const tipoEsperado = TIPO_CREDENCIAL_POR_PROVEDOR[form.provedorIa] || null;
+
+  // Filtra credenciais elegíveis: pertencem ao cliente do bot e (se o provedor
+  // exige um tipo específico) batem com o tipo esperado.
+  const credenciaisElegiveis = useMemo(() => {
+    return credenciais.filter((c) => {
+      if (form.clienteId && c.clienteId && c.clienteId !== form.clienteId) return false;
+      if (tipoEsperado && c.tipo !== tipoEsperado) return false;
+      return true;
+    });
+  }, [credenciais, form.clienteId, tipoEsperado]);
+
+  // Quando o provedor muda e a credencial atual não bate mais com o tipo,
+  // limpa o campo pra forçar nova escolha.
+  useEffect(() => {
+    if (!form.credencialIaId) return;
+    const atual = credenciais.find((c) => c.id === form.credencialIaId);
+    if (!atual) return;
+    if (tipoEsperado && atual.tipo !== tipoEsperado) {
+      setForm((f) => ({ ...f, credencialIaId: '' }));
+    }
+  }, [tipoEsperado, credenciais]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.clienteId) { alert('Selecione um cliente'); return; }
     onSalvar({
       ...form,
+      credencialIaId: form.credencialIaId || null,
       temperaturaIa: parseFloat(form.temperaturaIa) || 0.7,
     });
   };
+
+  const semClienteSelecionado = !form.clienteId;
+  const labelTipoEsperado = tipoEsperado ? tipoEsperado.replace(/_/g, ' ') : null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={bot ? 'Editar bot' : 'Novo bot'} description="Configuracao basica do bot. O construtor de fluxo fica em outra tela." size="xl">
@@ -295,7 +353,7 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
           <Combobox
             label="Cliente"
             value={form.clienteId}
-            onChange={(id) => setForm({ ...form, clienteId: id })}
+            onChange={(id) => setForm({ ...form, clienteId: id, credencialIaId: '' })}
             placeholder="Selecione..."
             options={clientes.map((c) => ({ value: c.id, label: c.nome, sublabel: c.email }))}
           />
@@ -319,7 +377,39 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
             <Select label="Provedor" value={form.provedorIa} onChange={(e) => setForm({ ...form, provedorIa: e.target.value })} options={PROVEDORES} placeholder="" />
             <Input label="Modelo" value={form.modeloIa} onChange={(e) => setForm({ ...form, modeloIa: e.target.value })} placeholder="gpt-4o-mini, claude-sonnet-4, ..." />
             <Input label="Temperatura" type="number" step="0.1" min="0" max="2" value={form.temperaturaIa} onChange={(e) => setForm({ ...form, temperaturaIa: e.target.value })} hint="0 = deterministico, 1 = balanceado, 2 = criativo" />
-            <Input label="API Key" type="password" value={form.apiKeyIa} onChange={(e) => setForm({ ...form, apiKeyIa: e.target.value })} placeholder="sk-..." hint="Armazenada criptografada (futuro KMS)" />
+            <div>
+              <Combobox
+                label="Credencial da IA"
+                value={form.credencialIaId}
+                onChange={(id) => setForm({ ...form, credencialIaId: id || '' })}
+                placeholder={
+                  semClienteSelecionado ? 'Selecione um cliente antes' :
+                  carregandoCredenciais ? 'Carregando...' :
+                  credenciaisElegiveis.length === 0 ? 'Nenhuma credencial compativel' :
+                  'Escolha uma credencial'
+                }
+                options={credenciaisElegiveis.map((c) => ({
+                  value: c.id,
+                  label: c.nome,
+                  sublabel: c.tipo.replace(/_/g, ' '),
+                }))}
+                disabled={semClienteSelecionado || carregandoCredenciais}
+              />
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+                  <KeyRound size={11} />
+                  {labelTipoEsperado ? `Esperado: ${labelTipoEsperado}` : 'Provedor aceita qualquer tipo'}
+                </span>
+                <Link
+                  to="/app/configuracoes/credenciais"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-[var(--accent)] hover:underline flex items-center gap-1"
+                >
+                  Cadastrar nova <ExternalLink size={11} />
+                </Link>
+              </div>
+            </div>
           </div>
           <Textarea label="Prompt do sistema" value={form.promptSistemaIa} onChange={(e) => setForm({ ...form, promptSistemaIa: e.target.value })} rows={5} placeholder="Voce eh um assistente da loja X. Atenda clientes em portugues, seja cordial..." className="mt-3" />
         </div>
@@ -333,7 +423,7 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
   );
 }
 
-function DrawerBot({ isOpen, onClose, bot, cliente, onEditar, onExcluir, onDuplicar }) {
+function DrawerBot({ isOpen, onClose, bot, cliente, onEditar, onExcluir, onDuplicar, onPublicar }) {
   if (!bot) return null;
   const status = STATUS_LABELS[bot.status] || { label: bot.status, variant: 'neutral' };
 
@@ -378,6 +468,16 @@ function DrawerBot({ isOpen, onClose, bot, cliente, onEditar, onExcluir, onDupli
         <Link to={`/admin/builder/${bot.id}`}>
           <Button variant="primary" icon={Workflow} fullWidth>Abrir construtor de fluxo</Button>
         </Link>
+
+        {/* Publicar/despublicar: deixa o bot online (atendendo) ou offline. */}
+        <Button
+          variant="secondary"
+          icon={bot.status === 'ONLINE' ? WifiOff : Wifi}
+          fullWidth
+          onClick={onPublicar}
+        >
+          {bot.status === 'ONLINE' ? 'Despublicar (deixar offline)' : 'Publicar (deixar online)'}
+        </Button>
 
         {bot.promptSistemaIa && (
           <div>

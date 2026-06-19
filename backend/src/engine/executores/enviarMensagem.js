@@ -1,5 +1,5 @@
 // Envia uma mensagem de texto pelo canal externo da conversa que disparou
-// o fluxo (WhatsApp ou Telegram). Identifica a conversa via:
+// o fluxo (WhatsApp). Identifica a conversa via:
 //   1. no.dados.conversaId (interpolado)  — caso voce queira fixar
 //   2. contexto.dadosGatilho.conversaId   — caso comum, vindo do dispatcher
 //
@@ -13,7 +13,6 @@ const { interpolar } = require('../expressoes');
 const { cifrar } = require('../../cripto/cofreMensagens');
 const { carregarCredencialDecifrada } = require('../../credenciais');
 const whatsapp = require('../../canais/whatsapp');
-const telegram = require('../../canais/telegram');
 
 async function executar({ no, contexto }) {
   const dados = no.dados || {};
@@ -65,18 +64,6 @@ async function executar({ no, contexto }) {
         accessToken: credencial.dados.accessToken,
         phoneNumberId,
         destinatario: conversa.identificador,
-        texto,
-      });
-      messageIdCanal = r.messageIdCanal;
-      break;
-    }
-    case 'TELEGRAM': {
-      if (credencial.tipo !== 'TELEGRAM_BOT_TOKEN') {
-        throw new Error(`Conversa Telegram exige credencial TELEGRAM_BOT_TOKEN, recebido ${credencial.tipo}.`);
-      }
-      const r = await telegram.enviarTexto({
-        token: credencial.dados.token,
-        chatId: conversa.identificador,
         texto,
       });
       messageIdCanal = r.messageIdCanal;

@@ -78,10 +78,17 @@ export default function Combobox({
     onChange?.('', null);
   };
 
+  // Label/hint maiores quando size=lg (espelhando Input/Select).
+  const ehLg = size === 'lg';
+  const labelCls = ehLg
+    ? 'block text-sm font-semibold tracking-wide text-[var(--text-secondary)] mb-2'
+    : 'block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5';
+  const hintCls = ehLg ? 'text-sm mt-1.5 font-medium' : 'text-xs mt-1.5 font-medium';
+
   return (
     <div className={clsx(fullWidth && 'w-full', className)}>
       {label && (
-        <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5">
+        <label className={labelCls}>
           {label}
         </label>
       )}
@@ -190,7 +197,7 @@ export default function Combobox({
 
       {(error || hint) && (
         <p className={clsx(
-          'text-xs mt-1.5 font-medium',
+          hintCls,
           error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'
         )}>
           {error || hint}

@@ -9,30 +9,32 @@
 
 | Conceito | Onde | Para quê |
 |---|---|---|
-| **Catálogo** | `Produto` + `VariacaoProduto.precoCatalogo` | Vitrine pública/bot — como o produto é exibido ao cliente final |
-| **Estoque** | `VariacaoProduto.estoqueAtual` + `preco` + `precoCusto` | Operação interna — quantidade, preço de custo, preço de venda padrão |
+| **Catálogo** | `Produto` (tipo `SERVICO`) + `VariacaoProduto` | Serviços prestados (corte, consulta, manutenção) com preço e duração |
+| **Estoque** | `Produto` (tipo `FISICO`) + `VariacaoProduto.estoqueAtual` | Produtos físicos — quantidade, preço de custo, preço de venda |
 
 > Não são tabelas separadas. **Um único `Produto` + `VariacaoProduto`** atende
-> os dois conceitos. Os campos são distintos:
-> - `preco` — preço de venda padrão (estoque)
-> - `precoCatalogo` — preço alternativo para vitrine
-> - `usarPrecoCatalogo` — flag que decide qual prevalece em venda/agenda
+> os dois conceitos, diferenciados por `Produto.tipo` (`FISICO`/`SERVICO`):
+> - `preco` — preço único de venda (usado em vendas, agenda e bot)
+> - `precoCusto` — preço de compra (só para cálculo de lucro)
+
+> **Histórico:** existiu um "preço de catálogo público" (`precoCatalogo` +
+> `usarPrecoCatalogo`) para uma vitrine pública com preço diferente. Esse
+> conceito foi removido em 2026-05-28 — não há catálogo público; o que existe
+> é o catálogo de **serviços**. Hoje vale um único `preco` por variação.
 
 ### Regra de resolução de preço (autoritativa)
 
-Quando alguém vai usar um produto numa venda, agendamento ou listagem
-pública (catálogo), o preço resolvido segue:
+Quando alguém vai usar um produto numa venda, agendamento ou listagem,
+o preço é simplesmente:
 
 ```
-SE  variacao.usarPrecoCatalogo === true
-    E  variacao.precoCatalogo != null e > 0
-THEN preco = variacao.precoCatalogo
-ELSE preco = variacao.preco
+preco = variacao.preco
 ```
 
 Implementação: helper único no backend `produto.resolverPrecoVenda(variacao)`
 deve ser usado em **todo** lugar que precisa do preço — vendas (manual e bot),
-agenda, listagens públicas, tool `catalogo.buscarProduto` do AI Agent.
+agenda, listagens, tool `catalogo.buscarProduto` do AI Agent. Centralizar aqui
+mantém o número idêntico em UI, dashboards e agente.
 
 ### Imagens
 
@@ -51,9 +53,8 @@ agenda, listagens públicas, tool `catalogo.buscarProduto` do AI Agent.
 
 - Tela **Estoque** → "Novo produto" cria `Produto` + 1 `VariacaoProduto`
   inicial com `estoqueAtual` e `preco` definidos. Pode subir imagem.
-- Tela **Catálogo** → "Criar produto vinculado ao estoque" abre seletor de
-  produto/variação existente (do estoque) e permite definir `precoCatalogo`,
-  `usarPrecoCatalogo`, e adicionar imagem se ainda não tiver.
+- Tela **Catálogo** → cadastra **serviços** (`Produto.tipo = SERVICO`) com
+  `preco`, `duracaoMin` e imagem. Sem campos de estoque (não se aplicam).
 
 ---
 
@@ -62,8 +63,8 @@ agenda, listagens públicas, tool `catalogo.buscarProduto` do AI Agent.
 ### Lançamento (manual e bot)
 
 - Aba **Vendas** → "Nova venda" deixa o usuário escolher Produto/Variação
-  (lista vinda do catálogo + estoque). O preço sugerido vem do helper de
-  resolução acima (catálogo se ativo, senão estoque).
+  (lista de produtos físicos e serviços). O preço sugerido vem do helper de
+  resolução acima (`preco` da variação).
 - O usuário pode **sobrescrever** o preço (campo livre) — necessário para
   promoções e barganha presencial.
 - Lead pode ser opcional. Se informado, vincula `Venda.leadId`.

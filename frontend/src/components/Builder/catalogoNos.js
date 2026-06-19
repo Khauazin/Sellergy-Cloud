@@ -93,7 +93,7 @@ export const CATALOGO_NOS = {
   ENVIAR_MENSAGEM: {
     tipo: 'ENVIAR_MENSAGEM',
     rotulo: 'Enviar Mensagem',
-    descricao: 'Envia texto pela conversa que disparou o fluxo (WhatsApp/Telegram).',
+    descricao: 'Envia texto pela conversa que disparou o fluxo (WhatsApp).',
     categoria: 'CANAIS',
     icone: Send,
     cor: 'success',

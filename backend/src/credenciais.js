@@ -12,6 +12,10 @@
 const prisma = require('./prisma');
 const { decifrarPayload } = require('./cripto/cofreCredenciais');
 
+// clienteId "virtual" pra cifrar/decifrar credenciais de PLATAFORMA (clienteId
+// null no banco). Chave de cifra estavel, ja que nao ha tenant pra derivar.
+const CLIENTE_ID_PLATAFORMA = '__PLATAFORMA__';
+
 async function carregarCredencialDecifrada({ credencialId, clienteId }) {
   if (!credencialId) return null;
   const credencial = await prisma.credencial.findFirst({
@@ -20,9 +24,11 @@ async function carregarCredencialDecifrada({ credencialId, clienteId }) {
   if (!credencial) {
     throw new Error(`Credencial ${credencialId} nao encontrada (ou nao pertence ao tenant).`);
   }
+  // Plataforma (clienteId null) usa a chave estavel; tenant usa seu clienteId.
+  const chaveCripto = credencial.clienteId || CLIENTE_ID_PLATAFORMA;
   let dados;
   try {
-    dados = decifrarPayload(credencial.clienteId, credencial);
+    dados = decifrarPayload(chaveCripto, credencial);
   } catch (err) {
     throw new Error(`Falha ao decifrar credencial ${credencialId}: ${err.message}`);
   }
@@ -73,7 +79,30 @@ function aplicarCredencialEmCabecalhos(cabecalhos, credencialDecifrada) {
   return out;
 }
 
+// Resolve a credencial de PLATAFORMA (clienteId null) de um tipo — a IA padrao
+// fornecida pelo admin, usada quando o bot nao tem credencial propria.
+async function carregarCredencialPlataformaPorTipo({ tipo }) {
+  if (!tipo) return null;
+  const credencial = await prisma.credencial.findFirst({
+    where: { clienteId: null, tipo },
+    orderBy: { criadoEm: 'desc' },
+  });
+  if (!credencial) return null;
+  let dados;
+  try {
+    dados = decifrarPayload(CLIENTE_ID_PLATAFORMA, credencial);
+  } catch (err) {
+    throw new Error(`Falha ao decifrar credencial de plataforma: ${err.message}`);
+  }
+  prisma.credencial
+    .update({ where: { id: credencial.id }, data: { ultimoUsoEm: new Date() } })
+    .catch((e) => console.error('[credencial/stats]', e?.message || e));
+  return { id: credencial.id, tipo: credencial.tipo, nome: credencial.nome, dados };
+}
+
 module.exports = {
   carregarCredencialDecifrada,
+  carregarCredencialPlataformaPorTipo,
   aplicarCredencialEmCabecalhos,
+  CLIENTE_ID_PLATAFORMA,
 };

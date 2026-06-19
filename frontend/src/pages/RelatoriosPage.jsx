@@ -7,19 +7,23 @@
 //   - GLOBAL: vale pra todas as abas — quando troca, todas refazem queries.
 
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../store/auth.store';
+import relatorioMensalService from '../services/relatorioMensalService';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart,
   Users, Package, AlertCircle, Image as ImageIcon, Calendar,
   Filter, Clock, Phone, Mail, Wallet, ArrowUpRight, ArrowDownRight,
-  Bot, MessageSquare, Sparkles, Wrench, CheckCircle2, XCircle,
+  Bot, MessageSquare, Sparkles, Wrench, CheckCircle2, XCircle, HelpCircle,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar,
 } from 'recharts';
 import api from '../services/api';
 import {
-  Card, Badge, Select, Input,
+  Card, Badge, Select, Input, KpiCard,
+  Tooltip as InfoTooltip,
+  BarraFiltros, FiltroRapido, Combobox, PeriodoPills, BotaoExportar,
 } from '../components/ui';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -88,23 +92,33 @@ const ABAS = {
   },
   'financeiro': {
     titulo: 'Financeiro',
-    descricao: 'DRE, fluxo de caixa, inadimplência e detalhamento por categoria.',
+    descricao: 'Resultado do período, fluxo de caixa, cobranças vencidas e detalhamento por categoria.',
     Componente: AbaFinanceiro,
   },
   'vendas': {
     titulo: 'Vendas',
-    descricao: 'Por canal, sazonalidade, categoria e ranking de lucratividade.',
+    descricao: 'Por canal, quando você vende mais, categoria e ranking de lucratividade.',
     Componente: AbaVendas,
   },
   'estoque': {
     titulo: 'Estoque & CMV',
-    descricao: 'Patrimônio, curva ABC, margem por produto e estoque parado.',
+    descricao: 'Valor parado, produtos por importância, margem por produto e estoque sem giro.',
     Componente: AbaEstoque,
   },
   'bots': {
     titulo: 'Bots / IA',
-    descricao: 'Mensagens, ferramentas usadas, custo de IA e saúde das execuções.',
+    descricao: 'Mensagens, ferramentas usadas, custo de IA e atendimentos bem-sucedidos.',
     Componente: AbaBots,
+  },
+  'caixa': {
+    titulo: 'Caixa',
+    descricao: 'Sessões fechadas, retiradas, entradas e auditoria de diferenças de saldo.',
+    Componente: AbaCaixa,
+  },
+  'mensais': {
+    titulo: 'Fechamento mensal',
+    descricao: 'Histórico dos meses fechados. Snapshots gerados automaticamente todo dia 7 ou disparados manualmente.',
+    Componente: AbaMensais,
   },
 };
 
@@ -124,7 +138,10 @@ export default function RelatoriosPage() {
 
   return (
     <div className="space-y-5">
-      {/* Header com título dinâmico + filtro de periodo */}
+      {/* Header: título + período em pills horizontais (substitui o
+          antigo FiltroPeriodo em dropdown). Os filtros específicos de
+          cada aba (categoria, tipo, etapa, etc.) vivem na BarraFiltros
+          dentro de cada componente. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]">
@@ -135,18 +152,30 @@ export default function RelatoriosPage() {
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">{config.descricao}</p>
         </div>
-        <FiltroPeriodo
-          preset={preset}
-          onPresetChange={setPreset}
-          customInicio={customInicio}
-          customFim={customFim}
-          onCustomInicio={setCustomInicio}
-          onCustomFim={setCustomFim}
-          intervalo={intervalo}
-        />
+        <div className="min-w-0 flex-1 lg:max-w-2xl">
+          <PeriodoPills
+            preset={preset}
+            onPresetChange={setPreset}
+            customInicio={customInicio}
+            customFim={customFim}
+            onCustomInicio={setCustomInicio}
+            onCustomFim={setCustomFim}
+            intervalo={intervalo}
+          />
+        </div>
       </div>
 
       <Componente intervalo={intervalo} />
+    </div>
+  );
+}
+
+// Cabeçalho compacto que cada aba usa: contém apenas o botão de exportar
+// alinhado à direita. Mantém consistência visual entre as 7 abas.
+function CabecalhoAba({ montarDados, dados }) {
+  return (
+    <div className="flex justify-end" data-no-print>
+      <BotaoExportar montarDados={montarDados} desabilitado={!dados} />
     </div>
   );
 }
@@ -175,33 +204,75 @@ function AbaVisaoExecutiva({ intervalo }) {
     return () => { ativo = false; };
   }, [intervalo.inicio.getTime(), intervalo.fim.getTime()]);
 
+  const montarDados = () => ({
+    nome: 'relatorio-visao-executiva',
+    titulo: 'Relatório · Visão executiva',
+    secoes: [
+      {
+        titulo: 'Resumo',
+        colunas: [
+          { chave: 'indicador', label: 'Indicador' },
+          { chave: 'valor', label: 'Valor' },
+        ],
+        linhas: dados ? [
+          { indicador: 'Faturamento', valor: fmtBRL(dados.faturamento.valor) },
+          { indicador: 'Lucro líquido', valor: fmtBRL(dados.lucroLiquido.valor) },
+          { indicador: 'Margem líquida', valor: fmtPct(dados.lucroLiquido.margem) },
+          { indicador: 'CMV', valor: fmtBRL(dados.cmv.valor) },
+          { indicador: 'Vendas no período', valor: fmtNum(dados.vendas.total) },
+          { indicador: 'Ticket médio', valor: fmtBRL(dados.vendas.ticketMedio) },
+          { indicador: 'Novos clientes', valor: fmtNum(dados.leads.criados) },
+          { indicador: 'Atrasado a receber', valor: fmtBRL(dados.caixa.emRisco) },
+          { indicador: 'Saldo do período', valor: fmtBRL(dados.caixa.saldoPeriodo) },
+        ] : [],
+      },
+      {
+        titulo: 'Top produtos vendidos',
+        colunas: [
+          { chave: 'nome', label: 'Produto' },
+          { chave: 'quantidade', label: 'Quantidade', valor: (p) => fmtNum(p.quantidade) },
+          { chave: 'valor', label: 'Receita', valor: (p) => fmtBRL(p.valor) },
+        ],
+        linhas: dados?.topProdutos || [],
+      },
+    ],
+  });
+
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
+
+      <CabecalhoAba montarDados={montarDados} dados={dados} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard icon={DollarSign} color="success" label="Faturamento"
           valor={fmtBRL(dados?.faturamento.valor)} delta={dados?.faturamento.delta} carregando={carregando} />
         <KpiCard icon={TrendingUp} color="accent" label="Lucro líquido"
+          info="Quanto sobrou depois de pagar tudo (vendas menos despesas)."
           valor={fmtBRL(dados?.lucroLiquido.valor)} delta={dados?.lucroLiquido.delta}
           subvalor={dados ? `Margem ${fmtPct(dados.lucroLiquido.margem)}` : null} carregando={carregando} />
-        <KpiCard icon={Package} color="warning" label="CMV"
+        <KpiCard icon={Package} color="warning" label="Custo dos produtos"
+          info="Quanto você gastou comprando o que vendeu (CMV — Custo da Mercadoria Vendida)."
           valor={fmtBRL(dados?.cmv.valor)}
           subvalor={dados ? `${fmtPct(dados.cmv.percentual)} do faturamento` : null} carregando={carregando} />
-        <KpiCard icon={AlertCircle} color={dados?.caixa.emRisco > 0 ? 'danger' : 'neutral'} label="A receber em atraso"
+        <KpiCard icon={AlertCircle} color={dados?.caixa.emRisco > 0 ? 'danger' : 'neutral'} label="Atrasado a receber"
+          info="Cobranças que venceram e o cliente ainda não pagou."
           valor={fmtBRL(dados?.caixa.emRisco)}
           subvalor={dados ? `${dados.caixa.emRiscoQtd} título(s)` : null} carregando={carregando} />
-        <KpiCard icon={ShoppingCart} color="info" label="Vendas"
+        <KpiCard icon={ShoppingCart} color="info" label="Vendas no período"
           valor={fmtNum(dados?.vendas.total)}
           subvalor={dados ? `Ticket médio ${fmtBRL(dados.vendas.ticketMedio)}` : null} carregando={carregando} />
-        <KpiCard icon={Users} color="info" label="Leads criados"
+        <KpiCard icon={Users} color="info" label="Novos clientes"
+          info="Pessoas que entraram no funil no período."
           valor={fmtNum(dados?.leads.criados)} delta={dados?.leads.delta} carregando={carregando} />
         <KpiCard icon={TrendingUp} color="success" label="Lucro bruto"
+          info="Vendas menos o custo dos produtos (sem contar despesas fixas)."
           valor={fmtBRL(dados?.cmv.lucroBruto)}
           subvalor={dados?.faturamento.valor > 0
             ? `${fmtPct((dados.cmv.lucroBruto / dados.faturamento.valor) * 100)} margem bruta`
             : null} carregando={carregando} />
         <KpiCard icon={DollarSign} color="success" label="Saldo do período"
+          info="Tudo que entrou menos tudo que saiu no período."
           valor={fmtBRL(dados?.caixa.saldoPeriodo)}
           subvalor={dados ? `Receita ${fmtBRL(dados.caixa.receitaPaga)}, despesa ${fmtBRL(dados.caixa.despesaPaga)}` : null}
           carregando={carregando} />
@@ -237,7 +308,7 @@ function AbaCRM({ intervalo }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
   const [etapas, setEtapas] = useState([]);
-  const [filtros, setFiltros] = useState({ etapaId: '', origem: '' });
+  const [filtros, setFiltros] = useState({ etapaId: '', origem: '', filtroRapido: '' });
 
   // Carrega lista de etapas pro select.
   useEffect(() => {
@@ -266,42 +337,149 @@ function AbaCRM({ intervalo }) {
     return () => { ativo = false; };
   }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.etapaId, filtros.origem]);
 
+  // Filtros rápidos do CRM: cada um responde a uma pergunta de negócio.
+  // "Última etapa" = etapa final do funil (geralmente "Fechado"/"Convertido").
+  // Quando o filtro é orientado a etapa, setamos `etapaId`; quando é por
+  // origem (ex.: "Vindos do bot"), setamos `origem`.
+  const ultimaEtapa = etapas[etapas.length - 1];
+  const aplicarRapido = (chave) => {
+    const presets = {
+      'vindos-bot':     { etapaId: '', origem: 'AI' },
+      'manuais':        { etapaId: '', origem: 'Manual' },
+      'leads-quentes':  { etapaId: ultimaEtapa?.id || '', origem: '' },
+    };
+    if (!chave || !presets[chave]) {
+      setFiltros({ etapaId: '', origem: '', filtroRapido: '' });
+      return;
+    }
+    setFiltros({ ...presets[chave], filtroRapido: chave });
+  };
+
+  const mudarEtapa = (id) => setFiltros((f) => ({ ...f, etapaId: id || '', filtroRapido: '' }));
+  const mudarOrigem = (origem) => setFiltros((f) => ({ ...f, origem: origem || '', filtroRapido: '' }));
+  const limparTudo = () => setFiltros({ etapaId: '', origem: '', filtroRapido: '' });
+
+  const etapaSelecionada = etapas.find((e) => e.id === filtros.etapaId);
+  const filtrosAtivos = [
+    filtros.filtroRapido && {
+      rotulo: { 'vindos-bot': 'Vindos do bot', 'manuais': 'Cadastrados manualmente', 'leads-quentes': 'Leads quentes' }[filtros.filtroRapido],
+      onRemover: () => aplicarRapido(null),
+    },
+    !filtros.filtroRapido && etapaSelecionada && {
+      rotulo: `Etapa: ${etapaSelecionada.nome}`,
+      onRemover: () => mudarEtapa(''),
+    },
+    !filtros.filtroRapido && filtros.origem && {
+      rotulo: `Origem: ${filtros.origem}`,
+      onRemover: () => mudarOrigem(''),
+    },
+  ].filter(Boolean);
+
+  const contadorTotal = dados?.totais?.leadsAbertos;
+  const contador = contadorTotal !== undefined ? `${contadorTotal} cliente(s) em negociação` : null;
+
+  const montarDados = () => ({
+    nome: 'relatorio-crm',
+    titulo: 'Relatório · Clientes',
+    filtrosAtivos: filtrosAtivos.map((f) => f.rotulo),
+    secoes: [
+      {
+        titulo: 'Resumo',
+        colunas: [{ chave: 'indicador', label: 'Indicador' }, { chave: 'valor', label: 'Valor' }],
+        linhas: dados ? [
+          { indicador: 'Clientes em negociação', valor: fmtNum(dados.totais.leadsAbertos) },
+          { indicador: 'Valor potencial em vendas', valor: fmtBRL(dados.totais.valorTotalFunil) },
+          { indicador: 'Novos clientes no período', valor: fmtNum(dados.totais.criadosPeriodo) },
+          { indicador: 'Conversões no período', valor: fmtNum(dados.totais.conversoesPeriodo) },
+        ] : [],
+      },
+      {
+        titulo: 'Funil de conversão',
+        colunas: [
+          { chave: 'nome', label: 'Etapa' },
+          { chave: 'leads', label: 'Clientes' },
+          { chave: 'valor', label: 'Valor potencial', valor: (e) => fmtBRL(e.valor) },
+        ],
+        linhas: dados?.funil || [],
+      },
+      {
+        titulo: 'Clientes sem contato',
+        colunas: [
+          { chave: 'nome', label: 'Nome' },
+          { chave: 'etapa', label: 'Etapa' },
+          { chave: 'diasParado', label: 'Dias sem contato' },
+        ],
+        linhas: dados?.leadsParados || [],
+      },
+      {
+        titulo: 'De onde vieram os clientes',
+        colunas: [
+          { chave: 'origem', label: 'Origem' },
+          { chave: 'qtd', label: 'Quantidade' },
+        ],
+        linhas: dados?.origens || [],
+      },
+    ],
+  });
+
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
 
-      <BlocoFiltros>
-        <Select
-          size="sm"
-          label="Etapa do funil"
-          value={filtros.etapaId}
-          onChange={(e) => setFiltros({ ...filtros, etapaId: e.target.value })}
-          options={[{ value: '', label: 'Todas as etapas' }, ...etapas.map((s) => ({ value: s.id, label: s.nome }))]}
-          placeholder=""
+      <CabecalhoAba montarDados={montarDados} dados={dados} />
+
+      <BarraFiltros
+        contador={contador}
+        filtrosAtivos={filtrosAtivos}
+        onLimparTudo={limparTudo}
+      >
+        <FiltroRapido
+          ativo={filtros.filtroRapido}
+          onChange={aplicarRapido}
+          opcoes={[
+            { chave: 'vindos-bot', label: 'Vindos do bot' },
+            { chave: 'manuais', label: 'Cadastrados manualmente' },
+            { chave: 'leads-quentes', label: 'Leads quentes (etapa final)' },
+          ]}
         />
-        <Input
-          size="sm"
-          label="Origem"
-          value={filtros.origem}
-          onChange={(e) => setFiltros({ ...filtros, origem: e.target.value })}
-          placeholder="Ex.: Telegram, Manual, AI..."
-        />
-      </BlocoFiltros>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Combobox
+            size="sm"
+            label="Filtrar por etapa do funil"
+            value={filtros.etapaId}
+            onChange={(id) => mudarEtapa(id)}
+            placeholder="Todas as etapas"
+            options={etapas.map((e) => ({ value: e.id, label: e.nome }))}
+            clearable
+          />
+          <Input
+            size="sm"
+            label="De onde veio o cliente"
+            value={filtros.origem}
+            onChange={(e) => mudarOrigem(e.target.value)}
+            placeholder="Ex.: WhatsApp, Instagram, indicação..."
+          />
+        </div>
+      </BarraFiltros>
 
       {/* KPIs do CRM */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={Users} color="info" label="Leads abertos no funil"
+        <KpiCard icon={Users} color="info" label="Clientes em negociação"
+          info="Pessoas que ainda não compraram nem foram descartadas — estão em alguma etapa do funil."
           valor={fmtNum(dados?.totais.leadsAbertos)}
           subvalor={dados ? `Valor potencial ${fmtBRL(dados.totais.valorTotalFunil)}` : null}
           carregando={carregando} />
-        <KpiCard icon={TrendingUp} color="accent" label="Leads criados (período)"
+        <KpiCard icon={TrendingUp} color="accent" label="Novos clientes no período"
           valor={fmtNum(dados?.totais.criadosPeriodo)} carregando={carregando} />
-        <KpiCard icon={ShoppingCart} color="success" label="Conversões (período)"
+        <KpiCard icon={ShoppingCart} color="success" label="Vendas fechadas"
+          info="Clientes que viraram venda no período."
           valor={fmtNum(dados?.totais.conversoesPeriodo)}
           subvalor={dados?.totais.taxaConversao !== null && dados?.totais.taxaConversao !== undefined
             ? `Taxa ${fmtPct(dados.totais.taxaConversao)}` : null}
           carregando={carregando} />
-        <KpiCard icon={AlertCircle} color="warning" label="Leads parados (>7d)"
+        <KpiCard icon={AlertCircle} color="warning" label="Sem contato há 7+ dias"
+          info="Clientes parados no funil que precisam de atenção."
           valor={fmtNum(dados?.leadsParados.length)}
           subvalor="Sem contato recente"
           carregando={carregando} />
@@ -340,7 +518,7 @@ function AbaCRM({ intervalo }) {
       {/* Leads parados */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Leads parados</div>
+          <TituloSecao titulo="Clientes sem contato" info="Clientes parados no funil há vários dias. Vale dar uma atenção pra não esfriar." />
           <div className="text-sm text-[var(--text-secondary)] mt-0.5">
             Sem contato registrado há mais de 7 dias — chame eles
           </div>
@@ -382,7 +560,7 @@ function AbaFinanceiro({ intervalo }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
   const [categorias, setCategorias] = useState([]);
-  const [filtros, setFiltros] = useState({ categoriaId: '', tipo: '' });
+  const [filtros, setFiltros] = useState({ categoriaId: '', tipo: '', subTipo: '', filtroRapido: '' });
 
   useEffect(() => {
     let ativo = true;
@@ -402,54 +580,182 @@ function AbaFinanceiro({ intervalo }) {
         fim: intervalo.fim.toISOString(),
         ...(filtros.categoriaId ? { categoriaId: filtros.categoriaId } : {}),
         ...(filtros.tipo ? { tipo: filtros.tipo } : {}),
+        ...(filtros.subTipo ? { subTipo: filtros.subTipo } : {}),
       },
     })
       .then((r) => { if (ativo) setDados(r.data); })
       .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.categoriaId, filtros.tipo]);
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.categoriaId, filtros.tipo, filtros.subTipo]);
+
+  // Filtros rápidos: aplicam combinações pré-configuradas. Setam o flag
+  // `filtroRapido` para marcar a pílula ativa visualmente.
+  const aplicarRapido = (chave) => {
+    const presets = {
+      'recebidos':           { categoriaId: '', tipo: 'RECEITA', subTipo: '' },
+      'despesas-todas':      { categoriaId: '', tipo: 'DESPESA', subTipo: '' },
+      'despesas-fixas':      { categoriaId: '', tipo: 'DESPESA', subTipo: 'FIXA' },
+      'despesas-variaveis':  { categoriaId: '', tipo: 'DESPESA', subTipo: 'VARIAVEL' },
+    };
+    if (!chave || !presets[chave]) {
+      setFiltros({ categoriaId: '', tipo: '', subTipo: '', filtroRapido: '' });
+      return;
+    }
+    setFiltros({ ...presets[chave], filtroRapido: chave });
+  };
+
+  const mudarCategoria = (id) => setFiltros((f) => ({ ...f, categoriaId: id || '', filtroRapido: '' }));
+  const mudarTipo = (tipo) => setFiltros((f) => ({ ...f, tipo: tipo || '', subTipo: '', filtroRapido: '' }));
+  const limparTudo = () => setFiltros({ categoriaId: '', tipo: '', subTipo: '', filtroRapido: '' });
+
+  const categoriaSelecionada = categorias.find((c) => c.id === filtros.categoriaId);
+  const filtrosAtivos = [
+    filtros.filtroRapido && {
+      rotulo: { 'recebidos': 'Recebimentos', 'despesas-todas': 'Despesas', 'despesas-fixas': 'Despesas fixas', 'despesas-variaveis': 'Despesas variáveis' }[filtros.filtroRapido],
+      onRemover: () => aplicarRapido(null),
+    },
+    !filtros.filtroRapido && filtros.tipo && {
+      rotulo: filtros.tipo === 'RECEITA' ? 'Apenas receitas' : 'Apenas despesas',
+      onRemover: () => mudarTipo(''),
+    },
+    categoriaSelecionada && {
+      rotulo: `Categoria: ${categoriaSelecionada.nome}`,
+      onRemover: () => mudarCategoria(''),
+    },
+  ].filter(Boolean);
+
+  const totalLancamentos = dados?.totalLancamentos ?? dados?.lancamentos?.length;
+  const contador = totalLancamentos !== undefined ? `${totalLancamentos} lançamento(s)` : null;
+
+  const montarDados = () => ({
+    nome: 'relatorio-financeiro',
+    titulo: 'Relatório · Financeiro',
+    filtrosAtivos: filtrosAtivos.map((f) => f.rotulo),
+    secoes: [
+      {
+        titulo: 'Resumo do resultado',
+        colunas: [{ chave: 'item', label: 'Item' }, { chave: 'valor', label: 'Valor' }],
+        linhas: dados ? [
+          { item: 'Total que entrou', valor: fmtBRL(dados.dre.receitaBruta) },
+          { item: 'Custos variáveis', valor: fmtBRL(dados.dre.despesasVariaveis) },
+          { item: 'Sobra antes das despesas fixas', valor: fmtBRL(dados.dre.receitaBruta - dados.dre.despesasVariaveis) },
+          { item: 'Despesas fixas', valor: fmtBRL(dados.dre.despesasFixas) },
+          { item: 'Lucro do período', valor: fmtBRL(dados.dre.resultadoLiquido) },
+          { item: 'Margem de lucro', valor: fmtPct(dados.dre.margemLiquida) },
+        ] : [],
+      },
+      {
+        titulo: 'Receitas por categoria',
+        colunas: [
+          { chave: 'categoria', label: 'Categoria' },
+          { chave: 'valor', label: 'Valor', valor: (l) => fmtBRL(l.valor) },
+        ],
+        linhas: dados?.receitasPorCategoria || [],
+      },
+      {
+        titulo: 'Despesas por categoria',
+        colunas: [
+          { chave: 'categoria', label: 'Categoria' },
+          { chave: 'valor', label: 'Valor', valor: (l) => fmtBRL(l.valor) },
+        ],
+        linhas: dados?.despesasPorCategoria || [],
+      },
+      {
+        titulo: 'Dívidas por tempo de atraso',
+        colunas: [
+          { chave: 'descricao', label: 'Descrição' },
+          { chave: 'lead', label: 'Cliente', valor: (i) => i.lead?.nome || '—' },
+          { chave: 'valor', label: 'Valor', valor: (i) => fmtBRL(i.valor) },
+          { chave: 'dataVencimento', label: 'Venceu em', valor: (i) => new Date(i.dataVencimento).toLocaleDateString('pt-BR') },
+        ],
+        linhas: dados?.receitasPendentesVencidas || [],
+      },
+    ],
+  });
 
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
 
-      <BlocoFiltros>
-        <Select
-          size="sm"
-          label="Categoria"
-          value={filtros.categoriaId}
-          onChange={(e) => setFiltros({ ...filtros, categoriaId: e.target.value })}
-          options={[{ value: '', label: 'Todas as categorias' }, ...categorias.map((c) => ({ value: c.id, label: `${c.nome} (${c.tipo})` }))]}
-          placeholder=""
-        />
-        <Select
-          size="sm"
-          label="Tipo"
-          value={filtros.tipo}
-          onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}
-          options={[
-            { value: '', label: 'Receita e despesa' },
-            { value: 'RECEITA', label: 'Apenas receitas' },
-            { value: 'DESPESA', label: 'Apenas despesas' },
+      <CabecalhoAba montarDados={montarDados} dados={dados} />
+
+      <BarraFiltros
+        contador={contador}
+        filtrosAtivos={filtrosAtivos}
+        onLimparTudo={limparTudo}
+      >
+        <FiltroRapido
+          ativo={filtros.filtroRapido}
+          onChange={aplicarRapido}
+          opcoes={[
+            { chave: 'recebidos', label: 'Recebimentos do período' },
+            { chave: 'despesas-todas', label: 'Todas as despesas' },
+            { chave: 'despesas-fixas', label: 'Despesas fixas' },
+            { chave: 'despesas-variaveis', label: 'Despesas variáveis' },
           ]}
-          placeholder=""
         />
-      </BlocoFiltros>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Combobox
+            size="sm"
+            label="Filtrar por categoria"
+            value={filtros.categoriaId}
+            onChange={(id) => mudarCategoria(id)}
+            placeholder="Todas as categorias"
+            options={categorias.map((c) => ({
+              value: c.id,
+              label: c.nome,
+              sublabel: c.tipo === 'RECEITA' ? 'Receita' : `Despesa${c.subTipo ? ` · ${c.subTipo === 'FIXA' ? 'Fixa' : 'Variável'}` : ''}`,
+            }))}
+            clearable
+          />
+          {!filtros.filtroRapido && (
+            <div className="flex items-end gap-1.5">
+              <span className="text-xs text-[var(--text-muted)] mr-1 pb-2">Tipo:</span>
+              <button
+                type="button"
+                onClick={() => mudarTipo(filtros.tipo === 'RECEITA' ? '' : 'RECEITA')}
+                className={`px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                  filtros.tipo === 'RECEITA'
+                    ? 'bg-[var(--primary)] text-[var(--text-on-primary)] border-[var(--primary)]'
+                    : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-main)] hover:border-[var(--text-muted)] hover:text-[var(--text-main)]'
+                }`}
+              >
+                Receitas
+              </button>
+              <button
+                type="button"
+                onClick={() => mudarTipo(filtros.tipo === 'DESPESA' ? '' : 'DESPESA')}
+                className={`px-3 py-2 rounded-full text-xs font-semibold border transition-colors ${
+                  filtros.tipo === 'DESPESA'
+                    ? 'bg-[var(--primary)] text-[var(--text-on-primary)] border-[var(--primary)]'
+                    : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-main)] hover:border-[var(--text-muted)] hover:text-[var(--text-main)]'
+                }`}
+              >
+                Despesas
+              </button>
+            </div>
+          )}
+        </div>
+      </BarraFiltros>
 
       {/* KPIs do topo */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={DollarSign} color="success" label="Resultado líquido"
+        <KpiCard icon={DollarSign} color="success" label="Lucro do período"
+          info="Receita menos despesa no período (resultado líquido)."
           valor={fmtBRL(dados?.dre.resultadoLiquido)}
           subvalor={dados ? `Margem ${fmtPct(dados.dre.margemLiquida)}` : null}
           carregando={carregando} />
-        <KpiCard icon={Wallet} color="info" label="Receita bruta"
+        <KpiCard icon={Wallet} color="info" label="Total recebido"
           valor={fmtBRL(dados?.dre.receitaBruta)} carregando={carregando} />
-        <KpiCard icon={AlertCircle} color={dados?.kpis.saldoEmRisco > 0 ? 'danger' : 'neutral'} label="A receber em atraso"
+        <KpiCard icon={AlertCircle} color={dados?.kpis.saldoEmRisco > 0 ? 'danger' : 'neutral'} label="Atrasado a receber"
+          info="Cobranças que venceram e o cliente ainda não pagou."
           valor={fmtBRL(dados?.kpis.saldoEmRisco)}
           subvalor={dados ? `${dados.kpis.saldoEmRiscoQtd} título(s)` : null}
           carregando={carregando} />
-        <KpiCard icon={TrendingUp} color="accent" label="Índice de eficácia"
+        <KpiCard icon={TrendingUp} color="accent" label="Taxa de recebimento"
+          info="% das cobranças que foram pagas em dia."
           valor={dados ? fmtPct(dados.kpis.indiceEficacia) : '—'}
           subvalor={dados ? `Previsão recuperar ${fmtBRL(dados.kpis.previsaoRecuperacao)}` : null}
           carregando={carregando} />
@@ -458,8 +764,8 @@ function AbaFinanceiro({ intervalo }) {
       {/* DRE */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">DRE — Demonstrativo de resultado</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">No período selecionado (apenas lançamentos pagos)</div>
+          <TituloSecao titulo="Resumo do resultado" info="DRE (Demonstrativo do Resultado) — mostra quanto entrou, quanto saiu e quanto sobrou de lucro no período." />
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Só o que foi pago no período</div>
         </div>
         <BlocoDRE dre={dados?.dre} carregando={carregando} />
       </Card>
@@ -468,7 +774,7 @@ function AbaFinanceiro({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Fluxo de caixa diário</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas, saídas e saldo acumulado por dia</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Dia a dia: o que entrou, o que saiu e como ficou o saldo</div>
         </div>
         <GraficoFluxoCaixa fluxo={dados?.fluxoDiario} carregando={carregando} />
       </Card>
@@ -476,7 +782,7 @@ function AbaFinanceiro({ intervalo }) {
       {/* Aging de inadimplencia */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Aging de inadimplência</div>
+          <TituloSecao titulo="Dívidas por tempo de atraso" info="Agrupa cobranças vencidas pelo tempo que estão paradas (até 30 dias, 30-60, 60-90, mais de 90)." />
           <div className="text-sm text-[var(--text-secondary)] mt-0.5">Receitas pendentes vencidas, separadas por tempo de atraso</div>
         </div>
         <BlocoAging aging={dados?.aging} carregando={carregando} />
@@ -503,7 +809,7 @@ function AbaFinanceiro({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Recebimentos por método de pagamento</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Apenas receitas pagas no período</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Só o que foi pago no período</div>
         </div>
         <TabelaMetodosPagamento itens={dados?.porMetodo} carregando={carregando} />
       </Card>
@@ -550,32 +856,105 @@ function AbaEstoque({ intervalo }) {
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
 
-      <BlocoFiltros>
-        <Select
+      <CabecalhoAba
+        dados={dados}
+        montarDados={() => ({
+          nome: 'relatorio-estoque',
+          titulo: 'Relatório · Estoque & CMV',
+          secoes: [
+            {
+              titulo: 'Resumo',
+              colunas: [{ chave: 'indicador', label: 'Indicador' }, { chave: 'valor', label: 'Valor' }],
+              linhas: dados ? [
+                { indicador: 'Valor do estoque', valor: fmtBRL(dados.kpis.patrimonioImobilizado) },
+                { indicador: 'Produtos físicos', valor: fmtNum(dados.kpis.totalFisicos) },
+                { indicador: 'Índice de ruptura', valor: fmtPct(dados.kpis.indiceRuptura) },
+                { indicador: 'Itens abaixo do mínimo', valor: fmtNum(dados.kpis.abaixoMinimo) },
+              ] : [],
+            },
+            {
+              titulo: 'Lista de reposição',
+              colunas: [
+                { chave: 'nome', label: 'Produto' },
+                { chave: 'estoqueAtual', label: 'Atual' },
+                { chave: 'estoqueMinimo', label: 'Mínimo' },
+                { chave: 'sugestao', label: 'Comprar', valor: (i) => fmtNum(i.sugestao) },
+              ],
+              linhas: dados?.reposicao || [],
+            },
+            {
+              titulo: 'Produtos por importância (Curva ABC)',
+              colunas: [
+                { chave: 'classe', label: 'Classe' },
+                { chave: 'nome', label: 'Produto' },
+                { chave: 'receita', label: 'Receita', valor: (i) => fmtBRL(i.receita) },
+              ],
+              linhas: dados?.curvaABC || [],
+            },
+            {
+              titulo: 'Margem por produto',
+              colunas: [
+                { chave: 'nome', label: 'Produto' },
+                { chave: 'precoCusto', label: 'Custo', valor: (i) => fmtBRL(i.precoCusto) },
+                { chave: 'preco', label: 'Venda', valor: (i) => fmtBRL(i.preco) },
+                { chave: 'margemAbsoluta', label: 'Margem R$', valor: (i) => fmtBRL(i.margemAbsoluta) },
+                { chave: 'margemPercentual', label: 'Margem %', valor: (i) => fmtPct(i.margemPercentual) },
+              ],
+              linhas: dados?.margemPorProduto || [],
+            },
+            {
+              titulo: 'Estoque parado (sem giro)',
+              colunas: [
+                { chave: 'nome', label: 'Produto' },
+                { chave: 'estoqueAtual', label: 'Estoque' },
+                { chave: 'diasSemMovimento', label: 'Dias sem giro' },
+              ],
+              linhas: dados?.estoqueParado || [],
+            },
+          ],
+        })}
+      />
+
+      <BarraFiltros
+        contador={dados?.kpis?.totalFisicos !== undefined ? `${dados.kpis.totalFisicos} produto(s) físico(s)` : null}
+        filtrosAtivos={[
+          (() => {
+            const c = categorias.find((x) => x.id === filtros.categoriaId);
+            return c && { rotulo: `Categoria: ${c.nome}`, onRemover: () => setFiltros({ categoriaId: '' }) };
+          })(),
+        ].filter(Boolean)}
+        onLimparTudo={() => setFiltros({ categoriaId: '' })}
+      >
+        <Combobox
           size="sm"
-          label="Categoria de produto"
+          label="Filtrar por categoria"
           value={filtros.categoriaId}
-          onChange={(e) => setFiltros({ ...filtros, categoriaId: e.target.value })}
-          options={[{ value: '', label: 'Todas as categorias' }, ...categorias.map((c) => ({ value: c.id, label: c.nome }))]}
-          placeholder=""
+          onChange={(id) => setFiltros({ categoriaId: id || '' })}
+          placeholder="Todas as categorias"
+          options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
+          clearable
         />
-      </BlocoFiltros>
+      </BarraFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={Package} color="info" label="Patrimônio em estoque"
+        <KpiCard icon={Package} color="info" label="Valor do estoque"
+          info="Quanto vale tudo que você tem parado em estoque (pelo preço de custo)."
           valor={fmtBRL(dados?.kpis.patrimonioImobilizado)}
           subvalor={dados ? `${dados.kpis.totalFisicos} produtos físicos` : null}
           carregando={carregando} />
-        <KpiCard icon={DollarSign} color="success" label="Lucro potencial"
+        <KpiCard icon={DollarSign} color="success" label="Lucro se vender tudo"
+          info="Quanto você ganharia vendendo todo o estoque pelo preço de venda."
           valor={fmtBRL(dados?.kpis.lucroPotencial)}
           subvalor={dados ? `Se vender tudo: ${fmtBRL(dados.kpis.valorVarejo)}` : null}
           carregando={carregando} />
-        <KpiCard icon={AlertCircle} color={dados?.kpis.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} label="Itens abaixo do mínimo"
+        <KpiCard icon={AlertCircle} color={dados?.kpis.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} label="Produtos pra repor"
+          info="Produtos com estoque abaixo do mínimo configurado."
           valor={fmtNum(dados?.kpis.itensAbaixoMinimo)}
           subvalor={dados ? `${dados.kpis.itensZerados} zerados` : null}
           carregando={carregando} />
-        <KpiCard icon={TrendingDown} color={dados?.kpis.indiceRuptura > 10 ? 'danger' : 'neutral'} label="Índice de ruptura"
+        <KpiCard icon={TrendingDown} color={dados?.kpis.indiceRuptura > 10 ? 'danger' : 'neutral'} label="% sem estoque"
+          info="Quantos produtos estão zerados (sem unidades disponíveis pra venda)."
           valor={dados ? fmtPct(dados.kpis.indiceRuptura) : '—'}
           subvalor="% itens zerados"
           carregando={carregando} />
@@ -601,7 +980,7 @@ function AbaEstoque({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Movimento de inventário</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas e saídas por dia (em unidades)</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Quantos produtos entraram e saíram do estoque por dia</div>
         </div>
         <GraficoMovimentoInventario movimento={dados?.movimentoDiario} carregando={carregando} />
       </Card>
@@ -609,12 +988,7 @@ function AbaEstoque({ intervalo }) {
       {/* Curva ABC */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Curva ABC</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">
-            <strong>A</strong> = produtos que geram 80% da receita ·
-            <strong> B</strong> = próximos 15% ·
-            <strong> C</strong> = últimos 5%
-          </div>
+          <TituloSecao titulo="Produtos por importância" info="Curva ABC: A = produtos que trazem ~80% da sua receita (campeões); B = médios (15%); C = vendem pouco (5%)." />
         </div>
         <BlocoCurvaABC curva={dados?.curvaABC} resumo={dados?.resumoABC} carregando={carregando} />
       </Card>
@@ -623,7 +997,7 @@ function AbaEstoque({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Margem por produto</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 50 ordenados por margem percentual (maior pra menor)</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Os 50 produtos com a melhor margem de lucro</div>
         </div>
         <TabelaMargem itens={dados?.margemPorVariacao} carregando={carregando} />
       </Card>
@@ -936,7 +1310,7 @@ function AbaVendas({ intervalo }) {
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
-  const [filtros, setFiltros] = useState({ origem: '', metodoPagamento: '' });
+  const [filtros, setFiltros] = useState({ origem: '', metodoPagamento: '', filtroRapido: '' });
 
   useEffect(() => {
     let ativo = true;
@@ -956,40 +1330,148 @@ function AbaVendas({ intervalo }) {
     return () => { ativo = false; };
   }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.origem, filtros.metodoPagamento]);
 
+  // Filtros rápidos das vendas — perguntas de negócio que o lojista faz.
+  const aplicarRapido = (chave) => {
+    const presets = {
+      'via-bot':     { origem: 'AI', metodoPagamento: '' },
+      'presenciais': { origem: 'Manual', metodoPagamento: '' },
+      'cartao':      { origem: '', metodoPagamento: 'CREDITO' },
+      'pix':         { origem: '', metodoPagamento: 'PIX' },
+    };
+    if (!chave || !presets[chave]) {
+      setFiltros({ origem: '', metodoPagamento: '', filtroRapido: '' });
+      return;
+    }
+    setFiltros({ ...presets[chave], filtroRapido: chave });
+  };
+
+  const mudarOrigem = (origem) => setFiltros((f) => ({ ...f, origem: origem || '', filtroRapido: '' }));
+  const mudarMetodo = (m) => setFiltros((f) => ({ ...f, metodoPagamento: m || '', filtroRapido: '' }));
+  const limparTudo = () => setFiltros({ origem: '', metodoPagamento: '', filtroRapido: '' });
+
+  const filtrosAtivos = [
+    filtros.filtroRapido && {
+      rotulo: {
+        'via-bot': 'Vendas via bot',
+        'presenciais': 'Vendas presenciais',
+        'cartao': 'Pagamento em cartão',
+        'pix': 'Pagamento em PIX',
+      }[filtros.filtroRapido],
+      onRemover: () => aplicarRapido(null),
+    },
+    !filtros.filtroRapido && filtros.origem && { rotulo: `De onde veio: ${filtros.origem}`, onRemover: () => mudarOrigem('') },
+    !filtros.filtroRapido && filtros.metodoPagamento && { rotulo: `Pagamento: ${filtros.metodoPagamento}`, onRemover: () => mudarMetodo('') },
+  ].filter(Boolean);
+
+  const contador = dados?.totais?.totalVendas !== undefined
+    ? `${dados.totais.totalVendas} venda(s)`
+    : null;
+
+  const montarDados = () => ({
+    nome: 'relatorio-vendas',
+    titulo: 'Relatório · Vendas',
+    filtrosAtivos: filtrosAtivos.map((f) => f.rotulo),
+    secoes: [
+      {
+        titulo: 'Resumo',
+        colunas: [{ chave: 'indicador', label: 'Indicador' }, { chave: 'valor', label: 'Valor' }],
+        linhas: dados ? [
+          { indicador: 'Total de vendas', valor: fmtNum(dados.totais.totalVendas) },
+          { indicador: 'Faturamento', valor: fmtBRL(dados.totais.faturamentoTotal) },
+          { indicador: 'Ticket médio', valor: fmtBRL(dados.totais.ticketMedio) },
+          { indicador: 'Lucro bruto', valor: fmtBRL(dados.totais.lucroTotal) },
+          { indicador: 'Margem média', valor: fmtPct(dados.totais.margemMedia) },
+        ] : [],
+      },
+      {
+        titulo: 'Vendas por canal',
+        colunas: [
+          { chave: 'origem', label: 'Canal' },
+          { chave: 'qtd', label: 'Quantidade' },
+          { chave: 'valor', label: 'Receita', valor: (c) => fmtBRL(c.valor) },
+          { chave: 'lucro', label: 'Lucro', valor: (c) => fmtBRL(c.lucro) },
+        ],
+        linhas: dados?.porCanal || [],
+      },
+      {
+        titulo: 'Vendas por categoria',
+        colunas: [
+          { chave: 'categoria', label: 'Categoria' },
+          { chave: 'qtd', label: 'Quantidade' },
+          { chave: 'receita', label: 'Receita', valor: (c) => fmtBRL(c.receita) },
+          { chave: 'lucro', label: 'Lucro', valor: (c) => fmtBRL(c.lucro) },
+          { chave: 'margem', label: 'Margem', valor: (c) => fmtPct(c.margem) },
+        ],
+        linhas: dados?.porCategoria || [],
+      },
+      {
+        titulo: 'Vendas mais lucrativas',
+        colunas: [
+          { chave: 'descricao', label: 'Venda' },
+          { chave: 'valor', label: 'Valor', valor: (v) => fmtBRL(v.valor) },
+          { chave: 'lucro', label: 'Lucro', valor: (v) => fmtBRL(v.lucro) },
+        ],
+        linhas: dados?.topLucro || [],
+      },
+    ],
+  });
+
   return (
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
 
-      <BlocoFiltros>
-        <Input
-          size="sm"
-          label="Canal de origem"
-          value={filtros.origem}
-          onChange={(e) => setFiltros({ ...filtros, origem: e.target.value })}
-          placeholder="Ex.: Telegram, Manual..."
+      <CabecalhoAba montarDados={montarDados} dados={dados} />
+
+      <BarraFiltros
+        contador={contador}
+        filtrosAtivos={filtrosAtivos}
+        onLimparTudo={limparTudo}
+      >
+        <FiltroRapido
+          ativo={filtros.filtroRapido}
+          onChange={aplicarRapido}
+          opcoes={[
+            { chave: 'via-bot', label: 'Vendas via bot' },
+            { chave: 'presenciais', label: 'Vendas presenciais' },
+            { chave: 'cartao', label: 'Pagamento em cartão' },
+            { chave: 'pix', label: 'Pagamento em PIX' },
+          ]}
         />
-        <Input
-          size="sm"
-          label="Método de pagamento"
-          value={filtros.metodoPagamento}
-          onChange={(e) => setFiltros({ ...filtros, metodoPagamento: e.target.value })}
-          placeholder="Ex.: PIX, Cartão..."
-        />
-      </BlocoFiltros>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input
+            size="sm"
+            label="De onde veio o cliente"
+            value={filtros.origem}
+            onChange={(e) => mudarOrigem(e.target.value)}
+            placeholder="Ex.: WhatsApp, Instagram, indicação..."
+          />
+          <Input
+            size="sm"
+            label="Como foi pago"
+            value={filtros.metodoPagamento}
+            onChange={(e) => mudarMetodo(e.target.value)}
+            placeholder="Ex.: PIX, Cartão, Dinheiro..."
+          />
+        </div>
+      </BarraFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={ShoppingCart} color="info" label="Total de vendas"
+        <KpiCard icon={ShoppingCart} color="info" label="Vendas no período"
           valor={fmtNum(dados?.kpis.totalVendas)}
           subvalor={dados ? fmtBRL(dados.kpis.valorTotal) : null}
           carregando={carregando} />
         <KpiCard icon={DollarSign} color="success" label="Ticket médio"
+          info="Quanto cada cliente gasta em média por venda."
           valor={fmtBRL(dados?.kpis.ticketMedio)} carregando={carregando} />
         <KpiCard icon={TrendingUp} color="accent" label="Lucro bruto"
+          info="Vendas menos o custo dos produtos (não inclui despesas fixas)."
           valor={fmtBRL(dados?.kpis.lucroBruto)}
           subvalor={dados ? `Margem ${fmtPct(dados.kpis.margemBruta)}` : null}
           carregando={carregando} />
-        <KpiCard icon={Users} color="warning" label="Conversão lead → venda"
+        <KpiCard icon={Users} color="warning" label="Clientes que compraram"
+          info="% dos novos clientes do período que viraram venda."
           valor={dados?.kpis.taxaConversao !== null && dados?.kpis.taxaConversao !== undefined
             ? fmtPct(dados.kpis.taxaConversao) : '—'}
           subvalor={dados ? `${dados.kpis.vendasComLead} de ${dados.kpis.leadsCriadosPeriodo} leads` : null}
@@ -1000,7 +1482,7 @@ function AbaVendas({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas por canal</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Origem do lead que originou cada venda</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">De onde veio o cliente de cada venda</div>
         </div>
         <TabelaPorCanal porCanal={dados?.porCanal} carregando={carregando} />
       </Card>
@@ -1008,8 +1490,8 @@ function AbaVendas({ intervalo }) {
       {/* Sazonalidade — heatmap */}
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Sazonalidade</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Dia da semana × hora do dia (cor = volume de receita)</div>
+          <TituloSecao titulo="Quando você vende mais" info="Dias da semana e horários com mais movimento. Útil pra ajustar agenda, equipe e estoque." />
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Cor mais forte = mais vendas naquele horário</div>
         </div>
         <Heatmap sazonalidade={dados?.sazonalidade} carregando={carregando} />
       </Card>
@@ -1018,7 +1500,7 @@ function AbaVendas({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas por categoria</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Inclui receita, CMV, lucro e margem por categoria</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Receita, custo, lucro e margem de cada categoria</div>
         </div>
         <TabelaCategoriasVendas itens={dados?.porCategoria} carregando={carregando} />
       </Card>
@@ -1036,7 +1518,7 @@ function AbaVendas({ intervalo }) {
         <Card padding="none">
           <div className="px-5 py-4 border-b border-[var(--border-main)]">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas mais lucrativas</div>
-            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 10 por lucro absoluto</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">As 10 vendas que mais lucraram</div>
           </div>
           <TabelaTopVendas itens={dados?.top10MaisLucrativas} carregando={carregando} corLucro="success" />
         </Card>
@@ -1044,7 +1526,7 @@ function AbaVendas({ intervalo }) {
         <Card padding="none">
           <div className="px-5 py-4 border-b border-[var(--border-main)]">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Vendas com menor lucro</div>
-            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Top 10 — pra revisar precificação</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">As 10 com menor lucro — avalie se o preço está certo</div>
           </div>
           <TabelaTopVendas itens={dados?.top10MenosLucrativas} carregando={carregando} corLucro="warning" />
         </Card>
@@ -1233,32 +1715,73 @@ function BlocoDRE({ dre, carregando }) {
   if (carregando && !dre) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
   if (!dre) return null;
 
+  // Labels coloquiais (sem sinais matematicos "(−)" "(=)" — tooltip explica a
+  // operacao). Sinal negativo aparece so no valor (em vermelho). Linhas de
+  // destaque (Sobra / Lucro) ficam em negrito. Divisorias separam cada linha.
   const linhas = [
-    { label: 'Receita bruta', valor: dre.receitaBruta, cor: 'success', destaque: false },
-    { label: '(−) Despesas variáveis', valor: -dre.despesasVariaveis, cor: 'danger', sublabel: 'Categorias com "venda" ou "imposto"' },
-    { label: '(=) Margem de contribuição', valor: dre.receitaBruta - dre.despesasVariaveis, cor: 'neutral', destaque: true },
-    { label: '(−) Despesas fixas', valor: -dre.despesasFixas, cor: 'danger', sublabel: 'Demais categorias de despesa' },
-    { label: '(=) Resultado líquido', valor: dre.resultadoLiquido, cor: dre.resultadoLiquido >= 0 ? 'success' : 'danger', destaque: true },
+    {
+      label: 'Total que entrou',
+      valor: dre.receitaBruta,
+      cor: 'success',
+      sublabel: 'Vendas pagas no período',
+      info: 'Soma de todas as receitas pagas no período (Receita bruta).',
+    },
+    {
+      label: 'Custos variáveis',
+      valor: -dre.despesasVariaveis,
+      cor: 'danger',
+      sublabel: 'Impostos, taxas de cartão, comissão e similares',
+      info: 'Despesas que sobem ou descem conforme o volume de vendas. Inclui categorias marcadas com "venda" ou "imposto".',
+    },
+    {
+      label: 'Sobra antes das despesas fixas',
+      valor: dre.receitaBruta - dre.despesasVariaveis,
+      cor: 'neutral',
+      destaque: true,
+      info: 'Quanto sobra das vendas depois de descontar os custos variáveis. Esse valor precisa cobrir as despesas fixas (aluguel, salário, etc) pra você ter lucro. Termo contábil: Margem de contribuição.',
+    },
+    {
+      label: 'Despesas fixas',
+      valor: -dre.despesasFixas,
+      cor: 'danger',
+      sublabel: 'Aluguel, salário, internet, contas que pagam todo mês',
+    },
+    {
+      label: 'Lucro do período',
+      valor: dre.resultadoLiquido,
+      cor: dre.resultadoLiquido >= 0 ? 'success' : 'danger',
+      destaque: true,
+      info: 'O que efetivamente sobrou no bolso depois de pagar tudo (custos variáveis e despesas fixas). Termo contábil: Resultado líquido.',
+    },
   ];
 
   return (
-    <div className="px-5 py-4 space-y-1">
+    <div className="px-5 py-2 divide-y divide-[var(--border-main)]">
       {linhas.map((l) => (
         <div
           key={l.label}
-          className={`flex items-baseline justify-between gap-3 py-2 ${
-            l.destaque ? 'border-t border-[var(--border-main)] mt-1 pt-3' : ''
-          }`}
+          className="flex items-start justify-between gap-3 py-3"
         >
-          <div>
-            <div className={`text-sm ${l.destaque ? 'font-bold text-[var(--text-main)]' : 'text-[var(--text-secondary)]'}`}>
+          <div className="flex-1 min-w-0">
+            {/* Padrao uniforme — todos labels com mesmo peso/cor. O destaque
+                das linhas-chave (Sobra / Lucro) vem pela cor forte do VALOR
+                (verde/vermelho), nao pelo negrito do label. */}
+            <div className="text-sm flex items-center gap-1.5 font-medium text-[var(--text-secondary)]">
               {l.label}
+              {l.info && (
+                <InfoTooltip content={l.info}>
+                  <HelpCircle size={13} strokeWidth={2} className="text-[var(--text-muted)] opacity-70 hover:opacity-100 cursor-help" />
+                </InfoTooltip>
+              )}
             </div>
             {l.sublabel && (
-              <div className="text-[10px] text-[var(--text-muted)] mt-0.5">{l.sublabel}</div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-0.5">{l.sublabel}</div>
             )}
           </div>
-          <div className={`tabular-nums ${l.destaque ? 'text-base font-bold' : 'text-sm font-semibold'} ${
+          {/* Valor sempre text-lg font-bold tabular-nums + leading-none pra
+              ficar alinhado horizontalmente com o label (sem o sublabel
+              empurrar visualmente). */}
+          <div className={`text-lg font-bold tabular-nums leading-none flex-shrink-0 ${
             l.cor === 'success' ? 'text-[var(--success)]' :
             l.cor === 'danger' ? 'text-[var(--danger)]' :
             'text-[var(--text-main)]'
@@ -1267,8 +1790,11 @@ function BlocoDRE({ dre, carregando }) {
           </div>
         </div>
       ))}
-      <div className="text-[11px] text-[var(--text-muted)] pt-2 border-t border-[var(--border-main)] mt-2">
-        Margem líquida do período: <strong>{fmtPct(dre.margemLiquida)}</strong>
+      <div className="text-xs text-[var(--text-muted)] py-3 flex items-center gap-1.5">
+        <span>Margem de lucro do período: <strong className="text-[var(--text-main)]">{fmtPct(dre.margemLiquida)}</strong></span>
+        <InfoTooltip content="A cada R$ 100 que entram, quantos sobram de lucro depois de pagar tudo. Termo contábil: Margem líquida.">
+          <HelpCircle size={12} strokeWidth={2} className="text-[var(--text-muted)] opacity-70 hover:opacity-100 cursor-help" />
+        </InfoTooltip>
       </div>
     </div>
   );
@@ -1483,7 +2009,7 @@ function FunilEtapas({ funil, carregando }) {
             </div>
             <div className="w-32 flex-shrink-0 text-right">
               <div className="text-sm font-bold text-[var(--text-main)] tabular-nums">{fmtBRL(e.valor)}</div>
-              <div className="text-[10px] text-[var(--text-muted)]">valor agregado</div>
+              <div className="text-[10px] text-[var(--text-muted)]">potencial em vendas</div>
             </div>
           </div>
         );
@@ -1698,30 +2224,93 @@ function AbaBots({ intervalo }) {
     <div className="space-y-5">
       {erro && <ErroBox mensagem={erro} />}
 
-      <BlocoFiltros>
-        <Select
-          size="sm"
-          label="Bot"
-          value={filtros.botId}
-          onChange={(e) => setFiltros({ ...filtros, botId: e.target.value })}
-          options={[{ value: '', label: 'Todos os bots' }, ...bots.map((b) => ({ value: b.id, label: `${b.nome} (${b.canal})` }))]}
-          placeholder=""
-        />
-        <Select
-          size="sm"
-          label="Canal"
-          value={filtros.canal}
-          onChange={(e) => setFiltros({ ...filtros, canal: e.target.value })}
-          options={[
-            { value: '', label: 'Todos os canais' },
-            { value: 'WHATSAPP', label: 'WhatsApp' },
-            { value: 'TELEGRAM', label: 'Telegram' },
-            { value: 'INSTAGRAM', label: 'Instagram' },
-            { value: 'WEBSITE', label: 'Website' },
-          ]}
-          placeholder=""
-        />
-      </BlocoFiltros>
+      <CabecalhoAba
+        dados={dados}
+        montarDados={() => ({
+          nome: 'relatorio-bots',
+          titulo: 'Relatório · Bots / IA',
+          secoes: [
+            {
+              titulo: 'Resumo',
+              colunas: [{ chave: 'indicador', label: 'Indicador' }, { chave: 'valor', label: 'Valor' }],
+              linhas: dados ? [
+                { indicador: 'Total de atendimentos', valor: fmtNum(dados.kpis.totalExecucoes) },
+                { indicador: 'Mensagens trocadas', valor: fmtNum(dados.kpis.totalMensagens) },
+                { indicador: 'Taxa de sucesso', valor: fmtPct(dados.kpis.taxaSucesso) },
+                { indicador: 'Tempo médio de atendimento', valor: fmtMs(dados.kpis.duracaoMediaMs) },
+                { indicador: 'Custo total de IA', valor: fmtBRL(dados.kpis.custoTotalIa) },
+              ] : [],
+            },
+            {
+              titulo: 'Por canal',
+              colunas: [
+                { chave: 'canal', label: 'Canal' },
+                { chave: 'recebidas', label: 'Recebidas' },
+                { chave: 'enviadas', label: 'Enviadas' },
+              ],
+              linhas: dados?.porCanal || [],
+            },
+            {
+              titulo: 'Ferramentas usadas pelo bot',
+              colunas: [
+                { chave: 'tool', label: 'Ação' },
+                { chave: 'qtd', label: 'Chamadas' },
+                { chave: 'duracaoMediaMs', label: 'Tempo médio', valor: (t) => fmtMs(t.duracaoMediaMs) },
+              ],
+              linhas: dados?.toolsUsadas || [],
+            },
+            {
+              titulo: 'Uso de IA por modelo',
+              colunas: [
+                { chave: 'modelo', label: 'Modelo' },
+                { chave: 'chamadas', label: 'Chamadas' },
+                { chave: 'tokensEntrada', label: 'Tokens entrada' },
+                { chave: 'tokensSaida', label: 'Tokens saída' },
+                { chave: 'custo', label: 'Custo', valor: (m) => fmtBRL(m.custo) },
+              ],
+              linhas: dados?.porModelo || [],
+            },
+          ],
+        })}
+      />
+
+      <BarraFiltros
+        contador={dados?.kpis?.totalExecucoes !== undefined ? `${dados.kpis.totalExecucoes} atendimento(s)` : null}
+        filtrosAtivos={[
+          (() => {
+            const b = bots.find((x) => x.id === filtros.botId);
+            return b && { rotulo: `Bot: ${b.nome}`, onRemover: () => setFiltros((f) => ({ ...f, botId: '' })) };
+          })(),
+          filtros.canal && {
+            rotulo: `Canal: ${{ WHATSAPP: 'WhatsApp' }[filtros.canal] || filtros.canal}`,
+            onRemover: () => setFiltros((f) => ({ ...f, canal: '' })),
+          },
+        ].filter(Boolean)}
+        onLimparTudo={() => setFiltros({ botId: '', canal: '' })}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Combobox
+            size="sm"
+            label="Filtrar por bot"
+            value={filtros.botId}
+            onChange={(id) => setFiltros((f) => ({ ...f, botId: id || '' }))}
+            placeholder="Todos os bots"
+            options={bots.map((b) => ({ value: b.id, label: b.nome, sublabel: b.canal }))}
+            clearable
+          />
+          <Combobox
+            size="sm"
+            label="Filtrar por canal"
+            value={filtros.canal}
+            onChange={(c) => setFiltros((f) => ({ ...f, canal: c || '' }))}
+            placeholder="Todos os canais"
+            options={[
+              { value: 'WHATSAPP', label: 'WhatsApp' },
+            ]}
+            clearable
+          />
+        </div>
+      </BarraFiltros>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1733,12 +2322,14 @@ function AbaBots({ intervalo }) {
           valor={fmtNum(dados?.kpis.conversasAtivas)}
           subvalor={dados ? `${dados.kpis.conversasComLead} vinculadas a lead` : null}
           carregando={carregando} />
-        <KpiCard icon={Bot} color="success" label="Execuções de fluxo"
+        <KpiCard icon={Bot} color="success" label="Atendimentos do bot"
+          info="Quantas vezes o bot atendeu um cliente de ponta a ponta."
           valor={fmtNum(dados?.kpis.totalExec)}
           subvalor={dados && dados.kpis.taxaSucesso !== null
             ? `${fmtPct(dados.kpis.taxaSucesso)} de sucesso` : null}
           carregando={carregando} />
-        <KpiCard icon={Sparkles} color="warning" label="Tokens de IA"
+        <KpiCard icon={Sparkles} color="warning" label="Uso de IA"
+          info="Total consumido em chamadas pra inteligência artificial — impacta o custo do bot."
           valor={fmtNum(dados?.kpis.tokensTotal)}
           subvalor={dados ? `${fmtNum(dados.kpis.chamadasIA)} chamada(s) ao LLM` : null}
           carregando={carregando} />
@@ -1748,7 +2339,7 @@ function AbaBots({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Mensagens por dia</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Entradas (cliente → bot) e saídas (bot → cliente)</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Mensagens recebidas e enviadas pelo bot, dia a dia</div>
         </div>
         <GraficoMensagensPorDia mensagens={dados?.mensagensPorDia} carregando={carregando} />
       </Card>
@@ -1765,9 +2356,9 @@ function AbaBots({ intervalo }) {
 
         <Card padding="none">
           <div className="px-5 py-4 border-b border-[var(--border-main)]">
-            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Saúde das execuções</div>
+            <TituloSecao titulo="Atendimentos bem-sucedidos" info="Quantos atendimentos do bot terminaram sem erro vs. falharam ou foram interrompidos." />
             <div className="text-sm text-[var(--text-secondary)] mt-0.5">
-              {dados ? `Duração média de execução bem-sucedida: ${fmtMs(dados.kpis.duracaoMediaMs)}` : '—'}
+              {dados ? `Tempo médio de cada atendimento: ${fmtMs(dados.kpis.duracaoMediaMs)}` : '—'}
             </div>
           </div>
           <BlocoStatusExec
@@ -1783,7 +2374,7 @@ function AbaBots({ intervalo }) {
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Ferramentas usadas pelo bot</div>
           <div className="text-sm text-[var(--text-secondary)] mt-0.5">
-            Ações que a IA executou (crm.criarLead, mensagens.enviar, etc.)
+            Ações que o bot executou durante os atendimentos (criar cliente, enviar mensagem, etc.)
           </div>
         </div>
         <TabelaToolsUsadas itens={dados?.toolsUsadas} carregando={carregando} fmtMs={fmtMs} />
@@ -1793,7 +2384,7 @@ function AbaBots({ intervalo }) {
       <Card padding="none">
         <div className="px-5 py-4 border-b border-[var(--border-main)]">
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Uso de IA por modelo</div>
-          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Tokens usados em cada modelo (referência pra custos)</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Quanto cada modelo de IA foi usado (referência pra calcular custo)</div>
         </div>
         <TabelaModelosIA itens={dados?.ia.porModelo} carregando={carregando} />
       </Card>
@@ -1836,6 +2427,359 @@ function GraficoMensagensPorDia({ mensagens, carregando }) {
           <Line type="monotone" dataKey="saida" stroke="var(--accent)" name="Enviadas" strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ============================================================
+// ABA: Caixa — sessoes, retiradas, entradas, divergencias
+// ============================================================
+function AbaCaixa({ intervalo }) {
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [filtros, setFiltros] = useState({ origem: '', comDivergencia: '', filtroRapido: '' });
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregando(true);
+    setErro(null);
+    api.get('/relatorios/caixa', {
+      params: {
+        inicio: intervalo.inicio.toISOString(),
+        fim: intervalo.fim.toISOString(),
+        ...(filtros.origem ? { origem: filtros.origem } : {}),
+        ...(filtros.comDivergencia ? { comDivergencia: filtros.comDivergencia } : {}),
+      },
+    })
+      .then((r) => { if (ativo) setDados(r.data); })
+      .catch((e) => { if (ativo) setErro(e?.response?.data?.error || 'Erro ao carregar.'); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [intervalo.inicio.getTime(), intervalo.fim.getTime(), filtros.origem, filtros.comDivergencia]);
+
+  const fmtTempo = (ms) => {
+    if (!ms || ms === 0) return '—';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    if (h === 0) return `${m}min`;
+    return `${h}h ${m}min`;
+  };
+
+  // Filtros rápidos da aba Caixa — perguntas de auditoria do dia a dia.
+  const aplicarRapido = (chave) => {
+    const presets = {
+      'apenas-bot':         { origem: 'AUTO_BOT', comDivergencia: '' },
+      'apenas-manuais':     { origem: 'MANUAL', comDivergencia: '' },
+      'com-divergencia':    { origem: '', comDivergencia: 'true' },
+    };
+    if (!chave || !presets[chave]) {
+      setFiltros({ origem: '', comDivergencia: '', filtroRapido: '' });
+      return;
+    }
+    setFiltros({ ...presets[chave], filtroRapido: chave });
+  };
+
+  const limparTudo = () => setFiltros({ origem: '', comDivergencia: '', filtroRapido: '' });
+
+  const filtrosAtivos = [
+    filtros.filtroRapido && {
+      rotulo: {
+        'apenas-bot': 'Apenas automáticas (bot)',
+        'apenas-manuais': 'Apenas manuais',
+        'com-divergencia': 'Com diferença de saldo',
+      }[filtros.filtroRapido],
+      onRemover: () => aplicarRapido(null),
+    },
+  ].filter(Boolean);
+
+  const contador = dados?.kpis?.totalSessoes !== undefined
+    ? `${dados.kpis.totalSessoes} sessão(ões) fechada(s)`
+    : null;
+
+  const montarDados = () => ({
+    nome: 'relatorio-caixa',
+    titulo: 'Relatório · Caixa',
+    filtrosAtivos: filtrosAtivos.map((f) => f.rotulo),
+    secoes: [
+      {
+        titulo: 'Resumo',
+        colunas: [{ chave: 'indicador', label: 'Indicador' }, { chave: 'valor', label: 'Valor' }],
+        linhas: dados ? [
+          { indicador: 'Sessões fechadas', valor: fmtNum(dados.kpis.totalSessoes) },
+          { indicador: 'Vendas em dinheiro', valor: fmtBRL(dados.kpis.vendasDinheiro.valor) },
+          { indicador: 'Saldo médio ao fechar', valor: fmtBRL(dados.kpis.saldoMedioDiario) },
+          { indicador: 'Total de retiradas', valor: fmtBRL(dados.kpis.totalSangrias) },
+          { indicador: 'Total de entradas', valor: fmtBRL(dados.kpis.totalSuprimentos) },
+          { indicador: 'Diferença acumulada', valor: fmtBRL(dados.kpis.diferencaAcumulada) },
+          { indicador: 'Tempo médio aberto', valor: fmtTempo(dados.kpis.tempoMedioMs) },
+        ] : [],
+      },
+      {
+        titulo: 'Sessões fechadas',
+        colunas: [
+          { chave: 'fechadaEm', label: 'Fechada em', valor: (s) => new Date(s.fechadaEm).toLocaleString('pt-BR') },
+          { chave: 'origem', label: 'Origem' },
+          { chave: 'fundoCaixa', label: 'Fundo', valor: (s) => fmtBRL(s.fundoCaixa) },
+          { chave: 'saldoEsperado', label: 'Esperado', valor: (s) => fmtBRL(s.saldoEsperado) },
+          { chave: 'saldoReal', label: 'Real', valor: (s) => fmtBRL(s.saldoReal) },
+          { chave: 'diferenca', label: 'Diferença', valor: (s) => fmtBRL(s.diferenca) },
+          { chave: 'usuarioFechouNome', label: 'Fechou' },
+        ],
+        linhas: dados?.sessoes || [],
+      },
+      {
+        titulo: 'Motivos de retirada',
+        colunas: [
+          { chave: 'motivo', label: 'Motivo' },
+          { chave: 'valor', label: 'Total', valor: (m) => fmtBRL(m.valor) },
+        ],
+        linhas: dados?.topMotivosSangria || [],
+      },
+      {
+        titulo: 'Motivos de entrada no caixa',
+        colunas: [
+          { chave: 'motivo', label: 'Motivo' },
+          { chave: 'valor', label: 'Total', valor: (m) => fmtBRL(m.valor) },
+        ],
+        linhas: dados?.topMotivosSuprimento || [],
+      },
+    ],
+  });
+
+  return (
+    <div className="space-y-5">
+      {erro && <ErroBox mensagem={erro} />}
+
+      <CabecalhoAba montarDados={montarDados} dados={dados} />
+
+      <BarraFiltros
+        contador={contador}
+        filtrosAtivos={filtrosAtivos}
+        onLimparTudo={limparTudo}
+      >
+        <FiltroRapido
+          ativo={filtros.filtroRapido}
+          onChange={aplicarRapido}
+          opcoes={[
+            { chave: 'apenas-bot', label: 'Apenas automáticas (bot)' },
+            { chave: 'apenas-manuais', label: 'Apenas manuais' },
+            { chave: 'com-divergencia', label: 'Com diferença de saldo' },
+          ]}
+        />
+      </BarraFiltros>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          icon={Wallet}
+          color="info"
+          label="Sessões fechadas"
+          valor={fmtNum(dados?.kpis.totalSessoes)}
+          subvalor={dados?.kpis.sessoesComDivergencia > 0 ? `${dados.kpis.sessoesComDivergencia} com divergência` : 'Tudo bate'}
+          carregando={carregando}
+          info="Quantas vezes o caixa foi fechado no período (manual ou pelo cron automático às 00:01)."
+        />
+        <KpiCard
+          icon={DollarSign}
+          color="success"
+          label="Vendas em dinheiro"
+          valor={fmtBRL(dados?.kpis.vendasDinheiro.valor)}
+          subvalor={dados ? `${dados.kpis.vendasDinheiro.qtd} venda(s)` : null}
+          carregando={carregando}
+          info="Soma das vendas pagas em dinheiro vivo no período (não inclui PIX, cartão, etc.)."
+        />
+        <KpiCard
+          icon={Wallet}
+          color="accent"
+          label="Saldo médio ao fechar"
+          valor={fmtBRL(dados?.kpis.saldoMedioDiario)}
+          carregando={carregando}
+          info="Em média, quanto sobrava no caixa físico em cada fechamento."
+        />
+        <KpiCard
+          icon={AlertCircle}
+          color={Math.abs(dados?.kpis.diferencaAcumulada || 0) > 0 ? 'warning' : 'success'}
+          label="Diferença acumulada"
+          valor={fmtBRL(dados?.kpis.diferencaAcumulada)}
+          subvalor={dados?.kpis.diferencaAcumulada >= 0 ? 'Sobra (dinheiro a mais)' : 'Falta (dinheiro a menos)'}
+          carregando={carregando}
+          info="Soma de todas as diferenças (real − esperado). Positivo = sobrou dinheiro no caixa; negativo = faltou."
+        />
+        <KpiCard
+          icon={ArrowUpRight}
+          color="danger"
+          label="Retiradas"
+          valor={fmtBRL(dados?.kpis.totalSangrias)}
+          subvalor={dados ? `${dados.kpis.qtdSangrias} retirada(s)` : null}
+          carregando={carregando}
+          info="Total tirado do caixa físico no período (ex.: depósito no banco)."
+        />
+        <KpiCard
+          icon={ArrowDownRight}
+          color="success"
+          label="Entradas"
+          valor={fmtBRL(dados?.kpis.totalSuprimentos)}
+          subvalor={dados ? `${dados.kpis.qtdSuprimentos} entrada(s)` : null}
+          carregando={carregando}
+          info="Total colocado no caixa físico manualmente no período (ex.: troco extra)."
+        />
+        <KpiCard
+          icon={Clock}
+          color="info"
+          label="Tempo médio aberto"
+          valor={fmtTempo(dados?.kpis.tempoMedioMs)}
+          carregando={carregando}
+          info="Quanto tempo, em média, cada sessão ficou aberta entre abertura e fechamento."
+        />
+      </div>
+
+      {/* Tabela de sessões fechadas */}
+      <Card padding="none">
+        <div className="px-5 py-4 border-b border-[var(--border-main)]">
+          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Sessões fechadas</div>
+          <div className="text-sm text-[var(--text-secondary)] mt-0.5">Histórico do período (mais recentes primeiro)</div>
+        </div>
+        <TabelaSessoesCaixa sessoes={dados?.sessoes} carregando={carregando} />
+      </Card>
+
+      {/* Divergências */}
+      {dados?.divergencias?.length > 0 && (
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)] flex items-center justify-between">
+            <div>
+              <TituloSecao titulo="Sessões com divergência" info="Sessões que fecharam com diferença entre o saldo esperado (calculado pelo sistema) e o saldo real (contado fisicamente). Vale investigar." />
+              <div className="text-sm text-[var(--text-secondary)] mt-0.5">Saldo contado diferente do esperado</div>
+            </div>
+            <Badge variant="warning" size="sm">{dados.divergencias.length} sessão(ões)</Badge>
+          </div>
+          <TabelaDivergencias divergencias={dados.divergencias} />
+        </Card>
+      )}
+
+      {/* Top motivos lado a lado */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Principais motivos de retirada</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Onde o dinheiro saiu do caixa</div>
+          </div>
+          <TabelaMotivosCaixa itens={dados?.topMotivosSangria} carregando={carregando} cor="danger" />
+        </Card>
+        <Card padding="none">
+          <div className="px-5 py-4 border-b border-[var(--border-main)]">
+            <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Principais motivos de entrada</div>
+            <div className="text-sm text-[var(--text-secondary)] mt-0.5">Por que o dinheiro foi reforçado</div>
+          </div>
+          <TabelaMotivosCaixa itens={dados?.topMotivosSuprimento} carregando={carregando} cor="success" />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function TabelaSessoesCaixa({ sessoes, carregando }) {
+  if (carregando && !sessoes) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!sessoes || sessoes.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhuma sessão fechada no período.</div>;
+  }
+  return (
+    <table className="w-full">
+      <thead>
+        <tr className="border-b border-[var(--border-main)]">
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Fechada em</th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Origem</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Fundo</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Esperado</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Real</th>
+          <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Diferença</th>
+          <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Fechou</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sessoes.map((s) => {
+          const dif = Number(s.diferenca || 0);
+          return (
+            <tr key={s.id} className="border-b border-[var(--border-subtle)] last:border-b-0">
+              <td className="py-3 px-5 text-xs text-[var(--text-secondary)]">
+                {s.fechadaEm ? new Date(s.fechadaEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+              </td>
+              <td className="py-3 px-5 text-xs">
+                <Badge variant={s.origem === 'AUTO_BOT' ? 'info' : 'neutral'} size="sm">
+                  {s.origem === 'AUTO_BOT' ? 'Automático (bot)' : 'Manual'}
+                </Badge>
+              </td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-secondary)]">{fmtBRL(s.fundoCaixa)}</td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-main)]">{fmtBRL(s.saldoEsperado)}</td>
+              <td className="py-3 px-5 text-right text-sm tabular-nums font-semibold text-[var(--text-main)]">{fmtBRL(s.saldoReal)}</td>
+              <td className={`py-3 px-5 text-right text-sm tabular-nums font-bold ${
+                dif > 0 ? 'text-[var(--success)]' : dif < 0 ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'
+              }`}>
+                {dif > 0 ? '+' : ''}{fmtBRL(dif)}
+              </td>
+              <td className="py-3 px-5 text-xs text-[var(--text-muted)]">{s.usuarioFechouNome || '—'}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaDivergencias({ divergencias }) {
+  return (
+    <div className="px-5 py-3 space-y-2">
+      {divergencias.map((d) => {
+        const dif = Number(d.diferenca || 0);
+        return (
+          <div key={d.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)]/50">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-[var(--text-main)]">
+                {new Date(d.fechadaEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)]">
+                Esperado {fmtBRL(d.saldoEsperado)} · Real {fmtBRL(d.saldoReal)}
+                {d.usuarioFechouNome && ` · fechado por ${d.usuarioFechouNome}`}
+              </div>
+            </div>
+            <div className={`text-sm font-bold tabular-nums flex-shrink-0 ${
+              dif > 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'
+            }`}>
+              {dif > 0 ? '+' : ''}{fmtBRL(dif)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabelaMotivosCaixa({ itens, carregando, cor }) {
+  if (carregando && !itens) return <div className="px-5 py-6 text-center text-sm text-[var(--text-muted)]">Calculando…</div>;
+  if (!itens || itens.length === 0) {
+    return <div className="px-5 py-12 text-center text-sm text-[var(--text-muted)]">Nenhum motivo registrado.</div>;
+  }
+  const total = itens.reduce((acc, i) => acc + i.valor, 0);
+  return (
+    <div className="px-5 py-3 space-y-2">
+      {itens.map((i) => {
+        const pct = total > 0 ? (i.valor / total) * 100 : 0;
+        return (
+          <div key={i.motivo} className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="font-semibold text-[var(--text-main)] truncate">{i.motivo}</span>
+              <span className={`font-bold tabular-nums flex-shrink-0 ${cor === 'danger' ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
+                {fmtBRL(i.valor)}
+              </span>
+            </div>
+            <div className="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${pct}%`, backgroundColor: cor === 'danger' ? 'var(--danger)' : 'var(--success)' }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1889,7 +2833,7 @@ function BlocoStatusExec({ status, modo, carregando }) {
   return (
     <div className="px-5 py-4 space-y-4">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Por status</div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Como terminaram</div>
         <div className="space-y-1.5">
           {Object.entries(status).filter(([, v]) => v > 0).map(([k, v]) => {
             const pct = (v / total) * 100;
@@ -1912,7 +2856,12 @@ function BlocoStatusExec({ status, modo, carregando }) {
       </div>
 
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Por modo de disparo</div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2 flex items-center gap-1.5">
+          <span>Como o bot foi acionado</span>
+          <InfoTooltip content="Se o atendimento foi disparado pelo cliente, por outro fluxo, ou automaticamente.">
+            <HelpCircle size={11} strokeWidth={2} className="text-[var(--text-muted)] opacity-70 hover:opacity-100 cursor-help" />
+          </InfoTooltip>
+        </div>
         <div className="flex gap-2 flex-wrap">
           {Object.entries(modo).filter(([, v]) => v > 0).map(([k, v]) => (
             <div key={k} className="flex items-baseline gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] text-xs">
@@ -2075,41 +3024,21 @@ function FiltroPeriodo({
   );
 }
 
-const COR_CLASSES = {
-  accent: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-  success: 'bg-[var(--success-soft)] text-[var(--success)]',
-  warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
-  danger: 'bg-[var(--danger-soft)] text-[var(--danger)]',
-  info: 'bg-[var(--info-soft)] text-[var(--info)]',
-  neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-};
+// KpiCard agora vem do ui/ (compartilhado).
 
-function KpiCard({ icon: Icon, color = 'neutral', label, valor, subvalor, delta, carregando }) {
-  const colorCls = COR_CLASSES[color] || COR_CLASSES.neutral;
-  const deltaPositivo = delta !== null && delta !== undefined && delta > 0;
-  const deltaNegativo = delta !== null && delta !== undefined && delta < 0;
-
+// Helper pra renderizar o titulo de uma secao com tooltip explicativo opcional.
+// Padrao visual identico ao que ja era usado inline (text-xs uppercase muted).
+// O icone HelpCircle so aparece se `info` for passado.
+function TituloSecao({ titulo, info }) {
   return (
-    <Card padding="md">
-      <div className="flex items-start justify-between gap-2">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${colorCls}`}>
-          <Icon size={16} strokeWidth={2} />
-        </div>
-        {delta !== null && delta !== undefined && (
-          <div className={`flex items-center gap-0.5 text-[11px] font-bold ${
-            deltaPositivo ? 'text-[var(--success)]' : deltaNegativo ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'
-          }`}>
-            {deltaPositivo ? <TrendingUp size={11} /> : deltaNegativo ? <TrendingDown size={11} /> : null}
-            {delta > 0 ? '+' : ''}{delta.toFixed(1)}%
-          </div>
-        )}
-      </div>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mt-3">{label}</div>
-      <div className="text-xl font-bold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">
-        {carregando && !valor ? <span className="inline-block w-24 h-5 bg-[var(--bg-subtle)] rounded animate-pulse" /> : valor}
-      </div>
-      {subvalor && <div className="text-[11px] text-[var(--text-muted)] mt-1">{subvalor}</div>}
-    </Card>
+    <div className="flex items-center gap-1.5">
+      <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">{titulo}</div>
+      {info && (
+        <InfoTooltip content={info}>
+          <HelpCircle size={13} strokeWidth={2} className="text-[var(--text-muted)] opacity-70 hover:opacity-100 cursor-help" />
+        </InfoTooltip>
+      )}
+    </div>
   );
 }
 
@@ -2124,20 +3053,107 @@ function ErroBox({ mensagem }) {
   );
 }
 
-// Bloco de filtros adicionais por aba. Cada filho e um <Select> ou <Input>
-// com size="sm". Layout em grid responsivo.
-function BlocoFiltros({ children }) {
+// (BlocoFiltros legado removido — substituído por BarraFiltros do design system)
+
+// ============================================================
+// ABA: Fechamento mensal — lista snapshots persistidos
+// ============================================================
+function AbaMensais() {
+  const navigate = useNavigate();
+  const [itens, setItens] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const { user } = useAuthStore();
+
+  const podeGerar = user?.perfil === 'CLIENT' || user?.perfil === 'ADMINISTRADOR';
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  const carregar = () => {
+    setCarregando(true);
+    setErro(null);
+    relatorioMensalService.listar()
+      .then(setItens)
+      .catch(() => setErro('Não foi possível carregar os relatórios mensais.'))
+      .finally(() => setCarregando(false));
+  };
+
+  const onGerarAnterior = async () => {
+    setGerando(true);
+    try {
+      await relatorioMensalService.gerar();
+      carregar();
+    } catch (e) {
+      setErro(e?.response?.data?.error || 'Não foi possível gerar agora.');
+    } finally {
+      setGerando(false);
+    }
+  };
+
   return (
-    <Card padding="md">
-      <div className="flex items-center gap-2 mb-2.5">
-        <Filter size={13} className="text-[var(--text-muted)]" />
-        <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
-          Filtros
+    <div className="space-y-4">
+      {erro && <ErroBox mensagem={erro} />}
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm text-[var(--text-muted)]">
+          {itens.length === 0 && !carregando
+            ? 'Nenhum mês fechado ainda.'
+            : `${itens.length} mês(es) disponível(is)`}
         </div>
+        {podeGerar && (
+          <button
+            type="button"
+            onClick={onGerarAnterior}
+            disabled={gerando}
+            className="text-xs font-semibold px-3 py-2 rounded-lg bg-[var(--primary)] text-[var(--text-on-primary)] hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {gerando ? 'Gerando…' : 'Gerar mês anterior agora'}
+          </button>
+        )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {children}
-      </div>
-    </Card>
+
+      {carregando ? (
+        <Card padding="lg">
+          <div className="text-sm text-[var(--text-muted)] text-center py-6">Carregando…</div>
+        </Card>
+      ) : itens.length === 0 ? (
+        <Card padding="lg">
+          <div className="text-sm text-[var(--text-secondary)] text-center py-10">
+            <div className="font-semibold text-[var(--text-main)]">Sem relatórios mensais por aqui</div>
+            <div className="mt-1 text-[var(--text-muted)]">
+              O sistema gera automaticamente no dia 7 de cada mês. Você também pode gerar manualmente quando quiser.
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {itens.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => navigate(`/app/relatorios/mensais/${r.ano}-${String(r.mes).padStart(2, '0')}`)}
+              className="text-left rounded-2xl border border-[var(--border-main)] bg-[var(--bg-card)] p-5 hover:border-[var(--accent)] hover:bg-[var(--bg-subtle)]/40 transition-colors"
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Fechamento</div>
+              <div className="text-xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
+                {NOMES_MES_BR[r.mes]} de {r.ano}
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)] mt-3">
+                Gerado em {new Date(r.geradoEm).toLocaleDateString('pt-BR')}
+                {r.geradoPor === 'CRON' ? ' (automático)' : ' (manual)'}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
+
+const NOMES_MES_BR = [
+  '', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];

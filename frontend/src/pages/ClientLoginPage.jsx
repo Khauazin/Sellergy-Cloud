@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Bot, Mail, ArrowRight, AlertCircle, MessageCircle, Calendar, ShoppingBag } from 'lucide-react';
+import { Mail, ArrowRight, AlertCircle, MessageCircle, Calendar, ShoppingBag } from 'lucide-react';
 import { useAuthStore } from '../store/auth.store';
 import { Button, Input } from '../components/ui';
+import SellergyLogo from '../components/SellergyLogo';
 
 /**
  * Login do cliente final (CLIENT, ADMINISTRADOR, VENDEDOR).
@@ -37,9 +38,7 @@ export default function ClientLoginPage() {
 
         <div className="relative z-10 flex flex-col justify-between p-12 w-full">
           <Link to="/" className="inline-flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center">
-              <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-            </div>
+            <SellergyLogo size={36} />
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
               Sellergy Cloud
             </span>
@@ -69,9 +68,7 @@ export default function ClientLoginPage() {
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <Link to="/" className="lg:hidden inline-flex items-center gap-2.5 mb-8">
-            <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center">
-              <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-            </div>
+            <SellergyLogo size={36} />
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
               Sellergy Cloud
             </span>

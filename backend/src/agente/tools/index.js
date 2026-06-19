@@ -26,6 +26,8 @@ const agendaTools = require('./agenda');
 const catalogoTools = require('./catalogo');
 const vendasTools = require('./vendas');
 const mensagensTools = require('./mensagens');
+const conhecimentoTools = require('./conhecimento');
+const conversaTools = require('./conversa');
 
 const REGISTRO = new Map();
 
@@ -35,7 +37,7 @@ function registrar(tool) {
   REGISTRO.set(tool.nome, tool);
 }
 
-[...crmTools, ...agendaTools, ...catalogoTools, ...vendasTools, ...mensagensTools].forEach(registrar);
+[...crmTools, ...agendaTools, ...catalogoTools, ...vendasTools, ...mensagensTools, ...conhecimentoTools, ...conversaTools].forEach(registrar);
 
 function obterTool(nome) {
   return REGISTRO.get(nome) || null;

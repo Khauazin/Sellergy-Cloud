@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
-import { Card, CardHeader, CardTitle, Button, Badge, EmptyState, Avatar } from '../components/ui';
+import { Card, CardHeader, CardTitle, Button, Badge, EmptyState, Avatar, KpiCard } from '../components/ui';
 import { moduloLiberado } from '../constants/permissoes';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -164,34 +164,37 @@ export default function ClientDashboardPage() {
 
       {/* KPIs - foco em BOT */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi
+        <KpiCard
           icon={MessageCircle}
+          color="accent"
           label="Mensagens hoje"
           valor={metricas.mensagensHoje}
-          sublabel={`${metricas.mensagensTotal} no total`}
-          loading={carregando}
-          accent
+          subvalor={`${metricas.mensagensTotal} no total`}
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={Inbox}
+          color="info"
           label="Conversas ativas"
           valor={metricas.conversasAtivas != null ? metricas.conversasAtivas : '—'}
-          sublabel="Modulo de Mensagens em breve"
-          loading={carregando}
+          subvalor="Modulo de Mensagens em breve"
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={Sparkles}
+          color="success"
           label="Leads via bot"
           valor={metricas.leadsBot.length}
-          sublabel={`${leads.length} leads totais`}
-          loading={carregando}
+          subvalor={`${leads.length} leads totais`}
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={ShoppingBag}
+          color="warning"
           label="Vendas via bot"
           valor={fmtBRL(metricas.valorVendasBot)}
-          sublabel={`${metricas.vendasBot.length} vendas atribuidas`}
-          loading={carregando}
+          subvalor={`${metricas.vendasBot.length} vendas atribuidas`}
+          carregando={carregando}
         />
       </div>
 
@@ -430,27 +433,6 @@ export default function ClientDashboardPage() {
         </div>
       </Card>
     </div>
-  );
-}
-
-function Kpi({ icon: Icon, label, valor, sublabel, accent, loading }) {
-  return (
-    <Card padding="lg">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${
-        accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
-      }`}>
-        <Icon size={16} strokeWidth={2} />
-      </div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-        {label}
-      </div>
-      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">
-        {loading ? '—' : valor}
-      </div>
-      {sublabel && (
-        <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>
-      )}
-    </Card>
   );
 }
 

@@ -1,9 +1,9 @@
 // Helpers de produtos vinculados ao Lead.
 //
 // Conceito: o `valor` exibido no card do CRM e a SOMA dos produtos vinculados
-// (qtd * preco_efetivo). O preco_efetivo respeita a regra do catalogo
-// (`usarPrecoCatalogo` -> usa `precoCatalogo`, senao `preco`). Esse calculo
-// e centralizado aqui pra UI, agente IA e dashboards verem o mesmo numero.
+// (qtd * preco). O preco vem de `resolverPrecoVenda` (preco unico de venda da
+// variacao). Esse calculo e centralizado aqui pra UI, agente IA e dashboards
+// verem o mesmo numero.
 
 const prisma = require('./prisma');
 const { resolverPrecoVenda } = require('./produto');

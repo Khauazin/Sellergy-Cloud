@@ -1,21 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Plus, Package, Edit2, Trash2, MoreHorizontal, Filter
+  Plus, Package, Edit2, Trash2, MoreHorizontal, Filter, Tag
 } from 'lucide-react';
 import api from '../services/api';
 import {
   Card, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast,
-  Switch, UploadImagem
+  UploadImagem, InputDuracao
 } from '../components/ui';
 import Modal from '../components/Modal';
 import catalogoService from '../services/catalogoService';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const TIPOS = [
-  { value: 'FISICO', label: 'Fisico' },
-  { value: 'SERVICO', label: 'Servico' },
-];
+// Catalogo cadastra so servicos. Constante TIPOS removida — filtro de tipo
+// nao faz mais sentido na UI.
 const VISIBILIDADES = [
   { value: 'ATIVO', label: 'Ativo' },
   { value: 'PAUSADO', label: 'Pausado' },
@@ -26,25 +24,30 @@ export default function CatalogoPage() {
   const toast = useToast();
   const [produtos, setProdutos] = useState([]);
   const [categorias, setCategorias] = useState([]);
+  const [especialistas, setEspecialistas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
+  // filtroTipo removido — Catalogo cadastra so servicos.
   const [filtroVis, setFiltroVis] = useState('');
 
   const [modalProduto, setModalProduto] = useState({ open: false, data: null });
   const [drawer, setDrawer] = useState({ open: false, produto: null });
   const [modalVariacao, setModalVariacao] = useState({ open: false, data: null, produtoId: null });
+  const [modalCatServico, setModalCatServico] = useState(false);
 
   useEffect(() => {
     carregar();
     carregarCategorias();
+    carregarEspecialistas();
   }, []);
 
   const carregar = async () => {
     setCarregando(true);
     try {
       const r = await api.get('/catalogo');
-      setProdutos(r.data || []);
+      // Catalogo so lista servicos. Produtos fisicos sao no Estoque.
+      // Filtro local pra blindar contra dados legados/criados por outras vias.
+      setProdutos((r.data || []).filter((p) => p.tipo === 'SERVICO'));
     } catch {
       setProdutos([]);
     } finally {
@@ -54,10 +57,33 @@ export default function CatalogoPage() {
 
   const carregarCategorias = async () => {
     try {
-      const r = await api.get('/financeiro/categorias');
+      // Só categorias de uso SERVICO aparecem no cadastro de serviço.
+      const r = await api.get('/financeiro/categorias?uso=SERVICO');
       setCategorias(r.data || []);
     } catch {
       setCategorias([]);
+    }
+  };
+
+  // Especialistas ativos pra vincular ao servico (a agenda reserva o horario deles).
+  const carregarEspecialistas = async () => {
+    try {
+      const r = await api.get('/especialistas');
+      setEspecialistas((r.data || []).filter((e) => e.ativo));
+    } catch {
+      setEspecialistas([]);
+    }
+  };
+
+  // Cria categoria contextual de serviço (uso=SERVICO automático; sem dropdown).
+  const handleSalvarCategoriaServico = async (nome) => {
+    try {
+      await api.post('/financeiro/categorias', { nome, tipo: 'RECEITA', uso: 'SERVICO' });
+      toast.success('Categoria de serviço criada');
+      setModalCatServico(false);
+      carregarCategorias();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao criar categoria');
     }
   };
 
@@ -65,11 +91,10 @@ export default function CatalogoPage() {
     const q = busca.trim().toLowerCase();
     return produtos.filter((p) => {
       if (q && !p.nome?.toLowerCase().includes(q) && !p.descricao?.toLowerCase().includes(q)) return false;
-      if (filtroTipo && p.tipo !== filtroTipo) return false;
       if (filtroVis && p.visibilidade !== filtroVis) return false;
       return true;
     });
-  }, [produtos, busca, filtroTipo, filtroVis]);
+  }, [produtos, busca, filtroVis]);
 
   const handleSalvar = async (dados) => {
     try {
@@ -136,23 +161,15 @@ export default function CatalogoPage() {
       <div className="flex items-start gap-3 p-4 rounded-2xl bg-[var(--info-soft)] text-[var(--info-text)]">
         <Filter size={18} strokeWidth={1.75} className="flex-shrink-0 mt-0.5" />
         <div className="text-xs leading-relaxed">
-          <strong>Sobre o catalogo:</strong> produtos cadastrados aqui podem ou nao ter estoque vinculado. Produtos <strong>sem estoque</strong> exigem lancamento manual no Financeiro a cada venda. Produtos <strong>com estoque</strong> baixam automaticamente e geram lancamento financeiro.
+          <strong>Catálogo de serviços:</strong> aqui você cadastra os serviços que oferece (corte, consulta, atendimento). Produtos físicos com estoque vão em <strong>Estoque</strong>.
         </div>
       </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[240px] max-w-md">
-          <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produtos..." />
+          <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar serviços..." />
         </div>
-        <Select
-          value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value)}
-          placeholder="Todos tipos"
-          options={TIPOS}
-          fullWidth={false}
-          className="w-40"
-        />
         <Select
           value={filtroVis}
           onChange={(e) => setFiltroVis(e.target.value)}
@@ -161,8 +178,11 @@ export default function CatalogoPage() {
           fullWidth={false}
           className="w-44"
         />
+        <Button variant="secondary" icon={Tag} onClick={() => setModalCatServico(true)}>
+          Categoria de serviço
+        </Button>
         <Button variant="primary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>
-          Novo produto
+          Novo serviço
         </Button>
       </div>
 
@@ -173,11 +193,11 @@ export default function CatalogoPage() {
         <Card padding="lg">
           <EmptyState
             icon={Package}
-            title="Nenhum produto"
-            description={produtos.length === 0 ? "Cadastre seu primeiro produto." : "Nenhum produto bate com os filtros."}
+            title="Nenhum serviço"
+            description={produtos.length === 0 ? "Cadastre seu primeiro serviço." : "Nenhum serviço bate com os filtros."}
             action={produtos.length === 0 && (
               <Button variant="primary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>
-                Cadastrar produto
+                Cadastrar serviço
               </Button>
             )}
           />
@@ -187,10 +207,9 @@ export default function CatalogoPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-[var(--border-main)]">
-                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto</th>
-                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Tipo</th>
+                <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Serviço</th>
                 <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Visibilidade</th>
-                <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Variacoes</th>
+                <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Variações</th>
                 <th className="w-12"></th>
               </tr>
             </thead>
@@ -211,9 +230,6 @@ export default function CatalogoPage() {
                         {p.descricao && <div className="text-[11px] text-[var(--text-muted)] line-clamp-1">{p.descricao}</div>}
                       </div>
                     </div>
-                  </td>
-                  <td className="py-3 px-5">
-                    <Badge variant="neutral" size="sm">{p.tipo === 'FISICO' ? 'Fisico' : 'Servico'}</Badge>
                   </td>
                   <td className="py-3 px-5">
                     <Badge variant={
@@ -247,16 +263,21 @@ export default function CatalogoPage() {
         onClose={() => setModalProduto({ open: false, data: null })}
         produto={modalProduto.data}
         categorias={categorias}
+        especialistas={especialistas}
         onSalvar={handleSalvar}
       />
 
-      {/* Modal Variacao — passa o tipo do produto pai pra controlar campos
-          condicionais (duracaoMin so aparece pra SERVICO). */}
+      <ModalCategoriaServico
+        isOpen={modalCatServico}
+        onClose={() => setModalCatServico(false)}
+        onSalvar={handleSalvarCategoriaServico}
+      />
+
+      {/* Modal Variacao — Catalogo so lida com servicos, sem condicional de tipo. */}
       <ModalVariacao
         isOpen={modalVariacao.open}
         onClose={() => setModalVariacao({ open: false, data: null, produtoId: null })}
         variacao={modalVariacao.data}
-        tipoProduto={produtos.find((p) => p.id === modalVariacao.produtoId)?.tipo || modalVariacao.data?.produto?.tipo}
         onSalvar={handleSalvarVariacao}
       />
 
@@ -278,17 +299,77 @@ export default function CatalogoPage() {
   );
 }
 
-function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
+// Modal contextual de categoria de serviço — só o nome; o uso (SERVICO) é
+// automático porque estamos no módulo de Serviços.
+function ModalCategoriaServico({ isOpen, onClose, onSalvar }) {
+  const [nome, setNome] = useState('');
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- limpa o campo ao abrir
+    if (isOpen) setNome('');
+  }, [isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!nome.trim()) return;
+    onSalvar(nome.trim());
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Nova categoria de serviço" description="Vai aparecer só no cadastro de serviços." size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Nome"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="Ex.: Cabelo, Estética, Consultas..."
+          required
+          autoFocus
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" type="button" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" type="submit">Criar</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = [], onSalvar }) {
   const [form, setForm] = useState({
-    nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '', imagemUrl: '',
+    nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO',
+    categoriaId: '', imagemUrl: '', duracaoMin: '', especialistasIds: [],
   });
+
+  const toggleEspecialista = (id) => setForm((f) => ({
+    ...f,
+    especialistasIds: f.especialistasIds.includes(id)
+      ? f.especialistasIds.filter((x) => x !== id)
+      : [...f.especialistasIds, id],
+  }));
   // Track imagens temp subidas neste modal pra cleanup em caso de cancelar.
   // Em modo de edicao isso fica vazio porque o upload e direto no produto existente.
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   useEffect(() => {
-    if (produto) setForm({ ...produto, descricao: produto.descricao || '', categoriaId: produto.categoriaId || '', imagemUrl: produto.imagemUrl || '' });
-    else setForm({ nome: '', descricao: '', tipo: 'FISICO', visibilidade: 'ATIVO', categoriaId: '', imagemUrl: '' });
+    if (produto) {
+      // Em edicao puxa duracao da 1a variacao "Padrao" se existir.
+      const variacaoPadrao = produto.variacoes?.[0];
+      setForm({
+        ...produto,
+        descricao: produto.descricao || '',
+        categoriaId: produto.categoriaId || '',
+        imagemUrl: produto.imagemUrl || '',
+        duracaoMin: variacaoPadrao?.duracaoMin ?? '',
+        especialistasIds: (produto.especialistas || []).map((e) => e.id),
+      });
+    } else {
+      // Default SERVICO porque Catalogo so cadastra servicos.
+      setForm({
+        nome: '', descricao: '', tipo: 'SERVICO', visibilidade: 'ATIVO',
+        categoriaId: '', imagemUrl: '', duracaoMin: '', especialistasIds: [],
+      });
+    }
     setTempsParaLimpar([]);
   }, [produto, isOpen]);
 
@@ -338,14 +419,26 @@ function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
       alert('Selecione uma categoria financeira (necessaria para CMV/relatorios).');
       return;
     }
-    // Em criacao, a imagemUrl atual e a "definitiva" — ela vai pro body.
-    // Remove ela da lista de temps a limpar (ja foi commitada).
-    onSalvar({ ...form, imagemUrl: form.imagemUrl || null });
+    if (!form.especialistasIds || form.especialistasIds.length === 0) {
+      alert('Selecione ao menos um especialista que atende este serviço.');
+      return;
+    }
+    // Catalogo cadastra SO servicos. Forcar tipo=SERVICO no payload pra
+    // blindar contra qualquer estado inesperado.
+    const duracao = form.duracaoMin === '' || form.duracaoMin == null
+      ? null
+      : (parseInt(form.duracaoMin, 10) || null);
+    onSalvar({
+      ...form,
+      tipo: 'SERVICO',
+      imagemUrl: form.imagemUrl || null,
+      duracaoMin: duracao,
+    });
     setTempsParaLimpar([]);
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={produto ? 'Editar produto' : 'Novo produto'} size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title={produto ? 'Editar serviço' : 'Novo serviço'} description={produto ? null : 'Cadastre o serviço com nome, foto, preço e duração.'} size="2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex items-start gap-4">
           <UploadImagem
@@ -354,60 +447,126 @@ function ModalProduto({ isOpen, onClose, produto, categorias, onSalvar }) {
             onRemover={handleRemoverImagem}
             tamanho="md"
           />
-          <div className="flex-1 space-y-3 min-w-0">
-            <Input label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
-            <Textarea label="Descricao" value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} rows={3} />
+          <div className="flex-1 space-y-4 min-w-0">
+            <Input
+              size="lg"
+              label="Nome do serviço"
+              value={form.nome}
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              required
+              autoFocus
+              placeholder="Ex.: Corte de cabelo, Consulta nutricional"
+            />
+            <Textarea
+              size="lg"
+              label="Descrição"
+              value={form.descricao}
+              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+              rows={3}
+              placeholder="O que está incluído no atendimento"
+            />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Select label="Tipo" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} options={TIPOS} placeholder="" />
-          <Select label="Visibilidade" value={form.visibilidade} onChange={(e) => setForm({ ...form, visibilidade: e.target.value })} options={VISIBILIDADES} placeholder="" />
+
+        {/* Sem seletor de Tipo: Catalogo cadastra so servicos.
+            Produtos fisicos sao cadastrados no Estoque. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Select
+            size="lg"
+            label="Visibilidade"
+            value={form.visibilidade}
+            onChange={(e) => setForm({ ...form, visibilidade: e.target.value })}
+            options={VISIBILIDADES}
+            placeholder=""
+          />
+          <Select
+            size="lg"
             label="Categoria financeira"
             value={form.categoriaId}
             onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
             placeholder="Selecione..."
             options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
-            hint="Necessaria para vincular vendas e CMV."
+            hint="Necessária para vincular vendas e CMV."
           />
+        </div>
+
+        {/* Duracao sempre visivel — Catalogo so trata servicos.
+            Persiste na variacao Padrao via backend. */}
+        <InputDuracao
+          size="lg"
+          label="Quanto tempo leva o atendimento?"
+          value={form.duracaoMin}
+          onChange={(min) => setForm({ ...form, duracaoMin: min })}
+          hint="A Agenda usa isso pra não marcar 2 clientes no mesmo horário."
+        />
+
+        {/* Especialistas que atendem — obrigatório. A agenda usa este vínculo
+            pra reservar o horário do profissional escolhido. */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+            Especialistas que atendem este serviço
+          </label>
+          {especialistas.length === 0 ? (
+            <div className="text-sm text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded-xl p-3 leading-relaxed">
+              Cadastre um especialista antes (na tela <strong>Especialistas</strong>). O serviço precisa de pelo menos um profissional que o execute.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {especialistas.map((esp) => {
+                  const sel = form.especialistasIds.includes(esp.id);
+                  return (
+                    <button
+                      type="button"
+                      key={esp.id}
+                      onClick={() => toggleEspecialista(esp.id)}
+                      className={`px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                        sel
+                          ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                          : 'border-[var(--border-main)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                      }`}
+                    >
+                      {esp.nome}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
+                Selecione um ou mais. Na agenda você escolhe qual deles vai atender.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>
-          <Button variant="primary" type="submit">{produto ? 'Salvar' : 'Criar produto'}</Button>
+          <Button variant="primary" type="submit">{produto ? 'Salvar' : 'Criar serviço'}</Button>
         </div>
       </form>
     </Modal>
   );
 }
 
-function ModalVariacao({ isOpen, onClose, variacao, tipoProduto, onSalvar }) {
-  const ehServico = tipoProduto === 'SERVICO';
+// Catalogo so lida com servicos — modal de variacao nao tem campos de estoque
+// (nao faz sentido pra servico). Duracao sempre visivel.
+function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
   const [form, setForm] = useState({
     nome: '', sku: '', preco: 0, precoCusto: 0,
-    precoCatalogo: '', usarPrecoCatalogo: false,
-    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
     duracaoMin: '', imagemUrl: '',
   });
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
   useEffect(() => {
     if (variacao) setForm({
-      ...variacao,
+      nome: variacao.nome || '',
       sku: variacao.sku || '',
+      preco: variacao.preco || 0,
       precoCusto: variacao.precoCusto || 0,
-      precoCatalogo: variacao.precoCatalogo ?? '',
-      usarPrecoCatalogo: variacao.usarPrecoCatalogo || false,
-      estoqueMinimo: variacao.estoqueMinimo || 0,
-      estoqueIdeal: variacao.estoqueIdeal || 0,
-      localizacao: variacao.localizacao || '',
       duracaoMin: variacao.duracaoMin ?? '',
       imagemUrl: variacao.imagemUrl || '',
     });
     else setForm({
       nome: '', sku: '', preco: 0, precoCusto: 0,
-      precoCatalogo: '', usarPrecoCatalogo: false,
-      estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, localizacao: '',
       duracaoMin: '', imagemUrl: '',
     });
     setTempsParaLimpar([]);
@@ -449,22 +608,14 @@ function ModalVariacao({ isOpen, onClose, variacao, tipoProduto, onSalvar }) {
       ...form,
       preco: parseFloat(form.preco) || 0,
       precoCusto: parseFloat(form.precoCusto) || 0,
-      precoCatalogo: form.precoCatalogo === '' ? null : parseFloat(form.precoCatalogo) || null,
-      usarPrecoCatalogo: !!form.usarPrecoCatalogo,
-      estoqueAtual: parseInt(form.estoqueAtual) || 0,
-      estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
-      estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
-      // duracaoMin so e enviada quando o produto pai e SERVICO; em produto
-      // fisico vai null pra nao poluir o banco.
-      duracaoMin: ehServico && form.duracaoMin !== '' ? (parseInt(form.duracaoMin, 10) || null) : null,
+      // Catalogo so trata servicos: sem campos de estoque, sempre tem duracao.
+      duracaoMin: form.duracaoMin === '' || form.duracaoMin == null
+        ? null
+        : (parseInt(form.duracaoMin, 10) || null),
       imagemUrl: form.imagemUrl || null,
     });
     setTempsParaLimpar([]);
   };
-
-  const precoEfetivo = form.usarPrecoCatalogo && form.precoCatalogo
-    ? parseFloat(form.precoCatalogo)
-    : parseFloat(form.preco);
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={variacao ? 'Editar variacao' : 'Nova variacao'} size="lg">
@@ -486,62 +637,20 @@ function ModalVariacao({ isOpen, onClose, variacao, tipoProduto, onSalvar }) {
           <Input label="Preco de custo (R$)" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
         </div>
 
-        {/* Preco para catalogo */}
-        <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[var(--text-main)]">Preco para catalogo (publico)</div>
-              <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                Pode ser diferente do preco do estoque (ex: catalogo digital com markup).
-              </div>
-            </div>
-            <Switch
-              checked={form.usarPrecoCatalogo}
-              onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
-              ariaLabel="Usar preco de catalogo como principal"
-            />
-          </div>
-          <Input
-            label="Preco catalogo (R$)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.precoCatalogo}
-            onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
-            disabled={!form.usarPrecoCatalogo}
-            placeholder="Deixe em branco para usar o preco do estoque"
-          />
-          <div className={`text-xs px-3 py-2 rounded-lg ${form.usarPrecoCatalogo ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--bg-subtle)] text-[var(--text-muted)]'}`}>
-            <strong>Preco usado em vendas e agenda:</strong> {form.usarPrecoCatalogo && form.precoCatalogo ? `${fmtBRL(precoEfetivo)} (catalogo)` : `${fmtBRL(form.preco)} (estoque)`}
-          </div>
-        </div>
+        {/* Campos de estoque (atual/min/ideal/localizacao) removidos —
+            Catalogo so lida com servicos, esses nao se aplicam. */}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Input label="Estoque atual" type="number" min="0" value={form.estoqueAtual} onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })} />
-          <Input label="Estoque minimo" type="number" min="0" value={form.estoqueMinimo} onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })} hint="Alerta de falta" />
-          <Input label="Estoque ideal" type="number" min="0" value={form.estoqueIdeal} onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })} hint="Alvo de reposicao" />
-        </div>
-        <Input label="Localizacao" value={form.localizacao} onChange={(e) => setForm({ ...form, localizacao: e.target.value })} placeholder="Ex: Corredor A, Prateleira 2" />
-
-        {/* Duracao do atendimento — so aparece quando o produto pai e SERVICO.
-            Usada pela Agenda pra pre-preencher e calcular conflito de horario. */}
-        {ehServico && (
-          <Input
-            label="Duração do atendimento (min)"
-            type="number"
-            min="5"
-            max="600"
-            step="5"
-            value={form.duracaoMin}
-            onChange={(e) => setForm({ ...form, duracaoMin: e.target.value })}
-            placeholder="Ex.: 30, 45, 60"
-            hint="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário."
-          />
-        )}
+        {/* Duracao do atendimento — sempre visivel pra servicos. */}
+        <InputDuracao
+          label="Duração do atendimento"
+          value={form.duracaoMin}
+          onChange={(min) => setForm({ ...form, duracaoMin: min })}
+          hint="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário."
+        />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={handleClose} type="button">Cancelar</Button>
-          <Button variant="primary" type="submit">{variacao ? 'Salvar' : 'Criar variacao'}</Button>
+          <Button variant="primary" type="submit">{variacao ? 'Salvar' : 'Criar variação'}</Button>
         </div>
       </form>
     </Modal>

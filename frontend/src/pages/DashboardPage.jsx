@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import {
-  Card, CardHeader, CardTitle, Avatar, Badge, Button, EmptyState
+  Card, CardHeader, CardTitle, Avatar, Badge, Button, EmptyState, KpiCard,
 } from '../components/ui';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -50,35 +50,37 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi
+        <KpiCard
           icon={Users}
+          color="info"
           label="Clientes ativos"
           valor={`${totalAtivos}`}
-          sublabel={`${clientes.length} no total`}
-          loading={carregando}
+          subvalor={`${clientes.length} no total`}
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={DollarSign}
+          color="accent"
           label="MRR"
           valor={fmtBRL(mrr)}
-          sublabel="Receita mensal recorrente"
-          accent
-          loading={carregando}
+          subvalor="Receita mensal recorrente"
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={Bot}
+          color="success"
           label="Bots online"
           valor={`${botsOnline}`}
-          sublabel={`${bots.length} cadastrados`}
-          loading={carregando}
+          subvalor={`${bots.length} cadastrados`}
+          carregando={carregando}
         />
-        <Kpi
+        <KpiCard
           icon={Bell}
+          color={alertasAbertos > 0 ? 'warning' : 'success'}
           label="Alertas abertos"
           valor={`${alertasAbertos}`}
-          sublabel={alertasAbertos > 0 ? 'Precisa de atencao' : 'Tudo certo'}
-          tone={alertasAbertos > 0 ? 'warning' : 'success'}
-          loading={carregando}
+          subvalor={alertasAbertos > 0 ? 'Precisa de atencao' : 'Tudo certo'}
+          carregando={carregando}
         />
       </div>
 
@@ -211,35 +213,7 @@ export default function DashboardPage() {
   );
 }
 
-function Kpi({ icon: Icon, label, valor, sublabel, tone = 'neutral', accent, loading }) {
-  const toneCls = {
-    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-    success: 'bg-[var(--success-soft)] text-[var(--success)]',
-    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
-    danger: 'bg-[var(--danger-soft)] text-[var(--danger)]',
-  };
-
-  return (
-    <Card padding="lg">
-      <div className="flex items-start justify-between gap-3">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : toneCls[tone]}`}>
-          <Icon size={16} strokeWidth={2} />
-        </div>
-      </div>
-      <div className="mt-4">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          {label}
-        </div>
-        <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
-          {loading ? '—' : valor}
-        </div>
-        {sublabel && (
-          <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>
-        )}
-      </div>
-    </Card>
-  );
-}
+// Kpi local removido — usa KpiCard compartilhado do ui/.
 
 function QuickAction({ to, icon: Icon, label, desc }) {
   return (

@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../prisma');
 const middlewareAutenticacao = require('../middlewares/auth.middleware');
 const { requerAdmin } = require('../middlewares/permissoes.middleware');
+const { modulosLiberadosPorSegmento } = require('../utils/modulosSegmento');
 const bcrypt = require('bcryptjs');
 
 const roteador = express.Router();
@@ -55,6 +56,12 @@ roteador.post('/', async (req, res) => {
   try {
     const { nome, email, telefone, segmento, plano, mensalidade, modulosLiberados } = req.body;
 
+    const SEGMENTOS_VALIDOS = ['SERVICO', 'PRODUTO', 'HIBRIDO'];
+    const segmentoNormalizado = segmento ? String(segmento).toUpperCase() : null;
+    if (segmentoNormalizado && !SEGMENTOS_VALIDOS.includes(segmentoNormalizado)) {
+      return res.status(400).json({ erro: `Segmento invalido. Use: ${SEGMENTOS_VALIDOS.join(', ')}.` });
+    }
+
     if (!email) {
       return res.status(400).json({ erro: 'O e-mail eh obrigatorio para gerar o acesso do cliente.' });
     }
@@ -62,6 +69,15 @@ roteador.post('/', async (req, res) => {
     if (!nome) {
       return res.status(400).json({ erro: 'O nome eh obrigatorio.' });
     }
+
+    // Modulos liberados: a matriz explicita do admin tem prioridade; sem ela,
+    // auto-ativa o conjunto do segmento (onboarding sem atrito — Fase 3.1).
+    const matrizExplicita = modulosLiberados && typeof modulosLiberados === 'object' && !Array.isArray(modulosLiberados)
+      ? Object.fromEntries(Object.entries(modulosLiberados).filter(([, v]) => typeof v === 'boolean'))
+      : {};
+    const modulosFinais = Object.keys(matrizExplicita).length > 0
+      ? matrizExplicita
+      : modulosLiberadosPorSegmento(segmentoNormalizado);
 
     // Usar transacao para garantir integridade
     const resultado = await prisma.$transaction(async (tx) => {
@@ -71,12 +87,10 @@ roteador.post('/', async (req, res) => {
           nome,
           email,
           telefone,
-          segmento,
+          segmento: segmentoNormalizado,
           plano,
           mensalidade: Number(mensalidade || 0),
-          modulosLiberados: modulosLiberados && typeof modulosLiberados === 'object'
-            ? modulosLiberados
-            : {}
+          modulosLiberados: modulosFinais
         }
       });
 
@@ -97,6 +111,8 @@ roteador.post('/', async (req, res) => {
         }
       });
 
+      // Sem categorias pré-cadastradas: o tenant nasce vazio e o usuário cria
+      // as próprias categorias (com o devido "uso") na tela de Configurações.
       return cliente;
     });
 
@@ -114,9 +130,16 @@ roteador.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { nome, email, telefone, segmento, plano, status, mensalidade } = req.body;
+
+    const SEGMENTOS_VALIDOS = ['SERVICO', 'PRODUTO', 'HIBRIDO'];
+    const segmentoNormalizado = segmento ? String(segmento).toUpperCase() : null;
+    if (segmentoNormalizado && !SEGMENTOS_VALIDOS.includes(segmentoNormalizado)) {
+      return res.status(400).json({ erro: `Segmento invalido. Use: ${SEGMENTOS_VALIDOS.join(', ')}.` });
+    }
+
     const cliente = await prisma.cliente.update({
       where: { id },
-      data: { nome, email, telefone, segmento, plano, status, mensalidade: Number(mensalidade || 0) }
+      data: { nome, email, telefone, segmento: segmentoNormalizado, plano, status, mensalidade: Number(mensalidade || 0) }
     });
     res.json(cliente);
   } catch (erro) {

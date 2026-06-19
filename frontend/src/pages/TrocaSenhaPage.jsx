@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, CheckCircle2, AlertCircle, Bot } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import { Button, Input, Card, useToast } from '../components/ui';
+import SellergyLogo from '../components/SellergyLogo';
 
 export default function TrocaSenhaPage() {
   const navigate = useNavigate();
@@ -51,9 +52,7 @@ export default function TrocaSenhaPage() {
     <div className="min-h-screen bg-[var(--bg-app)] flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-8 justify-center">
-          <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center">
-            <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-          </div>
+          <SellergyLogo size={36} />
           <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
             Sellergy Cloud
           </span>

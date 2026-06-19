@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Bot, Mail, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
+import { Mail, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../store/auth.store';
 import { Button, Input } from '../components/ui';
+import SellergyLogo from '../components/SellergyLogo';
 
 /**
  * Login do administrador do sistema. Layout split: lado esquerdo formulario,
@@ -37,9 +38,7 @@ export default function LoginPage({ isAdmin = true }) {
         <div className="w-full max-w-sm">
           {/* Logo */}
           <Link to="/" className="inline-flex items-center gap-2.5 mb-12 group">
-            <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center">
-              <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-            </div>
+            <SellergyLogo size={36} />
             <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
               Sellergy Cloud
             </span>

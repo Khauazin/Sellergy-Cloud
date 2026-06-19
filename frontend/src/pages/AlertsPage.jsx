@@ -6,7 +6,7 @@ import {
 import api from '../services/api';
 import {
   Card, Button, Badge, EmptyState, SearchBar, Tabs, TabsList, TabsTrigger,
-  Select, useToast
+  Select, useToast, KpiCard,
 } from '../components/ui';
 
 const SEVERIDADE_CFG = {
@@ -98,9 +98,9 @@ export default function AlertsPage() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-4">
-        <Kpi label="Abertos" valor={stats.abertos} variant={stats.abertos > 0 ? 'warning' : 'neutral'} />
-        <Kpi label="Criticos abertos" valor={stats.criticos} variant={stats.criticos > 0 ? 'danger' : 'neutral'} />
-        <Kpi label="Resolvidos" valor={stats.resolvidos} variant="success" />
+        <KpiCard icon={Bell} color={stats.abertos > 0 ? 'warning' : 'neutral'} label="Abertos" valor={stats.abertos} />
+        <KpiCard icon={AlertTriangle} color={stats.criticos > 0 ? 'danger' : 'neutral'} label="Criticos abertos" valor={stats.criticos} />
+        <KpiCard icon={CheckCircle2} color="success" label="Resolvidos" valor={stats.resolvidos} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -190,16 +190,4 @@ export default function AlertsPage() {
   );
 }
 
-function Kpi({ label, valor, variant }) {
-  return (
-    <Card padding="lg">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
-      <div className={`text-2xl font-semibold tracking-tight mt-1 tabular-nums ${
-        variant === 'danger' ? 'text-[var(--danger)]' :
-        variant === 'warning' ? 'text-[var(--warning)]' :
-        variant === 'success' ? 'text-[var(--success)]' :
-        'text-[var(--text-main)]'
-      }`}>{valor}</div>
-    </Card>
-  );
-}
+// Kpi local removido — usa KpiCard compartilhado do ui/.

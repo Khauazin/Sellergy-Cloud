@@ -5,7 +5,13 @@ const {
   ehAdmin,
   requerModuloLiberado,
   requerPermissao,
+  escopoDoUsuario,
 } = require('../middlewares/permissoes.middleware');
+const { lockClienteAdvisory } = require('../utils/locks');
+
+// Mesmo limite usado no VendaController/tool — cobre colisao da unique
+// [clienteId, numero] quando 2+ vendas chegam no mesmo ms.
+const MAX_RETRIES_NUMERO = 5;
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
@@ -14,6 +20,22 @@ roteador.use(requerModuloLiberado('AGENDA'));
 function tenantFiltro(req) {
   if (ehAdmin(req.usuario)) return {};
   return { clienteId: req.usuario.clienteId };
+}
+
+// Escopo da AGENDA: ADMIN/CLIENT/ADMINISTRADOR veem todos os agendamentos do
+// tenant; um usuario com escopo PROPRIAS (ex.: especialista que tem login) ve
+// SO os agendamentos do especialista vinculado a ele.
+async function escopoAgendaWhere(req) {
+  const u = req.usuario;
+  if (ehAdmin(u) || u.perfil === 'CLIENT' || u.perfil === 'ADMINISTRADOR') return {};
+  const dados = await prisma.usuario.findUnique({
+    where: { id: u.id },
+    select: { permissoes: true, especialista: { select: { id: true } } },
+  });
+  const escopo = escopoDoUsuario(u, dados?.permissoes || {}, 'AGENDA');
+  if (escopo === 'TODAS') return {};
+  // PROPRIAS: filtra pelo especialista do usuario; sem especialista, nao ve nada.
+  return { especialistaId: dados?.especialista?.id || '__sem_especialista__' };
 }
 
 async function agendamentoDoTenant(id, req) {
@@ -114,7 +136,7 @@ function calcularAlteracoes(antes, depois, campos) {
 //
 // Retorna { erro: string, conflito: agendamento } ou null se OK.
 // Aceita `excluirId` pra edicao (nao bate contra o proprio).
-async function validarConflitosAgenda({ clienteId, dataNova, duracaoNova, telefone, excluirId = null }) {
+async function validarConflitosAgenda({ clienteId, dataNova, duracaoNova, telefone, excluirId = null, especialistaId = null }) {
   // Normaliza telefone — só digitos
   const telefoneNorm = (telefone || '').replace(/\D/g, '');
 
@@ -134,14 +156,18 @@ async function validarConflitosAgenda({ clienteId, dataNova, duracaoNova, telefo
     },
     select: {
       id: true, nomeCliente: true, telefoneCliente: true,
-      data: true, duracao: true, servico: true, status: true,
+      data: true, duracao: true, servico: true, status: true, especialistaId: true,
     },
   });
 
   const fimNovo = new Date(dataNova.getTime() + (duracaoNova || 30) * 60000);
 
-  // 1. Conflito de horario
+  // 1. Conflito de horario — so conta quando e o MESMO recurso (mesmo
+  // especialista, ou ambos sem especialista = recurso unico da loja).
+  // Especialistas diferentes podem atender no mesmo horario.
+  const espNovo = especialistaId || null;
   for (const e of existentes) {
+    if ((e.especialistaId || null) !== espNovo) continue;
     const inicio = new Date(e.data);
     const fim = new Date(inicio.getTime() + (e.duracao || 30) * 60000);
     if (dataNova < fim && fimNovo > inicio) {
@@ -173,8 +199,18 @@ async function validarConflitosAgenda({ clienteId, dataNova, duracaoNova, telefo
 
 roteador.get('/', requerPermissao('AGENDA', 'visualizar'), async (req, res) => {
   try {
-    const { month, year, date, inicio, fim } = req.query;
+    const { month, year, date, inicio, fim, especialistaId, status } = req.query;
     const where = { ...tenantFiltro(req) };
+    const escopoW = await escopoAgendaWhere(req);
+    Object.assign(where, escopoW);
+    // O filtro de especialista por query so vale pra quem ve TODAS (gestor).
+    if (!escopoW.especialistaId && typeof especialistaId === 'string' && especialistaId) {
+      where.especialistaId = especialistaId;
+    }
+    // Filtro de status (opcional).
+    if (typeof status === 'string' && ['PENDING', 'CONFIRMED', 'CANCELED', 'COMPLETED'].includes(status)) {
+      where.status = status;
+    }
 
     // PREFERIDO: front manda inicio/fim em ISO ja calculados no fuso do
     // usuario. Backend so passa adiante — zero risco de TZ shift.
@@ -197,9 +233,8 @@ roteador.get('/', requerPermissao('AGENDA', 'visualizar'), async (req, res) => {
     const agendamentos = await prisma.agendamento.findMany({
       where,
       include: {
-        lead: {
-          select: { nome: true, telefone: true }
-        }
+        lead: { select: { nome: true, telefone: true } },
+        especialista: { select: { id: true, nome: true } }
       },
       orderBy: { data: 'asc' }
     });
@@ -216,7 +251,7 @@ roteador.post('/', requerPermissao('AGENDA', 'criar'), async (req, res) => {
     let clienteId = req.usuario.clienteId;
     const {
       leadId, nomeCliente, telefoneCliente, data, duracao,
-      servico, preco, observacoes, origem,
+      servico, preco, observacoes, origem, especialistaId,
       clienteId: bodyClienteId,
     } = req.body;
 
@@ -242,6 +277,16 @@ roteador.post('/', requerPermissao('AGENDA', 'criar'), async (req, res) => {
       }
     }
 
+    // Especialista (opcional): precisa ser do mesmo tenant.
+    let especialistaIdValidado = null;
+    if (especialistaId) {
+      const esp = await prisma.especialista.findFirst({
+        where: { id: especialistaId, clienteId }, select: { id: true },
+      });
+      if (!esp) return res.status(400).json({ erro: 'Especialista invalido para este tenant.' });
+      especialistaIdValidado = esp.id;
+    }
+
     const dataNova = new Date(data);
     const duracaoNova = parseInt(duracao) || 30;
 
@@ -251,6 +296,7 @@ roteador.post('/', requerPermissao('AGENDA', 'criar'), async (req, res) => {
       dataNova,
       duracaoNova,
       telefone: telefoneCliente,
+      especialistaId: especialistaIdValidado,
     });
     if (conflito) {
       return res.status(422).json({ erro: conflito.erro, conflito: conflito.conflito });
@@ -260,6 +306,7 @@ roteador.post('/', requerPermissao('AGENDA', 'criar'), async (req, res) => {
       data: {
         clienteId,
         leadId: leadId || null,
+        especialistaId: especialistaIdValidado,
         nomeCliente,
         telefoneCliente,
         data: dataNova,
@@ -321,7 +368,7 @@ roteador.put('/:id', requerPermissao('AGENDA', 'editar'), async (req, res) => {
     if (dados.data || dados.duracao || dados.telefoneCliente !== undefined) {
       const atual = await prisma.agendamento.findUnique({
         where: { id },
-        select: { data: true, duracao: true, telefoneCliente: true, clienteId: true },
+        select: { data: true, duracao: true, telefoneCliente: true, clienteId: true, especialistaId: true },
       });
       const conflito = await validarConflitosAgenda({
         clienteId: atual.clienteId,
@@ -329,6 +376,7 @@ roteador.put('/:id', requerPermissao('AGENDA', 'editar'), async (req, res) => {
         duracaoNova: dados.duracao || atual.duracao,
         telefone: dados.telefoneCliente !== undefined ? dados.telefoneCliente : atual.telefoneCliente,
         excluirId: id, // nao bate contra ele mesmo
+        especialistaId: atual.especialistaId,
       });
       if (conflito) {
         return res.status(422).json({ erro: conflito.erro, conflito: conflito.conflito });
@@ -476,6 +524,112 @@ roteador.get('/:id/historico', requerPermissao('AGENDA', 'visualizar'), async (r
   } catch (erro) {
     console.error('[agenda/historico]', erro);
     res.status(500).json({ erro: 'Erro ao carregar historico' });
+  }
+});
+
+// =====================================================================
+// CONCLUIR ATENDIMENTO — marca COMPLETED e gera a venda do servico
+// =====================================================================
+// O serviço só vira receita quando acontece: ao concluir, cria a Venda
+// (valor/descricao do agendamento) + lançamento no caixa, numa transação.
+// Serviço NÃO mexe em estoque. Trava de dupla-conclusão (status + venda 1:1).
+// Caixa auto (AUTO_BOT) se não houver aberto, igual ao fluxo do bot.
+// Respeita o escopo: especialista só conclui os próprios atendimentos.
+// "Não compareceu" reusa PATCH /:id/status (CANCELED) — sem venda.
+roteador.patch('/:id/concluir', requerPermissao('AGENDA', 'editar'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const escopoW = await escopoAgendaWhere(req);
+    const ag = await prisma.agendamento.findFirst({
+      where: { id, ...tenantFiltro(req), ...escopoW },
+      select: {
+        id: true, clienteId: true, status: true, servico: true, preco: true,
+        leadId: true, nomeCliente: true, venda: { select: { id: true } },
+      },
+    });
+    if (!ag) return res.status(404).json({ erro: 'Agendamento nao encontrado.' });
+    if (ag.status === 'COMPLETED' || ag.venda) {
+      return res.status(409).json({ erro: 'Este atendimento ja foi concluido.' });
+    }
+    if (ag.status === 'CANCELED') {
+      return res.status(422).json({ erro: 'Agendamento cancelado nao pode ser concluido.' });
+    }
+
+    const metodoPagamento = typeof req.body?.metodoPagamento === 'string' && req.body.metodoPagamento.trim()
+      ? req.body.metodoPagamento.trim() : null;
+    const valor = Number.isFinite(ag.preco) ? ag.preco : 0;
+    const descricao = ag.servico ? `Atendimento: ${ag.servico}` : `Atendimento de ${ag.nomeCliente}`;
+
+    let resultado;
+    let tentativa = 0;
+    while (true) {
+      try {
+        const ultima = await prisma.venda.findFirst({
+          where: { clienteId: ag.clienteId }, orderBy: { numero: 'desc' }, select: { numero: true },
+        });
+        const proximoNumero = (ultima?.numero || 0) + 1;
+
+        resultado = await prisma.$transaction(async (tx) => {
+          await lockClienteAdvisory(tx, ag.clienteId);
+
+          let sessao = await tx.sessaoCaixa.findFirst({
+            where: { clienteId: ag.clienteId, status: 'ABERTA' }, orderBy: { abertaEm: 'desc' },
+          });
+          if (!sessao) {
+            sessao = await tx.sessaoCaixa.create({
+              data: {
+                clienteId: ag.clienteId, fundoCaixa: 0, status: 'ABERTA', origem: 'AUTO_BOT',
+                observacaoAbertura: 'Aberta automaticamente ao concluir um atendimento sem caixa aberto.',
+              },
+            });
+          }
+
+          const venda = await tx.venda.create({
+            data: {
+              clienteId: ag.clienteId, numero: proximoNumero, leadId: ag.leadId || null,
+              sessaoCaixaId: sessao.id, valor, metodoPagamento, descricao,
+              status: 'COMPLETED', agendamentoId: ag.id,
+            },
+          });
+
+          if (valor > 0) {
+            await tx.lancamentoFinanceiro.create({
+              data: {
+                clienteId: ag.clienteId, leadId: ag.leadId || null, vendaId: venda.id,
+                sessaoCaixaId: sessao.id, descricao: `Receita Venda #${venda.numero}: ${descricao}`,
+                valor, tipo: 'RECEITA', status: 'PAGO',
+                dataVencimento: new Date(), dataPagamento: new Date(),
+              },
+            });
+          }
+
+          const agAtualizado = await tx.agendamento.update({
+            where: { id: ag.id }, data: { status: 'COMPLETED' },
+          });
+          return { venda, agendamento: agAtualizado };
+        });
+        break;
+      } catch (err) {
+        if (err?.code === 'P2002' && tentativa < MAX_RETRIES_NUMERO) { tentativa += 1; continue; }
+        throw err;
+      }
+    }
+
+    await logHistorico({
+      agendamentoId: ag.id,
+      acao: 'STATUS_MUDADO',
+      alteracoes: { status: { de: ag.status, para: 'COMPLETED' }, vendaNumero: resultado.venda.numero },
+      req,
+    });
+
+    res.json({
+      ok: true,
+      agendamento: resultado.agendamento,
+      venda: { id: resultado.venda.id, numero: resultado.venda.numero, valor: resultado.venda.valor },
+    });
+  } catch (erro) {
+    console.error('[agenda/concluir]', erro);
+    res.status(500).json({ erro: 'Erro ao concluir o atendimento.' });
   }
 });
 

@@ -8,7 +8,6 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const prisma = require('../prisma');
 const whatsapp = require('../canais/whatsapp');
-const telegram = require('../canais/telegram');
 const { processarMensagemEntrante } = require('../canais/dispatcher');
 
 const roteador = express.Router();
@@ -97,64 +96,6 @@ roteador.post('/whatsapp/:botId', limitador, express.json({ limit: TAMANHO_MAX_B
     }
   } catch (erro) {
     console.error('[canais/whatsapp/webhook]', erro);
-  }
-});
-
-// =================================================================
-// Telegram Bot API
-// =================================================================
-//
-// Telegram nao tem GET de verificacao. A protecao eh via secret_token
-// enviado pelo Telegram em todo POST no header
-// X-Telegram-Bot-Api-Secret-Token. Comparamos com bot.verifyTokenCanal.
-
-roteador.post('/telegram/:botId', limitador, express.json({ limit: TAMANHO_MAX_BYTES }), async (req, res) => {
-  // Telegram tambem reenfileira em caso de timeout/5xx — responder rapido.
-  res.status(200).send('OK');
-
-  try {
-    const { botId } = req.params;
-    const corpo = req.body;
-    if (!corpo) return;
-
-    const bot = await prisma.bot.findUnique({
-      where: { id: botId },
-      select: { id: true, clienteId: true, fluxoPadraoId: true, verifyTokenCanal: true },
-    });
-    if (!bot) {
-      console.warn('[canais/telegram] bot nao encontrado:', botId);
-      return;
-    }
-
-    // Validacao do secret_token. Se o bot nao tem verifyTokenCanal configurado,
-    // recusamos por seguranca (qualquer um conseguiria postar updates falsos).
-    const headerSecret = req.headers['x-telegram-bot-api-secret-token'];
-    if (!bot.verifyTokenCanal || headerSecret !== bot.verifyTokenCanal) {
-      console.warn('[canais/telegram] secret_token invalido para bot:', botId);
-      return;
-    }
-
-    const mensagens = telegram.parsearWebhook(corpo);
-    for (const msg of mensagens) {
-      try {
-        await processarMensagemEntrante({
-          bot,
-          canal: 'TELEGRAM',
-          identificadorRemetente: msg.chatId,
-          texto: msg.texto || '',
-          metadata: {
-            messageIdCanal: msg.messageIdCanal,
-            tipo: msg.tipo,
-            nomeRemetente: msg.nomeRemetente,
-            recebidoEm: msg.recebidoEm,
-          },
-        });
-      } catch (e) {
-        console.error('[canais/telegram/dispatch]', e?.message || e);
-      }
-    }
-  } catch (erro) {
-    console.error('[canais/telegram/webhook]', erro);
   }
 });
 

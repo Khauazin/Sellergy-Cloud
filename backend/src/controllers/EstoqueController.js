@@ -173,11 +173,16 @@ class EstoqueController {
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
 
+      // Filtra apenas movimentacoes de produtos FISICOS — servicos nao tem
+      // estoque, entao nao fazem sentido na tela de estoque. Vendas de servico
+      // ainda geram MovimentacaoEstoque no banco (pra auditoria via vendaId),
+      // mas nao aparecem aqui.
       const movimentacoes = await prisma.movimentacaoEstoque.findMany({
         where: {
           variacao: {
             produto: {
-              clienteId
+              clienteId,
+              tipo: 'FISICO'
             }
           }
         },

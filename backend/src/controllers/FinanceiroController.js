@@ -41,6 +41,98 @@ function bloquearSeVendaVinculada(lancamento) {
   return null;
 }
 
+// =====================================================================
+// REGRAS DE NEGOCIO TEMPORAIS
+// =====================================================================
+
+// 'ATRASADO' nao deve ser um status persistido — e derivado da data.
+// Calcula em tempo de leitura: PENDENTE + vencimento < hoje (00:00) = ATRASADO.
+// Mantemos o status original no banco; expomos `statusEfetivo` no response.
+function calcularStatusEfetivo(lanc) {
+  if (!lanc) return null;
+  if (lanc.status !== 'PENDENTE') return lanc.status;
+  // Comparacao por DIA em America/Sao_Paulo — sem isso, servidor em UTC marca
+  // como atrasado 1-3h cedo pra usuarios BRT (mesma armadilha que a Agenda
+  // ja teve). Compara strings YYYY-MM-DD lexicograficamente.
+  const TZ = 'America/Sao_Paulo';
+  const hojeBRT = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  const vencBRT = new Date(lanc.dataVencimento).toLocaleDateString('en-CA', { timeZone: TZ });
+  return vencBRT < hojeBRT ? 'ATRASADO' : 'PENDENTE';
+}
+
+// IMUTABILIDADE DE MES FECHADO
+// Lancamento PAGO de mes anterior ao atual e imutavel (semantica contabil:
+// "mes fechado"). Permite ajustar erros do mes corrente, mas trava historico.
+// Lancamentos de venda ja sao bloqueados pelo bloquearSeVendaVinculada.
+function ehMesFechadoImutavel(lanc) {
+  if (!lanc) return false;
+  if (lanc.status !== 'PAGO') return false;
+  const ref = lanc.dataPagamento || lanc.dataVencimento;
+  if (!ref) return false;
+  // Comparacao por ANO-MES em America/Sao_Paulo (mesma razao do statusEfetivo).
+  const TZ = 'America/Sao_Paulo';
+  const hojeYM = new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7);
+  const refYM = new Date(ref).toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7);
+  return refYM < hojeYM;
+}
+
+const MSG_BLOQUEIO_MES_FECHADO = 'Lancamento de mes fechado (pago em mes anterior) e imutavel pra preservar relatorios. Pra ajustar, crie um lancamento compensatorio no mes atual.';
+
+// =====================================================================
+// AUDITORIA — log de mudancas em lancamentos
+// =====================================================================
+// Cada acao no lancamento gera 1 linha em HistoricoLancamento. Cache pra
+// nao bater no banco buscando o nome do usuario varias vezes na mesma
+// request — JWT so traz id+perfil+clienteId, nome vem do banco.
+const cacheNomeUsuario = new Map();
+
+async function obterNomeUsuario(usuarioId) {
+  if (!usuarioId) return null;
+  if (cacheNomeUsuario.has(usuarioId)) return cacheNomeUsuario.get(usuarioId);
+  try {
+    const u = await prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { nome: true },
+    });
+    const nome = u?.nome || null;
+    cacheNomeUsuario.set(usuarioId, nome);
+    // TTL leve: limpa se cache crescer demais (sessao longa do servidor).
+    if (cacheNomeUsuario.size > 200) {
+      const primeira = cacheNomeUsuario.keys().next().value;
+      cacheNomeUsuario.delete(primeira);
+    }
+    return nome;
+  } catch {
+    return null;
+  }
+}
+
+// Best-effort: nunca quebra a operacao principal se falhar logar.
+async function logHistoricoLancamento({ lancamentoId, acao, alteracoes = null, req }) {
+  try {
+    const usuarioId = req?.usuario?.id || null;
+    const usuarioNome = await obterNomeUsuario(usuarioId);
+    await prisma.historicoLancamento.create({
+      data: { lancamentoId, acao, alteracoes, usuarioId, usuarioNome },
+    });
+  } catch (e) {
+    console.error('[financeiro/historico] falha ao logar', e?.message);
+  }
+}
+
+// Diff entre antes e depois — so campos efetivamente mudados.
+// Ignora undefined no depois (campo nao enviado no PUT).
+function calcularAlteracoesLancamento(antes, depois, campos) {
+  const diff = {};
+  for (const c of campos) {
+    if (depois[c] === undefined) continue;
+    const a = antes[c] instanceof Date ? antes[c].toISOString() : antes[c];
+    const b = depois[c] instanceof Date ? depois[c].toISOString() : depois[c];
+    if (a !== b) diff[c] = { de: antes[c], para: depois[c] };
+  }
+  return Object.keys(diff).length > 0 ? diff : null;
+}
+
 class FinanceiroController {
 
   // Lançamentos
@@ -53,17 +145,35 @@ class FinanceiroController {
       const paginaNum = Math.max(1, parseInt(pagina))
       const limiteNum = Math.min(100, Math.max(1, parseInt(limite)))
 
+      // Filtro ATRASADO e virtual: traduzimos pra PENDENTE + dataVencimento < hoje.
+      // Os outros status (PENDENTE, PAGO, CANCELADO) vao direto pra query.
+      let statusFiltro = status || undefined;
+      let dataVencimentoExtra = undefined;
+      if (status === 'ATRASADO') {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        statusFiltro = 'PENDENTE';
+        dataVencimentoExtra = { lt: hoje };
+      } else if (status === 'PENDENTE') {
+        // Quando o usuario pede PENDENTE 'puro', exclui os que ja deveriam estar
+        // marcados como ATRASADO (vencimento passou) — UX mais intuitiva.
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        dataVencimentoExtra = { gte: hoje };
+      }
+
       const onde = {
         clienteId: clienteId,
         tipo: tipo || undefined,
-        status: status || undefined,
+        status: statusFiltro,
         descricao: buscar ? {
           contains: buscar,
           mode: 'insensitive'
         } : undefined,
         dataVencimento: {
-          gte: inicio ? new Date(inicio) : undefined,
-          lte: fim ? new Date(fim) : undefined
+          gte: inicio ? new Date(inicio) : (dataVencimentoExtra?.gte || undefined),
+          lte: fim ? new Date(fim) : undefined,
+          lt: dataVencimentoExtra?.lt || undefined,
         }
       }
 
@@ -93,6 +203,11 @@ class FinanceiroController {
           ...l,
           estaAtrasado: diasAtraso > 0,
           diasAtraso,
+          // Status efetivo: ATRASADO virtual quando PENDENTE + vencimento passou.
+          statusEfetivo: calcularStatusEfetivo(l),
+          // Imutavel: PAGO em mes anterior = bloqueado pra edicao/exclusao.
+          // Front usa pra esconder/disabled botoes.
+          imutavel: ehMesFechadoImutavel(l),
           valorAtualizado: diasAtraso > 0 ? Number((l.valor * (1 + (diasAtraso * 0.00033) + 0.02)).toFixed(2)) : l.valor
         };
       });
@@ -198,10 +313,38 @@ class FinanceiroController {
       }
 
       if (parcelas > 1) {
+        // createMany nao retorna IDs — pra logar cada parcela, busca depois
+        // pelo idAgrupamento. Custo aceitavel pra ter trilha auditavel.
         await prisma.lancamentoFinanceiro.createMany({ data: lancamentosParaCriar });
+        const criadas = await prisma.lancamentoFinanceiro.findMany({
+          where: { idAgrupamento, clienteId },
+          select: { id: true, descricao: true, valor: true, dataVencimento: true, status: true },
+        });
+        for (const l of criadas) {
+          await logHistoricoLancamento({
+            lancamentoId: l.id,
+            acao: 'CRIADO',
+            alteracoes: { snapshot: { ...l, parcelas, idAgrupamento } },
+            req,
+          });
+        }
         res.status(201).json({ mensagem: `${parcelas} parcelas criadas.`, total: valor });
       } else {
         const lancamento = await prisma.lancamentoFinanceiro.create({ data: lancamentosParaCriar[0] });
+        await logHistoricoLancamento({
+          lancamentoId: lancamento.id,
+          acao: 'CRIADO',
+          alteracoes: {
+            snapshot: {
+              descricao: lancamento.descricao,
+              valor: lancamento.valor,
+              tipo: lancamento.tipo,
+              dataVencimento: lancamento.dataVencimento?.toISOString(),
+              status: lancamento.status,
+            },
+          },
+          req,
+        });
         res.status(201).json(lancamento);
       }
     } catch (error) {
@@ -220,7 +363,12 @@ class FinanceiroController {
       // Trava de integridade: lancamento de venda nao pode ser alterado aqui.
       const bloqueio = bloquearSeVendaVinculada(existente);
       if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
-      if (existente.status === 'PAGO') return res.status(422).json({ error: 'Não é possível editar um lançamento já pago.' });
+      // Trava de mes fechado — PAGO em mes anterior nao pode ser alterado.
+      // PAGO do mes corrente PODE ser editado (corrigir descricao/categoria etc).
+      // Auditoria fica em HistoricoLancamento.
+      if (ehMesFechadoImutavel(existente)) {
+        return res.status(423).json({ error: MSG_BLOQUEIO_MES_FECHADO, codigo: 'MES_FECHADO' });
+      }
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
         where: { id },
@@ -236,6 +384,14 @@ class FinanceiroController {
           metodoPagamento: dados.metodoPagamento,
         }
       });
+      // Log: diff entre antes e dados recebidos. Se nada mudou, nao loga.
+      const alteracoes = calcularAlteracoesLancamento(existente, {
+        ...dados,
+        dataVencimento: dados.dataVencimento ? new Date(dados.dataVencimento) : undefined,
+      }, ['descricao', 'valor', 'tipo', 'dataVencimento', 'categoriaId', 'leadId', 'produto', 'metodoPagamento']);
+      if (alteracoes) {
+        await logHistoricoLancamento({ lancamentoId: id, acao: 'EDITADO', alteracoes, req });
+      }
       res.json(lancamento);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao editar lançamento' });
@@ -252,6 +408,14 @@ class FinanceiroController {
       // Trava de integridade: status de lancamento de venda e definido pela venda.
       const bloqueio = bloquearSeVendaVinculada(existente);
       if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
+      // Trava de mes fechado: nao deixa "des-pagar" lancamento PAGO antigo.
+      if (ehMesFechadoImutavel(existente)) {
+        return res.status(423).json({ error: MSG_BLOQUEIO_MES_FECHADO, codigo: 'MES_FECHADO' });
+      }
+      // Rejeita explicitamente o status 'ATRASADO' manual — agora e derivado.
+      if (status === 'ATRASADO') {
+        return res.status(422).json({ error: '"Atrasado" e calculado automaticamente (vencimento passado + nao pago). Nao pode ser setado manualmente.' });
+      }
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
         where: { id },
@@ -261,6 +425,15 @@ class FinanceiroController {
           dataCancelamento: dataCancelamento ? new Date(dataCancelamento) : undefined
         }
       });
+      // Log se realmente mudou
+      if (existente.status !== status) {
+        await logHistoricoLancamento({
+          lancamentoId: id,
+          acao: 'STATUS_MUDADO',
+          alteracoes: { status: { de: existente.status, para: status } },
+          req,
+        });
+      }
       res.json(lancamento);
     } catch (error) {
       res.status(500).json({ error: 'Erro ao atualizar status' });
@@ -369,6 +542,18 @@ class FinanceiroController {
         where: { id },
         data: { dataVencimento: novaData, motivoCancelamento: `Pausa amigável aplicada em ${new Date().toLocaleDateString()}` }
       });
+      await logHistoricoLancamento({
+        lancamentoId: id,
+        acao: 'ADIADO',
+        alteracoes: {
+          dataVencimento: {
+            de: lancamento.dataVencimento?.toISOString(),
+            para: novaData.toISOString(),
+          },
+          dias,
+        },
+        req,
+      });
       res.json({ mensagem: 'Vencimento postergado.', novoVencimento: atualizado.dataVencimento });
     } catch (error) {
       res.status(500).json({ error: 'Erro na pausa amigável' });
@@ -380,13 +565,45 @@ class FinanceiroController {
       const { id } = req.params;
       const { clienteId } = req.usuario;
       const lancamento = await buscarLancamentoDoCliente(id, clienteId);
-      if (!lancamento || !lancamento.lead?.telefone) return res.status(400).json({ error: 'Dados insuficientes' });
+      if (!lancamento || !lancamento.lead?.telefone) {
+        return res.status(400).json({ error: 'Lead sem telefone cadastrado ou lancamento sem lead vinculado.' });
+      }
 
-      const mensagem = `Olá ${lancamento.lead.nome}, identificamos sua fatura em aberto. Pode pagar via Pix?`;
-      const linkWpp = `https://wa.me/${lancamento.lead.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(mensagem)}`;
-      res.json({ tipo: 'WHATSAPP_ACTION', link: linkWpp });
+      // Calcula variaveis pra substituir no template do front.
+      const hoje = new Date();
+      const vencimento = new Date(lancamento.dataVencimento);
+      const diasAtrasoNum = Math.max(0, Math.floor((hoje - vencimento) / (1000 * 60 * 60 * 24)));
+
+      const variaveis = {
+        nome: lancamento.lead.nome || 'cliente',
+        valor: Number(lancamento.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        vencimento: vencimento.toLocaleDateString('pt-BR'),
+        descricao: lancamento.descricao || '',
+        dias_atraso: diasAtrasoNum > 0 ? String(diasAtrasoNum) : '0',
+      };
+
+      // Template padrao com variaveis ja substituidas. Front pode mostrar
+      // numa caixa editavel antes de abrir o WhatsApp.
+      const ehAtrasada = diasAtrasoNum > 0;
+      const mensagemPadrao = ehAtrasada
+        ? `Olá ${variaveis.nome}! Notei que a fatura "${variaveis.descricao}" no valor de ${variaveis.valor}, com vencimento em ${variaveis.vencimento}, está em atraso há ${variaveis.dias_atraso} dia(s). Pode quitar via Pix? Aguardo retorno 🙏`
+        : `Olá ${variaveis.nome}! Passando pra lembrar da fatura "${variaveis.descricao}" no valor de ${variaveis.valor}, com vencimento em ${variaveis.vencimento}. Pode pagar via Pix? Qualquer dúvida me avise 🙂`;
+
+      const telefoneLimpo = lancamento.lead.telefone.replace(/\D/g, '');
+      const linkBase = `https://wa.me/${telefoneLimpo}`;
+
+      res.json({
+        tipo: 'WHATSAPP_ACTION',
+        telefone: telefoneLimpo,
+        linkBase,
+        mensagemPadrao,
+        variaveis,
+        // Mantem `link` legacy pra clientes antigos que ainda usam direto.
+        link: `${linkBase}?text=${encodeURIComponent(mensagemPadrao)}`,
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Erro ao cobrar' });
+      console.error('[cobrarLancamento]', error);
+      res.status(500).json({ error: 'Erro ao gerar cobranca' });
     }
   }
 
@@ -418,7 +635,15 @@ class FinanceiroController {
     try {
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
-      const categorias = await prisma.categoriaFinanceira.findMany({ where: { clienteId }, orderBy: { nome: 'asc' } });
+      // Filtro por uso/contexto: ?uso=SERVICO ou ?uso=CAIXA,DESPESA. Sem o
+      // parametro, lista todas (Configuracoes/Relatorios precisam ver tudo).
+      const USOS = ['SERVICO', 'PRODUTO', 'CAIXA', 'DESPESA'];
+      const where = { clienteId };
+      if (req.query.uso) {
+        const pedidos = String(req.query.uso).split(',').map((u) => u.trim()).filter((u) => USOS.includes(u));
+        if (pedidos.length) where.uso = { in: pedidos };
+      }
+      const categorias = await prisma.categoriaFinanceira.findMany({ where, orderBy: { nome: 'asc' } });
       res.json(categorias);
     } catch (error) {
       console.error('[listarCategorias]', error);
@@ -430,8 +655,26 @@ class FinanceiroController {
     try {
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
-      const { nome, tipo } = req.body;
-      const cat = await prisma.categoriaFinanceira.create({ data: { clienteId, nome, tipo } });
+      const { nome, tipo, subTipo, uso } = req.body;
+      if (!nome || typeof nome !== 'string' || nome.trim().length < 2) {
+        return res.status(422).json({ error: 'Nome obrigatório (mínimo 2 caracteres).' });
+      }
+      if (tipo !== 'RECEITA' && tipo !== 'DESPESA') {
+        return res.status(422).json({ error: 'Tipo precisa ser RECEITA ou DESPESA.' });
+      }
+      // Uso/contexto é obrigatório: define onde a categoria aparece.
+      const USOS = ['SERVICO', 'PRODUTO', 'CAIXA', 'DESPESA'];
+      if (!USOS.includes(uso)) {
+        return res.status(422).json({ error: 'Selecione onde a categoria será usada (serviço, produto, caixa ou despesa).' });
+      }
+      // subTipo só faz sentido para DESPESA; ignora se vier em RECEITA.
+      let subTipoFinal = null;
+      if (tipo === 'DESPESA' && (subTipo === 'VARIAVEL' || subTipo === 'FIXA')) {
+        subTipoFinal = subTipo;
+      }
+      const cat = await prisma.categoriaFinanceira.create({
+        data: { clienteId, nome: nome.trim(), tipo, subTipo: subTipoFinal, uso },
+      });
       res.status(201).json(cat);
     } catch (error) {
       console.error('[criarCategoria]', error);
@@ -444,7 +687,17 @@ class FinanceiroController {
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
       const { id } = req.params;
-      const cat = await prisma.categoriaFinanceira.update({ where: { id, clienteId }, data: req.body });
+      const { nome, tipo, subTipo, uso } = req.body;
+      const data = {};
+      if (typeof nome === 'string' && nome.trim().length >= 2) data.nome = nome.trim();
+      if (tipo === 'RECEITA' || tipo === 'DESPESA') data.tipo = tipo;
+      if (['SERVICO', 'PRODUTO', 'CAIXA', 'DESPESA'].includes(uso)) data.uso = uso;
+      // Permite explicitamente "limpar" o subTipo enviando null.
+      if (subTipo === null) data.subTipo = null;
+      else if (subTipo === 'VARIAVEL' || subTipo === 'FIXA') data.subTipo = subTipo;
+      // Se mudou pra RECEITA, força subTipo a null pra manter coerência.
+      if (data.tipo === 'RECEITA') data.subTipo = null;
+      const cat = await prisma.categoriaFinanceira.update({ where: { id, clienteId }, data });
       res.json(cat);
     } catch (error) {
       console.error('[editarCategoria]', error);
@@ -479,13 +732,60 @@ class FinanceiroController {
 
   async ajustarSaldo(req, res) {
     try {
-      const { clienteId } = req.usuario;
+      const { clienteId, id: usuarioId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
-      const novo = await prisma.saldoHistorico.create({ data: { clienteId, valor: parseFloat(req.body.valor), motivo: req.body.motivo } });
+      const usuarioNome = await obterNomeUsuario(usuarioId);
+      const novo = await prisma.saldoHistorico.create({
+        data: {
+          clienteId,
+          valor: parseFloat(req.body.valor),
+          motivo: req.body.motivo,
+          usuarioId: usuarioId || null,
+          usuarioNome: usuarioNome || null,
+        },
+      });
       res.status(201).json(novo);
     } catch (error) {
       console.error('[ajustarSaldo]', error);
       res.status(500).json({ error: 'Erro ao ajustar saldo' });
+    }
+  }
+
+  // Lista historico de mudancas de um lancamento (auditoria). Mais recente primeiro.
+  async historicoLancamento(req, res) {
+    try {
+      const { id } = req.params;
+      const { clienteId } = req.usuario;
+      const existente = await buscarLancamentoDoCliente(id, clienteId);
+      if (!existente) return res.status(404).json({ error: 'Lancamento nao encontrado.' });
+
+      const itens = await prisma.historicoLancamento.findMany({
+        where: { lancamentoId: id },
+        orderBy: { criadoEm: 'desc' },
+      });
+      res.json({ itens, total: itens.length });
+    } catch (error) {
+      console.error('[historicoLancamento]', error);
+      res.status(500).json({ error: 'Erro ao carregar historico do lancamento' });
+    }
+  }
+
+  // Lista historico de ajustes manuais (mais recente primeiro). Limite default
+  // 50 — pra UI de auditoria mostrar quem mexeu no saldo e por que.
+  async saldoHistorico(req, res) {
+    try {
+      const { clienteId } = req.usuario;
+      if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
+      const limite = Math.min(parseInt(req.query.limite, 10) || 50, 200);
+      const itens = await prisma.saldoHistorico.findMany({
+        where: { clienteId },
+        orderBy: { data: 'desc' },
+        take: limite,
+      });
+      res.json({ itens, total: itens.length });
+    } catch (error) {
+      console.error('[saldoHistorico]', error);
+      res.status(500).json({ error: 'Erro ao listar historico de saldo' });
     }
   }
 
@@ -498,7 +798,26 @@ class FinanceiroController {
       // Trava de integridade: lancamento de venda NUNCA e excluido — vai cancelado pela venda.
       const bloqueio = bloquearSeVendaVinculada(existente);
       if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
+      // Mes fechado: nao da pra apagar. Pra correcao, cancela ou faz lancamento compensatorio.
+      if (ehMesFechadoImutavel(existente)) {
+        return res.status(423).json({ error: MSG_BLOQUEIO_MES_FECHADO, codigo: 'MES_FECHADO' });
+      }
 
+      // Loga ANTES do delete (SET NULL no FK mantem a linha do historico).
+      await logHistoricoLancamento({
+        lancamentoId: id,
+        acao: 'EXCLUIDO',
+        alteracoes: {
+          snapshot: {
+            descricao: existente.descricao,
+            valor: existente.valor,
+            tipo: existente.tipo,
+            status: existente.status,
+            dataVencimento: existente.dataVencimento?.toISOString(),
+          },
+        },
+        req,
+      });
       await prisma.lancamentoFinanceiro.delete({ where: { id } });
       res.json({ message: 'Lançamento excluído com sucesso.' });
     } catch (error) {
@@ -515,6 +834,10 @@ class FinanceiroController {
       if (!existente) return res.status(404).json({ error: 'Lançamento não encontrado.' });
       const bloqueio = bloquearSeVendaVinculada(existente);
       if (bloqueio) return res.status(bloqueio.status).json({ error: bloqueio.erro });
+      // Mes fechado: nao cancela. Pra reverter, cria lancamento compensatorio.
+      if (ehMesFechadoImutavel(existente)) {
+        return res.status(423).json({ error: MSG_BLOQUEIO_MES_FECHADO, codigo: 'MES_FECHADO' });
+      }
 
       const lancamento = await prisma.lancamentoFinanceiro.update({
         where: { id },
@@ -523,6 +846,12 @@ class FinanceiroController {
           dataCancelamento: new Date(),
           motivoCancelamento: motivo
         }
+      });
+      await logHistoricoLancamento({
+        lancamentoId: id,
+        acao: 'CANCELADO',
+        alteracoes: { motivo: motivo || null, statusAnterior: existente.status },
+        req,
       });
       res.json(lancamento);
     } catch (error) {
@@ -536,7 +865,7 @@ class FinanceiroController {
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
       const hoje = new Date();
       const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+      const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59, 999);
 
       const agregados = await prisma.lancamentoFinanceiro.groupBy({
         by: ['tipo', 'status'],
@@ -547,17 +876,29 @@ class FinanceiroController {
         _sum: { valor: true }
       });
 
-      const resumo = { entradas: 0, saidas: 0, saldo: 0 };
+      // Nomes ALINHADOS com o front: totalReceitas, totalDespesas, aReceber.
+      // (antes era entradas/saidas/saldo — front ignorava e mostrava R$ 0,00).
+      // entradas/saidas/saldo mantidos pra retrocompat com outros consumidores.
+      const r = { totalReceitas: 0, totalDespesas: 0, aReceber: 0 };
       agregados.forEach(a => {
+        const v = a._sum.valor || 0;
         if (a.status === 'PAGO') {
-          if (a.tipo === 'RECEITA') resumo.entradas += a._sum.valor || 0;
-          else resumo.saidas += a._sum.valor || 0;
+          if (a.tipo === 'RECEITA') r.totalReceitas += v;
+          else r.totalDespesas += v;
+        } else if (a.status === 'PENDENTE' && a.tipo === 'RECEITA') {
+          r.aReceber += v;
         }
       });
-      resumo.saldo = resumo.entradas - resumo.saidas;
 
-      res.json(resumo);
+      res.json({
+        ...r,
+        // Aliases legados (mesmo conteudo, nomes antigos).
+        entradas: r.totalReceitas,
+        saidas: r.totalDespesas,
+        saldo: r.totalReceitas - r.totalDespesas,
+      });
     } catch (error) {
+      console.error('[resumo]', error);
       res.status(500).json({ error: 'Erro ao buscar resumo financeiro' });
     }
   }

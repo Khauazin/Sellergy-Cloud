@@ -85,15 +85,17 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    // Carrega modulosLiberados e branding se for usuario de tenant.
+    // Carrega modulosLiberados, segmento e branding se for usuario de tenant.
     let modulosLiberados = null;
     let branding = null;
+    let segmento = null;
     if (usuario.clienteId) {
       const cliente = await prisma.cliente.findUnique({
         where: { id: usuario.clienteId },
-        select: { modulosLiberados: true, brandLogo: true, brandNome: true }
+        select: { modulosLiberados: true, segmento: true, brandLogo: true, brandNome: true }
       });
       modulosLiberados = cliente?.modulosLiberados || {};
+      segmento = cliente?.segmento || null;
       branding = { logo: cliente?.brandLogo || null, nome: cliente?.brandNome || null };
     }
 
@@ -107,6 +109,7 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
         deveTrocarSenha: usuario.deveTrocarSenha === true,
         foto: usuario.foto || null,
         modulosLiberados,
+        segmento,
         branding,
       },
       token
@@ -134,23 +137,29 @@ roteador.get('/perfil', middlewareAutenticacao, async (req, res) => {
     });
     if (!usuario) return res.status(404).json({ erro: 'Usuario nao encontrado' });
 
-    // Carrega modulos liberados e branding do tenant para o frontend.
+    // Carrega modulos liberados, segmento, branding e horario do tenant.
     let modulosLiberados = null;
     let branding = null;
+    let horarioFuncionamento = null;
+    let segmento = null;
     if (usuario.clienteId) {
       const cliente = await prisma.cliente.findUnique({
         where: { id: usuario.clienteId },
-        select: { modulosLiberados: true, status: true, brandLogo: true, brandNome: true }
+        select: { modulosLiberados: true, segmento: true, status: true, brandLogo: true, brandNome: true, horarioFuncionamento: true }
       });
       modulosLiberados = cliente?.modulosLiberados || {};
+      segmento = cliente?.segmento || null;
       branding = { logo: cliente?.brandLogo || null, nome: cliente?.brandNome || null };
+      horarioFuncionamento = cliente?.horarioFuncionamento || null;
     }
 
     res.json({
       ...usuario,
       clienteId: usuario.clienteId || null,
       modulosLiberados,
+      segmento,
       branding,
+      horarioFuncionamento,
     });
   } catch (erro) {
     console.error('[auth/perfil]', erro);
@@ -252,6 +261,49 @@ roteador.put('/branding', middlewareAutenticacao, async (req, res) => {
   } catch (erro) {
     console.error('[auth/branding]', erro);
     res.status(500).json({ erro: 'Erro ao atualizar marca.' });
+  }
+});
+
+// Atualiza horario de funcionamento do tenant (usado pelo cron diario do
+// caixa e por outras automacoes). So CLIENT (dono) pode editar.
+// Formato esperado: { abertura: 'HH:MM', fechamento: 'HH:MM', dias: [0-6] }
+roteador.put('/horario-funcionamento', middlewareAutenticacao, async (req, res) => {
+  try {
+    if (req.usuario.perfil !== 'CLIENT' && req.usuario.perfil !== 'ADMINISTRADOR') {
+      return res.status(403).json({ erro: 'Apenas o dono da conta ou administradores podem alterar o horario.' });
+    }
+    if (!req.usuario.clienteId) {
+      return res.status(400).json({ erro: 'Usuario sem tenant.' });
+    }
+
+    const { abertura, fechamento, dias } = req.body;
+    // Valida formato HH:MM (basico — front ja restringe via type="time").
+    const ehHora = (h) => typeof h === 'string' && /^\d{1,2}:\d{2}$/.test(h);
+    if (abertura && !ehHora(abertura)) return res.status(422).json({ erro: 'abertura invalida (use HH:MM)' });
+    if (fechamento && !ehHora(fechamento)) return res.status(422).json({ erro: 'fechamento invalido (use HH:MM)' });
+
+    // dias = array de 0-6 (0=domingo, 6=sabado). Default = seg-sab.
+    let diasValidos = [1, 2, 3, 4, 5, 6];
+    if (Array.isArray(dias)) {
+      diasValidos = dias.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+    }
+
+    const horarioFuncionamento = {
+      abertura: abertura || '08:00',
+      fechamento: fechamento || '18:00',
+      dias: diasValidos,
+    };
+
+    const cliente = await prisma.cliente.update({
+      where: { id: req.usuario.clienteId },
+      data: { horarioFuncionamento },
+      select: { id: true, horarioFuncionamento: true },
+    });
+
+    res.json({ horarioFuncionamento: cliente.horarioFuncionamento });
+  } catch (erro) {
+    console.error('[auth/horario-funcionamento]', erro);
+    res.status(500).json({ erro: 'Erro ao atualizar horario.' });
   }
 });
 

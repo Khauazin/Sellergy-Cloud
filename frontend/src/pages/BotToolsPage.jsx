@@ -10,7 +10,7 @@ import toolsService from '../services/toolsService';
 const ROTULOS_MODULO = {
   CRM: 'CRM (Leads)',
   AGENDA: 'Agenda',
-  CATALOGO: 'Catalogo',
+  CATALOGO: 'Serviços',
   VENDAS: 'Vendas',
   FINANCEIRO: 'Financeiro',
   ESTOQUE: 'Estoque',

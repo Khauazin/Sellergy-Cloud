@@ -53,6 +53,23 @@ async function processarMensagemEntrante({ bot, canal, identificadorRemetente, t
   if (!bot?.id || !bot?.clienteId) {
     throw new Error('processarMensagemEntrante: bot invalido.');
   }
+
+  // Idempotencia: a Meta reenvia o webhook. Se ja processamos essa mensagem
+  // (mesmo messageIdCanal), ignora — evita duplicar a mensagem e disparar o bot 2x.
+  const messageIdCanal = metadata?.messageIdCanal || null;
+  if (messageIdCanal) {
+    const jaProcessada = await prisma.mensagemConversa.findFirst({
+      where: {
+        clienteId: bot.clienteId,
+        metadata: { path: ['messageIdCanal'], equals: messageIdCanal },
+      },
+      select: { id: true },
+    });
+    if (jaProcessada) {
+      return { conversaId: null, mensagemId: jaProcessada.id, execucaoId: null, duplicada: true };
+    }
+  }
+
   const conversa = await acharOuCriarConversa({
     clienteId: bot.clienteId,
     botId: bot.id,
@@ -65,8 +82,14 @@ async function processarMensagemEntrante({ bot, canal, identificadorRemetente, t
     metadata,
   });
 
+  // Se a conversa esta em handoff (aguardando humano), NAO dispara o bot — o
+  // atendente esta no comando. A mensagem ja foi persistida acima e aparece na
+  // inbox. Limpar o flag ("devolver ao bot") e acao da tela de Mensagens.
+  const estadoConversa = conversa.estado && typeof conversa.estado === 'object' ? conversa.estado : {};
+  const aguardandoHumano = estadoConversa.aguardandoHumano === true;
+
   let execucaoId = null;
-  if (bot.fluxoPadraoId) {
+  if (bot.fluxoPadraoId && !aguardandoHumano) {
     try {
       const exec = await criarExecucaoPendente({
         fluxoId: bot.fluxoPadraoId,

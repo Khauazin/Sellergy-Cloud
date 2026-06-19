@@ -4,12 +4,23 @@ const bcrypt = require('bcryptjs');
 const PERFIS_COLABORADOR_VALIDOS = ['ADMINISTRADOR', 'VENDEDOR'];
 const ACOES = ['visualizar', 'criar', 'editar', 'excluir'];
 
+// Acoes especificas de modulos que fogem do CRUD padrao (sync com o frontend).
+const ACOES_POR_MODULO = {
+  MENSAGENS: ['visualizar', 'responder', 'atribuir'],
+};
+const acoesDoModulo = (modulo) => ACOES_POR_MODULO[modulo] || ACOES;
+
+// Modulos com dimensao de escopo (ve 'PROPRIAS' x 'TODAS').
+const MODULOS_COM_ESCOPO = new Set(['MENSAGENS', 'AGENDA']);
+const ESCOPOS_VALIDOS = ['PROPRIAS', 'TODAS'];
+
 /**
  * Catalogo de modulos disponiveis para concessao no CRM.
- * Mantem em sync com o frontend (CrmUsersPage).
+ * Mantem em sync com o frontend (CrmUsersPage / constants/permissoes).
  */
 const MODULOS_CRM = [
   'CRM',
+  'MENSAGENS',
   'AGENDA',
   'CATALOGO',
   'ESTOQUE',
@@ -22,25 +33,31 @@ const MODULOS_CRM = [
 function gerarPermissoesCompletas() {
   const todas = {};
   for (const modulo of MODULOS_CRM) {
-    todas[modulo] = { visualizar: true, criar: true, editar: true, excluir: true };
+    const p = {};
+    for (const acao of acoesDoModulo(modulo)) p[acao] = true;
+    if (MODULOS_COM_ESCOPO.has(modulo)) p.escopo = 'TODAS';
+    todas[modulo] = p;
   }
   return todas;
 }
 
 function sanitizarPermissoes(input) {
-  // Aceita estrutura { modulo: { acao: bool } }, descarta tudo que nao bate.
+  // Aceita { modulo: { acao: bool, escopo?: 'PROPRIAS'|'TODAS' } }, descarta o resto.
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
 
   const limpo = {};
-  for (const [modulo, acoes] of Object.entries(input)) {
+  for (const [modulo, dados] of Object.entries(input)) {
     if (!MODULOS_CRM.includes(modulo)) continue;
-    if (!acoes || typeof acoes !== 'object') continue;
+    if (!dados || typeof dados !== 'object') continue;
 
-    const acoesLimpas = {};
-    for (const acao of ACOES) {
-      acoesLimpas[acao] = acoes[acao] === true;
+    const limpoModulo = {};
+    for (const acao of acoesDoModulo(modulo)) {
+      limpoModulo[acao] = dados[acao] === true;
     }
-    limpo[modulo] = acoesLimpas;
+    if (MODULOS_COM_ESCOPO.has(modulo)) {
+      limpoModulo.escopo = ESCOPOS_VALIDOS.includes(dados.escopo) ? dados.escopo : 'PROPRIAS';
+    }
+    limpo[modulo] = limpoModulo;
   }
   return limpo;
 }

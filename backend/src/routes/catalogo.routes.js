@@ -70,8 +70,6 @@ roteador.get('/variacoes/:id/preco', requerPermissao('CATALOGO', 'visualizar'), 
       preco: resolverPrecoVenda(variacao),
       fonte: fontePrecoVenda(variacao),
       precoEstoque: variacao.preco,
-      precoCatalogo: variacao.precoCatalogo,
-      usarPrecoCatalogo: variacao.usarPrecoCatalogo,
     });
   } catch (erro) {
     console.error('[catalogo/preco]', erro);

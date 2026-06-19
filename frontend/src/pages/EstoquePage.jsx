@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Box, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, TrendingUp,
   Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag, Image as ImageIcon, ArrowLeftRight
@@ -8,7 +8,8 @@ import api from '../services/api';
 import {
   Card, CardHeader, CardTitle, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, useToast, Tabs, TabsList, TabsTrigger, TabsContent,
-  Dropdown, DropdownItem, DropdownDivider, Switch, UploadImagem
+  Dropdown, DropdownItem, DropdownDivider, UploadImagem, InputDuracao,
+  KpiCard,
 } from '../components/ui';
 import Modal from '../components/Modal';
 import catalogoService from '../services/catalogoService';
@@ -45,6 +46,7 @@ const TIPO_MOV_LABELS = {
 export default function EstoquePage() {
   const toast = useToast();
   const { aba } = useParams();
+  const navigate = useNavigate();
   const tab = SLUG_PARA_TAB[aba] || 'dashboard';
   const tituloAba = TITULOS_ABA[aba] || TITULOS_ABA['visao-geral'];
   const [stats, setStats] = useState(null);
@@ -72,12 +74,15 @@ export default function EstoquePage() {
         api.get('/estoque/movimentacoes').catch(() => ({ data: [] })),
         api.get('/estoque/reposicao').catch(() => ({ data: [] })),
         api.get('/catalogo').catch(() => ({ data: [] })),
-        api.get('/financeiro/categorias').catch(() => ({ data: [] })),
+        api.get('/financeiro/categorias?uso=PRODUTO').catch(() => ({ data: [] })),
       ]);
       setStats(s.data);
       setMovimentacoes(m.data || []);
       setReposicao(r.data || []);
-      setProdutos(p.data || []);
+      // Estoque so lista produtos FISICOS. Servicos sao gerenciados no Catalogo.
+      // Filtro local pra blindar contra dados legados/criados por outras vias
+      // (ex: bot) — backend continua retornando tudo do tenant.
+      setProdutos((p.data || []).filter((prod) => prod.tipo === 'FISICO'));
       setCategorias(c.data || []);
     } finally {
       setCarregando(false);
@@ -108,6 +113,33 @@ export default function EstoquePage() {
     );
   }, [variacoesFlat, busca]);
 
+  // Filtros pra as outras abas — todos usam o mesmo `busca` global pra
+  // simplificar (a SearchBar fica no header, compartilhada).
+  const movimentacoesFiltered = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return movimentacoes;
+    return movimentacoes.filter((m) =>
+      m.variacao?.produto?.nome?.toLowerCase().includes(q) ||
+      m.variacao?.nome?.toLowerCase().includes(q) ||
+      m.observacao?.toLowerCase().includes(q)
+    );
+  }, [movimentacoes, busca]);
+
+  const reposicaoFiltered = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return reposicao;
+    return reposicao.filter((r) =>
+      r.produto?.toLowerCase().includes(q) ||
+      r.variacao?.toLowerCase().includes(q)
+    );
+  }, [reposicao, busca]);
+
+  const categoriasFiltered = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return categoriasProdutos;
+    return categoriasProdutos.filter((c) => c.nome?.toLowerCase().includes(q));
+  }, [categoriasProdutos, busca]);
+
   const handleMovimentar = async (dados) => {
     try {
       await api.post('/estoque/movimentar', dados);
@@ -137,7 +169,7 @@ export default function EstoquePage() {
         await api.patch(`/financeiro/categorias/${dados.id}`, dados);
         toast.success('Categoria atualizada');
       } else {
-        await api.post('/financeiro/categorias', { ...dados, tipo: 'RECEITA' });
+        await api.post('/financeiro/categorias', { ...dados, tipo: 'RECEITA', uso: 'PRODUTO' });
         toast.success('Categoria criada');
       }
       setModalCategoria({ open: false, data: null });
@@ -177,28 +209,55 @@ export default function EstoquePage() {
           </h1>
           <p className="text-xs text-[var(--text-muted)] mt-1">{tituloAba.descricao}</p>
         </div>
+        {/* Botoes condicionais por aba — cada tela so mostra o que cabe.
+            Visao geral nao tem botao de cadastro (e dashboard, nao cadastro). */}
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>
-            Novo produto
-          </Button>
-          <Button variant="primary" icon={Plus} onClick={() => setModalMov({ open: true })}>
-            Nova movimentacao
-          </Button>
+          {tab === 'estoque' && (
+            <Button variant="primary" icon={Plus} onClick={() => setModalProduto({ open: true, data: null })}>
+              Novo produto
+            </Button>
+          )}
+          {tab === 'movimentacoes' && (
+            <Button variant="primary" icon={Plus} onClick={() => setModalMov({ open: true })}>
+              Nova movimentação
+            </Button>
+          )}
           {tab === 'categorias' && (
             <Button variant="primary" icon={Plus} onClick={() => setModalCategoria({ open: true, data: null })}>
               Nova categoria
             </Button>
           )}
+          {/* Reposicao: sem botao no header — cada item tem '3 pontinhos'
+              com acao 'Repor agora' (abre movimentacao prefilada).
+              Visao geral: sem botao de cadastro. */}
         </div>
       </div>
+
+      {/* Barra de busca condicional — todas as abas tem (exceto Visao geral).
+          Placeholder muda pelo contexto. */}
+      {tab !== 'dashboard' && (
+        <div className="max-w-md">
+          <SearchBar
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder={
+              tab === 'estoque'        ? 'Buscar produto, variação, SKU...' :
+              tab === 'movimentacoes'  ? 'Buscar por produto ou observação...' :
+              tab === 'reposicao'      ? 'Buscar produto pra repor...' :
+              tab === 'categorias'     ? 'Buscar categoria...' :
+              'Buscar...'
+            }
+          />
+        </div>
+      )}
 
       <Tabs value={tab}>
         <TabsContent value="dashboard">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-            <Kpi icon={TrendingUp} label="Valor inventario" valor={stats ? fmtBRL(stats.valorTotalInventario) : '—'} accent />
-            <Kpi icon={Box} label="Total variacoes" valor={stats?.totalProdutos ?? '—'} />
-            <Kpi icon={AlertTriangle} label="Abaixo do minimo" valor={stats?.itensAbaixoMinimo ?? '—'} tone={stats?.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} />
-            <Kpi icon={Activity} label="Indice ruptura" valor={stats ? `${stats.indiceRuptura}%` : '—'} tone={(stats?.indiceRuptura || 0) > 5 ? 'danger' : 'neutral'} />
+            <KpiCard icon={TrendingUp} color="accent" label="Valor inventario" valor={stats ? fmtBRL(stats.valorTotalInventario) : '—'} />
+            <KpiCard icon={Box} color="info" label="Total variacoes" valor={stats?.totalProdutos ?? '—'} />
+            <KpiCard icon={AlertTriangle} color={stats?.itensAbaixoMinimo > 0 ? 'warning' : 'neutral'} label="Abaixo do minimo" valor={stats?.itensAbaixoMinimo ?? '—'} />
+            <KpiCard icon={Activity} color={(stats?.indiceRuptura || 0) > 5 ? 'danger' : 'neutral'} label="Indice ruptura" valor={stats ? `${stats.indiceRuptura}%` : '—'} />
           </div>
 
           <Card padding="lg">
@@ -213,12 +272,8 @@ export default function EstoquePage() {
           </Card>
         </TabsContent>
 
-        {/* Produtos */}
+        {/* Produtos — SearchBar foi promovida pro header (compartilhada). */}
         <TabsContent value="estoque">
-          <div className="mb-4">
-            <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, variacao, SKU..." />
-          </div>
-
           {variacoesFiltered.length === 0 ? (
             <Card padding="lg">
               <EmptyState
@@ -251,16 +306,17 @@ export default function EstoquePage() {
                     const imagemUrl = v.imagemUrl || v.produto?.imagemUrl;
                     return (
                       <tr key={v.id} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50">
-                        <td className="py-4 px-5">
+                        {/* Foto reduzida pra w-14 h-14 (era w-24 = exagerado) */}
+                        <td className="py-3 px-5">
                           {imagemUrl ? (
                             <img
                               src={imagemUrl}
                               alt=""
-                              className="w-24 h-24 object-contain"
+                              className="w-14 h-14 object-contain"
                             />
                           ) : (
-                            <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
-                              <ImageIcon size={28} />
+                            <div className="w-14 h-14 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                              <ImageIcon size={20} />
                             </div>
                           )}
                         </td>
@@ -278,7 +334,7 @@ export default function EstoquePage() {
                         <td className="py-3 px-5 text-right text-sm text-[var(--text-main)] tabular-nums">{fmtBRL(v.preco)}</td>
                         <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(v.estoqueAtual * (v.precoCusto || 0))}</td>
                         <td className="py-3 px-5 text-right">
-                          <Dropdown trigger={<IconButton icon={MoreHorizontal} size="sm" variant="ghost" ariaLabel="Acoes" />} align="right">
+                          <Dropdown trigger={<IconButton icon={MoreHorizontal} size="sm" variant="ghost" ariaLabel="Ações" />} align="right">
                             <DropdownItem
                               icon={ArrowLeftRight}
                               onClick={() => setModalMov({ open: true, variacaoIdInicial: v.id })}
@@ -291,6 +347,20 @@ export default function EstoquePage() {
                             >
                               Editar produto
                             </DropdownItem>
+                            {cat && (
+                              <>
+                                <DropdownDivider />
+                                <DropdownItem
+                                  icon={Tag}
+                                  onClick={() => {
+                                    setBusca(cat.nome);
+                                    navigate('/app/estoque/categorias');
+                                  }}
+                                >
+                                  Ver categoria
+                                </DropdownItem>
+                              </>
+                            )}
                           </Dropdown>
                         </td>
                       </tr>
@@ -304,46 +374,74 @@ export default function EstoquePage() {
 
         {/* Movimentacoes */}
         <TabsContent value="movimentacoes">
-          {movimentacoes.length === 0 ? (
-            <Card padding="lg"><EmptyState icon={TrendingUp} title="Nenhuma movimentacao" /></Card>
+          {movimentacoesFiltered.length === 0 ? (
+            <Card padding="lg">
+              <EmptyState
+                icon={TrendingUp}
+                title={busca ? 'Nenhuma movimentação encontrada' : 'Nenhuma movimentação'}
+                description={busca ? 'Tente outro termo.' : 'Registre entradas e saídas pra rastrear o estoque.'}
+                action={!busca && (
+                  <Button variant="primary" icon={Plus} onClick={() => setModalMov({ open: true })}>
+                    Nova movimentação
+                  </Button>
+                )}
+              />
+            </Card>
           ) : (
-            <Card padding="none"><ListaMovimentacoes movimentacoes={movimentacoes} /></Card>
+            <Card padding="none">
+              <ListaMovimentacoes
+                movimentacoes={movimentacoesFiltered}
+                onVerProduto={(nome) => {
+                  // Hyperlink cruzado: leva pra aba Produtos ja filtrando pelo nome.
+                  setBusca(nome);
+                  navigate('/app/estoque/produtos');
+                }}
+              />
+            </Card>
           )}
         </TabsContent>
 
         {/* Reposicao */}
         <TabsContent value="reposicao">
-          {reposicao.length === 0 ? (
-            <Card padding="lg"><EmptyState icon={AlertTriangle} title="Nada para repor" description="Tudo acima do minimo." /></Card>
+          {reposicaoFiltered.length === 0 ? (
+            <Card padding="lg">
+              <EmptyState
+                icon={AlertTriangle}
+                title={busca ? 'Nenhum produto encontrado' : 'Nada para repor'}
+                description={busca ? 'Tente outro termo.' : 'Tudo acima do mínimo. Você está em dia.'}
+              />
+            </Card>
           ) : (
             <Card padding="none">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[var(--border-main)]">
-                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-28"></th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto / Variacao</th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-20"></th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Produto / Variação</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Atual</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Min</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Ideal</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Repor</th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Urgencia</th>
+                    <th className="text-left text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Urgência</th>
+                    <th className="w-36"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reposicao.map((r) => {
+                  {reposicaoFiltered.map((r) => {
                     const ehVarPadrao = !r.variacao || r.variacao === 'Padrão' || r.variacao === 'Padrao';
                     return (
-                      <tr key={r.id} className="border-b border-[var(--border-subtle)]">
-                        <td className="py-4 px-5">
+                      <tr key={r.id} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50">
+                        {/* Foto menor (w-14 h-14) — antes era w-24 h-24 e tava enorme */}
+                        <td className="py-3 px-5">
                           {r.imagemUrl ? (
                             <img
                               src={r.imagemUrl}
                               alt=""
-                              className="w-24 h-24 object-contain"
+                              className="w-14 h-14 object-contain"
                             />
                           ) : (
-                            <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
-                              <ImageIcon size={28} />
+                            <div className="w-14 h-14 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center text-[var(--text-muted)]">
+                              <ImageIcon size={20} />
                             </div>
                           )}
                         </td>
@@ -356,6 +454,37 @@ export default function EstoquePage() {
                         <td className="py-3 px-5 text-right text-sm tabular-nums text-[var(--text-muted)]">{r.estoqueIdeal || 0}</td>
                         <td className="py-3 px-5 text-right text-sm font-semibold tabular-nums text-[var(--text-main)]">{r.necessidade}</td>
                         <td className="py-3 px-5"><Badge variant={r.urgencia === 'ALTA' ? 'danger' : 'warning'} size="sm">{r.urgencia}</Badge></td>
+                        {/* Botao 'Repor' direto + 3 pontinhos pra acoes secundarias.
+                            Como toda a tela e sobre repor, a acao principal fica
+                            visivel sem precisar abrir dropdown. */}
+                        <td className="py-3 px-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              icon={ArrowDownToLine}
+                              onClick={() => setModalMov({
+                                open: true,
+                                variacaoIdInicial: r.variacaoId || r.id,
+                                quantidadeInicial: r.necessidade,
+                                tipoInicial: 'COMPRA_FORNECEDOR',
+                              })}
+                            >
+                              Repor
+                            </Button>
+                            <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Mais ações" />} align="right">
+                              <DropdownItem
+                                icon={Box}
+                                onClick={() => {
+                                  setBusca(r.produto);
+                                  navigate('/app/estoque/produtos');
+                                }}
+                              >
+                                Ver produto
+                              </DropdownItem>
+                            </Dropdown>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -365,37 +494,45 @@ export default function EstoquePage() {
           )}
         </TabsContent>
 
-        {/* Categorias */}
+        {/* Categorias — botao 'Nova categoria' fica no header (condicional). */}
         <TabsContent value="categorias">
-          {/* Botao "Nova categoria" foi promovido pro header geral (so visivel
-              quando esta aba esta ativa) — fica em linha com os outros 2 botoes
-              de acao, evitando o empilhamento visual. */}
-          {categoriasProdutos.length === 0 ? (
+          {categoriasFiltered.length === 0 ? (
             <Card padding="lg">
               <EmptyState
                 icon={Tag}
-                title="Nenhuma categoria"
-                description="Categorias agrupam seus produtos (ex: Bebidas, Roupas, Cabelo, Equipamentos). Vincule cada produto a uma categoria pra organizar relatorios e CMV."
-                action={<Button variant="primary" icon={Plus} onClick={() => setModalCategoria({ open: true, data: null })}>Criar primeira categoria</Button>}
+                title={busca ? 'Nenhuma categoria encontrada' : 'Nenhuma categoria'}
+                description={
+                  busca
+                    ? 'Tente outro termo.'
+                    : 'Categorias agrupam seus produtos (ex: Bebidas, Roupas, Cabelo). Vincule cada produto a uma categoria pra organizar relatórios e CMV.'
+                }
+                action={!busca && (
+                  <Button variant="primary" icon={Plus} onClick={() => setModalCategoria({ open: true, data: null })}>
+                    Criar primeira categoria
+                  </Button>
+                )}
               />
             </Card>
           ) : (
             <Card padding="none">
               <div className="divide-y divide-[var(--border-subtle)]">
-                {categoriasProdutos.map((c) => {
+                {categoriasFiltered.map((c) => {
                   const qtdVariacoes = variacoesFlat.filter((v) => v.produto?.categoriaId === c.id).length;
                   return (
-                    <div key={c.id} className="flex items-center gap-4 px-5 py-4">
-                      <div className="w-14 h-14 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
-                        <Tag size={22} strokeWidth={1.75} />
+                    <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[var(--bg-subtle)]/50">
+                      {/* Icone reduzido (w-10 h-10) — alinhado com o padrao das
+                          outras telas (movimentacoes/reposicao usam w-14 pra foto
+                          e w-8 pra badges). Aqui meio termo. */}
+                      <div className="w-10 h-10 rounded-lg bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+                        <Tag size={16} strokeWidth={1.75} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-base font-semibold text-[var(--text-main)] tracking-tight">{c.nome}</div>
-                        <div className="text-sm text-[var(--text-muted)] mt-0.5">
+                        <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">{c.nome}</div>
+                        <div className="text-xs text-[var(--text-muted)] mt-0.5">
                           {qtdVariacoes} {qtdVariacoes === 1 ? 'variação vinculada' : 'variações vinculadas'}
                         </div>
                       </div>
-                      <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
+                      <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Ações" />} align="right">
                         <DropdownItem icon={Edit2} onClick={() => setModalCategoria({ open: true, data: c })}>Editar</DropdownItem>
                         <DropdownDivider />
                         <DropdownItem icon={Trash2} variant="danger" onClick={() => handleExcluirCategoria(c)}>Excluir</DropdownItem>
@@ -415,6 +552,8 @@ export default function EstoquePage() {
         variacoes={variacoesFlat}
         onSalvar={handleMovimentar}
         variacaoIdInicial={modalMov.variacaoIdInicial}
+        quantidadeInicial={modalMov.quantidadeInicial}
+        tipoInicial={modalMov.tipoInicial}
       />
       <ModalEditarVariacao
         isOpen={modalEditarVar.open}
@@ -457,7 +596,9 @@ function formatarMotivoMov(m) {
   return m.motivo.replace(/#[a-f0-9-]{20,}/gi, '').replace(/\s+—\s*$/, '').trim() || 'Sem motivo';
 }
 
-function ListaMovimentacoes({ movimentacoes }) {
+// onVerProduto: callback que filtra a aba Produtos pelo nome (link cruzado).
+// Quando nao passado, o 3 pontinhos nao aparece (uso na Visao geral).
+function ListaMovimentacoes({ movimentacoes, onVerProduto }) {
   return (
     <div className="divide-y divide-[var(--border-subtle)]">
       {movimentacoes.map((m) => {
@@ -466,62 +607,55 @@ function ListaMovimentacoes({ movimentacoes }) {
         const imagemUrl = m.variacao?.imagemUrl || m.variacao?.produto?.imagemUrl;
         const ehVarPadrao = !m.variacao?.nome || m.variacao.nome === 'Padrão' || m.variacao.nome === 'Padrao';
         const motivoLimpo = formatarMotivoMov(m);
+        const nomeProduto = m.variacao?.produto?.nome;
         return (
-          <div key={m.id} className="flex items-center gap-4 px-5 py-4">
+          <div key={m.id} className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--bg-subtle)]/50">
+            {/* Foto reduzida pra w-14 h-14 (era w-24 h-24 = tava enorme) */}
             {imagemUrl ? (
               <img
                 src={imagemUrl}
                 alt=""
-                className="w-24 h-24 object-contain flex-shrink-0"
+                className="w-14 h-14 object-contain flex-shrink-0"
               />
             ) : (
-              <div className="w-24 h-24 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 text-[var(--text-muted)]">
-                <ImageIcon size={28} />
+              <div className="w-14 h-14 rounded-md bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 text-[var(--text-muted)]">
+                <ImageIcon size={20} />
               </div>
             )}
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
               tipo.sentido === 'in' ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--danger-soft)] text-[var(--danger)]'
             }`}>
-              <Icon size={16} strokeWidth={2} />
+              <Icon size={14} strokeWidth={2} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-base font-semibold text-[var(--text-main)] tracking-tight truncate">
-                {m.variacao?.produto?.nome}{!ehVarPadrao && ` · ${m.variacao?.nome}`}
+              <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight truncate">
+                {nomeProduto}{!ehVarPadrao && ` · ${m.variacao?.nome}`}
               </div>
-              <div className="text-sm text-[var(--text-muted)] mt-0.5">
+              <div className="text-xs text-[var(--text-muted)] mt-0.5">
                 {motivoLimpo} · {new Date(m.data).toLocaleString('pt-BR')}
               </div>
             </div>
             <Badge variant={tipo.variant} size="sm">{tipo.label}</Badge>
-            <div className={`text-lg font-bold tabular-nums w-20 text-right ${
+            <div className={`text-base font-bold tabular-nums w-16 text-right ${
               m.quantidade > 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'
             }`}>
               {m.quantidade > 0 ? '+' : ''}{m.quantidade}
             </div>
+            {/* 3 pontinhos so quando habilitado (aba Movimentacoes — nao em Visao geral) */}
+            {onVerProduto && nomeProduto && (
+              <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Ações" />} align="right">
+                <DropdownItem
+                  icon={Box}
+                  onClick={() => onVerProduto(nomeProduto)}
+                >
+                  Ver no produto
+                </DropdownItem>
+              </Dropdown>
+            )}
           </div>
         );
       })}
     </div>
-  );
-}
-
-function Kpi({ icon: Icon, label, valor, accent, tone }) {
-  const toneCls = {
-    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-    success: 'bg-[var(--success-soft)] text-[var(--success)]',
-    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
-    danger: 'bg-[var(--danger-soft)] text-[var(--danger)]',
-  };
-  return (
-    <Card padding="lg">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${
-        accent ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : (toneCls[tone] || toneCls.neutral)
-      }`}>
-        <Icon size={16} strokeWidth={2} />
-      </div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
-      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">{valor}</div>
-    </Card>
   );
 }
 
@@ -540,7 +674,7 @@ const TIPOS_MOVIMENTACAO = [
 
 const fmtBRL2 = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar, variacaoIdInicial }) {
+function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar, variacaoIdInicial, quantidadeInicial, tipoInicial }) {
   const [form, setForm] = useState({
     variacaoId: '', tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '',
     precoCusto: '', precoVenda: '',
@@ -549,9 +683,13 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar, variacaoIdIni
   useEffect(() => {
     if (isOpen) setForm({
       variacaoId: variacaoIdInicial || '',
-      tipo: 'COMPRA_FORNECEDOR', quantidade: 1, motivo: '', precoCusto: '', precoVenda: ''
+      // Quando vem de 'Repor agora' na Reposicao, ja chega prefilado como
+      // COMPRA_FORNECEDOR + quantidade sugerida.
+      tipo: tipoInicial || 'COMPRA_FORNECEDOR',
+      quantidade: quantidadeInicial && quantidadeInicial > 0 ? quantidadeInicial : 1,
+      motivo: '', precoCusto: '', precoVenda: ''
     });
-  }, [isOpen, variacaoIdInicial]);
+  }, [isOpen, variacaoIdInicial, quantidadeInicial, tipoInicial]);
 
   const variacaoSel = variacoes.find((v) => v.id === form.variacaoId);
   const tipoCfg = TIPOS_MOVIMENTACAO.find((t) => t.value === form.tipo);
@@ -732,13 +870,10 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
   const toast = useToast();
   const [form, setForm] = useState({
     nome: '', sku: '', preco: 0, precoCusto: 0,
-    precoCatalogo: '', usarPrecoCatalogo: false,
     estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
-    duracaoMin: '',
     imagemUrl: '',
   });
   const [salvando, setSalvando] = useState(false);
-  const ehServico = variacao?.produto?.tipo === 'SERVICO';
 
   useEffect(() => {
     if (isOpen && variacao) {
@@ -747,12 +882,9 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
         sku: variacao.sku || '',
         preco: variacao.preco ?? 0,
         precoCusto: variacao.precoCusto ?? 0,
-        precoCatalogo: variacao.precoCatalogo ?? '',
-        usarPrecoCatalogo: !!variacao.usarPrecoCatalogo,
         estoqueAtual: variacao.estoqueAtual ?? 0,
         estoqueMinimo: variacao.estoqueMinimo ?? 0,
         estoqueIdeal: variacao.estoqueIdeal ?? 0,
-        duracaoMin: variacao.duracaoMin ?? '',
         // Fallback visual pra imagem do produto quando a variacao nao tem
         // imagem propria (mesma logica da tabela). Upload novo sobrescreve
         // na variacao; o produto fica intacto.
@@ -782,12 +914,9 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
         sku: form.sku || null,
         preco: parseFloat(form.preco) || 0,
         precoCusto: parseFloat(form.precoCusto) || 0,
-        precoCatalogo: form.precoCatalogo === '' ? null : (parseFloat(form.precoCatalogo) || null),
-        usarPrecoCatalogo: !!form.usarPrecoCatalogo,
         estoqueAtual: parseInt(form.estoqueAtual, 10) || 0,
         estoqueMinimo: parseInt(form.estoqueMinimo, 10) || 0,
         estoqueIdeal: parseInt(form.estoqueIdeal, 10) || 0,
-        duracaoMin: ehServico && form.duracaoMin !== '' ? (parseInt(form.duracaoMin, 10) || null) : null,
       });
       toast.success?.('Produto atualizado.');
       onSucesso?.();
@@ -847,74 +976,34 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
           />
         </div>
 
-        <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[var(--text-main)]">Preço diferente no catálogo público</div>
-              <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                Ative se vende em 2 lugares com preços diferentes.
-              </div>
-            </div>
-            <Switch
-              checked={form.usarPrecoCatalogo}
-              onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
-              ariaLabel="Usar preço diferente no catálogo público"
-            />
-          </div>
+        {/* Estoque so lida com FISICO — campos de quantidade sempre visiveis,
+            sem condicional. Duracao (servicos) e cadastrada no Catalogo. */}
+        <div className="grid grid-cols-3 gap-3">
           <Input
-            label="Preço para o catálogo público (R$)"
+            label="Estoque atual"
             type="number"
-            step="0.01"
             min="0"
-            value={form.precoCatalogo}
-            onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
-            disabled={!form.usarPrecoCatalogo}
-            placeholder="Em branco = usa o mesmo preço acima"
+            value={form.estoqueAtual}
+            onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
+            hint="Quantidade atual."
+          />
+          <Input
+            label="Estoque mínimo"
+            type="number"
+            min="0"
+            value={form.estoqueMinimo}
+            onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
+            hint="Quando avisar."
+          />
+          <Input
+            label="Estoque ideal"
+            type="number"
+            min="0"
+            value={form.estoqueIdeal}
+            onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
+            hint="Quanto comprar."
           />
         </div>
-
-        {variacao.produto?.tipo === 'FISICO' && (
-          <div className="grid grid-cols-3 gap-3">
-            <Input
-              label="Estoque atual"
-              type="number"
-              min="0"
-              value={form.estoqueAtual}
-              onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
-              hint="Quantidade atual."
-            />
-            <Input
-              label="Estoque mínimo"
-              type="number"
-              min="0"
-              value={form.estoqueMinimo}
-              onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
-              hint="Quando avisar."
-            />
-            <Input
-              label="Estoque ideal"
-              type="number"
-              min="0"
-              value={form.estoqueIdeal}
-              onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
-              hint="Quanto comprar."
-            />
-          </div>
-        )}
-
-        {ehServico && (
-          <Input
-            label="Duração do atendimento (min)"
-            type="number"
-            min="5"
-            max="600"
-            step="5"
-            value={form.duracaoMin}
-            onChange={(e) => setForm({ ...form, duracaoMin: e.target.value })}
-            placeholder="Ex.: 30, 45, 60"
-            hint="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário."
-          />
-        )}
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
@@ -975,7 +1064,6 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
   const [form, setForm] = useState({
     nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
     nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
-    precoCatalogo: '', usarPrecoCatalogo: false,
     estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, duracaoMin: '', imagemVariacaoUrl: '',
   });
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
@@ -985,7 +1073,6 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
       setForm({
         nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
         nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
-        precoCatalogo: '', usarPrecoCatalogo: false,
         estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, duracaoMin: '', imagemVariacaoUrl: '',
       });
       setTempsParaLimpar([]);
@@ -1029,16 +1116,17 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.categoriaId) {
-      alert('Selecione uma categoria. Crie uma na aba Categorias se ainda nao tiver.');
+      alert('Selecione uma categoria. Se ainda não tem nenhuma, use o link no topo do modal pra cadastrar.');
       return;
     }
 
-    const ehServico = form.tipo === 'SERVICO';
+    // Estoque cadastra SO produtos fisicos. Servicos sao no Catalogo.
+    // Forcar tipo=FISICO no payload pra blindar mesmo que algo no estado mude.
     onSalvar({
       nome: form.nome,
       descricao: form.descricao,
       categoriaId: form.categoriaId,
-      tipo: form.tipo,
+      tipo: 'FISICO',
       visibilidade: 'ATIVO',
       imagemUrl: form.imagemUrl || null,
       variacoes: [{
@@ -1046,12 +1134,9 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
         sku: form.sku || null,
         preco: parseFloat(form.preco) || 0,
         precoCusto: parseFloat(form.precoCusto) || 0,
-        precoCatalogo: form.precoCatalogo === '' ? null : (parseFloat(form.precoCatalogo) || null),
-        usarPrecoCatalogo: !!form.usarPrecoCatalogo,
         estoqueAtual: parseInt(form.estoqueAtual) || 0,
         estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
         estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
-        duracaoMin: ehServico && form.duracaoMin !== '' ? (parseInt(form.duracaoMin, 10) || null) : null,
         imagemUrl: form.imagemVariacaoUrl || null,
       }],
     });
@@ -1059,8 +1144,26 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Novo produto" description="Cadastre o produto com nome, foto, preço e quantidade — tudo em uma tela." size="lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Novo produto" description="Cadastre o produto com nome, foto, preço e quantidade — tudo em uma tela." size="2xl">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Banner amigavel quando nao tem categoria cadastrada — com link direto
+            pra tela de cadastro. Encurta a rota (1 click vs ter que voltar). */}
+        {categorias.length === 0 && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-[var(--warning-soft)] text-[var(--warning-text)]">
+            <Tag size={18} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+            <div className="text-sm leading-relaxed flex-1">
+              <strong>Você ainda não tem nenhuma categoria.</strong> Cadastre uma antes pra organizar seus produtos.{' '}
+              <Link
+                to="/app/estoque/categorias"
+                onClick={handleClose}
+                className="font-semibold underline hover:no-underline"
+              >
+                Cadastrar categoria agora →
+              </Link>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-start gap-4">
           <UploadImagem
             imagemUrl={form.imagemUrl || null}
@@ -1068,21 +1171,31 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
             onRemover={handleRemoverImagemProduto}
             tamanho="md"
           />
-          <div className="flex-1 min-w-0 space-y-3">
-            <Input label="Nome do produto" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
+          <div className="flex-1 min-w-0 space-y-4">
+            <Input
+              size="lg"
+              label="Nome do produto"
+              value={form.nome}
+              onChange={(e) => setForm({ ...form, nome: e.target.value })}
+              required
+              autoFocus
+            />
             <Select
+              size="lg"
               label="Categoria"
               value={form.categoriaId}
               onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
               placeholder="Selecione..."
               options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
               required
-              hint={categorias.length === 0 ? 'Crie uma categoria na aba "Categorias" antes' : null}
+              disabled={categorias.length === 0}
+              hint={categorias.length === 0 ? 'Cadastre uma categoria primeiro (link no banner acima).' : null}
             />
           </div>
         </div>
 
         <Textarea
+          size="lg"
           label="Descrição (opcional)"
           value={form.descricao}
           onChange={(e) => setForm({ ...form, descricao: e.target.value })}
@@ -1090,30 +1203,22 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
           placeholder="Detalhes que ajudam na venda (ex.: 100% algodão, fabricado em SP)"
         />
 
-        <Select
-          label="Que tipo de produto é?"
-          value={form.tipo}
-          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-          options={[
-            { value: 'FISICO', label: 'Produto que você guarda (tem estoque)' },
-            { value: 'SERVICO', label: 'Serviço que você faz (sem estoque)' },
-          ]}
-          placeholder=""
-          hint="Se é algo que você guarda na loja (ex.: camiseta, doce, peça), é 'Produto'. Se é algo que você presta (ex.: corte de cabelo, consulta), é 'Serviço'."
-        />
+        {/* Sem seletor de Tipo: Estoque cadastra so produtos fisicos.
+            Servicos sao cadastrados no Catalogo. */}
 
-        <div className="border-t border-[var(--border-main)] pt-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Preço e quantidade</div>
+        <div className="border-t border-[var(--border-main)] pt-5">
+          <div className="text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-4">Preço e quantidade</div>
 
-          <div className="flex items-start gap-4 mb-3">
+          <div className="flex items-start gap-4 mb-4">
             <UploadImagem
               imagemUrl={form.imagemVariacaoUrl || null}
               onUpload={handleUploadVariacao}
               onRemover={handleRemoverImagemVariacao}
               tamanho="sm"
             />
-            <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
+                size="lg"
                 label="Tem cor/tamanho diferente?"
                 value={form.nomeVariacao}
                 onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })}
@@ -1122,17 +1227,19 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
                 hint="Ex.: 'Tamanho M', 'Cor azul'. Se o produto vem em uma versão só, deixe 'Padrão'."
               />
               <Input
+                size="lg"
                 label="Código do produto (opcional)"
                 value={form.sku}
                 onChange={(e) => setForm({ ...form, sku: e.target.value })}
                 placeholder="Ex.: CAM-AZUL-M"
-                hint="Um apelido seu pra achar rápido (tambem chamado de SKU)."
+                hint="Um apelido seu pra achar rápido (também chamado de SKU)."
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
+              size="lg"
               label="Por quanto você vende (R$)"
               type="number"
               step="0.01"
@@ -1143,6 +1250,7 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
               hint="O valor que o cliente paga."
             />
             <Input
+              size="lg"
               label="Quanto você pagou (R$)"
               type="number"
               step="0.01"
@@ -1153,77 +1261,37 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
             />
           </div>
 
-          {/* Preco diferente no catalogo publico */}
-          <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40 mt-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-[var(--text-main)]">Vender online por outro preço?</div>
-                <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Ligue se cobra um preço no balcão e outro no site/Instagram (ex.: balcão R$ 10, online R$ 12).
-                </div>
-              </div>
-              <Switch
-                checked={form.usarPrecoCatalogo}
-                onChange={(v) => setForm({ ...form, usarPrecoCatalogo: v })}
-                ariaLabel="Vender online por outro preço"
-              />
-            </div>
+          {/* Estoque so cadastra produtos fisicos — campos de quantidade
+              sempre visiveis. Servicos com duracao vao pro Catalogo. */}
+          <div className="grid grid-cols-3 gap-4 mt-4">
             <Input
-              label="Preço de venda online (R$)"
+              size="lg"
+              label="Quanto tem hoje?"
               type="number"
-              step="0.01"
               min="0"
-              value={form.precoCatalogo}
-              onChange={(e) => setForm({ ...form, precoCatalogo: e.target.value })}
-              disabled={!form.usarPrecoCatalogo}
-              placeholder="Deixe vazio pra usar o mesmo preço de cima"
+              value={form.estoqueAtual}
+              onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
+              hint="A quantidade que está disponível na loja agora."
+            />
+            <Input
+              size="lg"
+              label="Avisar quando tiver"
+              type="number"
+              min="0"
+              value={form.estoqueMinimo}
+              onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
+              hint="Quando chegar nessa quantidade, o sistema avisa que está acabando."
+            />
+            <Input
+              size="lg"
+              label="Quanto comprar quando acabar"
+              type="number"
+              min="0"
+              value={form.estoqueIdeal}
+              onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
+              hint="Quando precisar repor, é essa quantidade que você compra."
             />
           </div>
-
-          {form.tipo === 'FISICO' && (
-            <div className="grid grid-cols-3 gap-3 mt-3">
-              <Input
-                label="Quanto tem hoje?"
-                type="number"
-                min="0"
-                value={form.estoqueAtual}
-                onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
-                hint="A quantidade que está disponível na loja agora."
-              />
-              <Input
-                label="Avisar quando tiver"
-                type="number"
-                min="0"
-                value={form.estoqueMinimo}
-                onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
-                hint="Quando chegar nessa quantidade, o sistema avisa que está acabando."
-              />
-              <Input
-                label="Quanto comprar quando acabar"
-                type="number"
-                min="0"
-                value={form.estoqueIdeal}
-                onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
-                hint="Quando precisar repor, é essa quantidade que você compra."
-              />
-            </div>
-          )}
-
-          {form.tipo === 'SERVICO' && (
-            <div className="mt-3">
-              <Input
-                label="Quanto tempo leva o atendimento? (min)"
-                type="number"
-                min="5"
-                max="600"
-                step="5"
-                value={form.duracaoMin}
-                onChange={(e) => setForm({ ...form, duracaoMin: e.target.value })}
-                placeholder="Ex.: 30, 45, 60"
-                hint="Tempo médio em minutos. A Agenda usa isso pra não marcar 2 clientes no mesmo horário."
-              />
-            </div>
-          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">

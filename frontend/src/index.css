@@ -253,3 +253,45 @@ a:focus-visible {
 :not(.dark) textarea::placeholder {
   color: var(--text-muted) !important;
 }
+
+/* =====================================================================
+   @media print — esconde sidebar, topbar, filtros e botões durante a
+   impressão (usuário pode "Salvar como PDF"). Mantém só o conteúdo
+   do relatório visível.
+   ===================================================================== */
+@media print {
+  /* Esconde chrome do app */
+  aside,
+  header.sticky,
+  [data-no-print],
+  .group\/sidebar {
+    display: none !important;
+  }
+
+  /* Conteúdo principal usa a folha inteira */
+  body,
+  html {
+    background: white !important;
+    color: #000 !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .lg\:pl-20 {
+    padding-left: 0 !important;
+  }
+
+  /* Evita cortar cards no meio da página */
+  .rounded-2xl,
+  .rounded-xl,
+  table {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Force-cores nos KPIs e tabelas */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingBag, Kanban, Calendar, Package, Box,
-  DollarSign, MessageCircle, Send, Bot, Settings, BarChart3
+  DollarSign, MessageCircle, Send, Bot, Settings, BarChart3, UserCog
 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -12,12 +12,13 @@ import { moduloLiberado } from '../constants/permissoes';
 // Mapeamento dos itens da sidebar para os modulos do tenant.
 // Itens cujo modulo nao foi liberado pelo admin sao escondidos.
 const NAV_TENANT = [
-  { to: '/app/dashboard', label: 'Visao geral', icon: LayoutDashboard, modulo: null },
-  { to: '/app/crm', label: 'CRM / Leads', icon: Kanban, modulo: 'CRM' },
-  { to: '/app/mensagens', label: 'Mensagens', icon: MessageCircle, modulo: 'CRM' },
+  { to: '/app/dashboard', label: 'Início', icon: LayoutDashboard, modulo: null },
+  { to: '/app/crm', label: 'Clientes', icon: Kanban, modulo: 'CRM' },
+  { to: '/app/mensagens', label: 'Mensagens', icon: MessageCircle, modulo: 'MENSAGENS' },
   { to: '/app/agenda', label: 'Agenda', icon: Calendar, modulo: 'AGENDA' },
+  { to: '/app/especialistas', label: 'Especialistas', icon: UserCog, modulo: 'AGENDA' },
   { to: '/app/vendas', label: 'Vendas', icon: ShoppingBag, modulo: 'VENDAS' },
-  { to: '/app/catalogo', label: 'Catalogo', icon: Package, modulo: 'CATALOGO' },
+  { to: '/app/catalogo', label: 'Serviços', icon: Package, modulo: 'CATALOGO' },
   {
     to: '/app/estoque',
     label: 'Estoque',
@@ -31,7 +32,18 @@ const NAV_TENANT = [
       { to: '/app/estoque/categorias', label: 'Categorias' },
     ],
   },
-  { to: '/app/financeiro', label: 'Financeiro', icon: DollarSign, modulo: 'FINANCEIRO' },
+  {
+    to: '/app/financeiro',
+    label: 'Financeiro',
+    icon: DollarSign,
+    modulo: 'FINANCEIRO',
+    subItems: [
+      { to: '/app/financeiro/lancamentos', label: 'Lançamentos' },
+      { to: '/app/financeiro/caixa', label: 'Caixa' },
+      { to: '/app/financeiro/contas-pagar', label: 'Contas a pagar' },
+      { to: '/app/financeiro/categorias', label: 'Categorias' },
+    ],
+  },
   {
     to: '/app/relatorios',
     label: 'Relatorios',
@@ -39,8 +51,10 @@ const NAV_TENANT = [
     modulo: 'RELATORIOS',
     subItems: [
       { to: '/app/relatorios/visao-executiva', label: 'Visão executiva' },
+      { to: '/app/relatorios/mensais', label: 'Fechamento mensal' },
       { to: '/app/relatorios/crm', label: 'CRM' },
       { to: '/app/relatorios/financeiro', label: 'Financeiro' },
+      { to: '/app/relatorios/caixa', label: 'Caixa' },
       { to: '/app/relatorios/vendas', label: 'Vendas' },
       { to: '/app/relatorios/estoque', label: 'Estoque & CMV' },
       { to: '/app/relatorios/bots', label: 'Bots / IA' },
@@ -50,16 +64,17 @@ const NAV_TENANT = [
 
 const NAV_AUTOMACAO = [
   { to: '/app/bots', label: 'Bots', icon: Bot, modulo: 'BOTS' },
-  { to: '/app/campanhas', label: 'Campanhas', icon: Send, modulo: 'BOTS' },
+  { to: '/app/campanhas', label: 'Campanhas', icon: Send, modulo: 'CRM' },
 ];
 
 const TITULOS = {
-  '/app/dashboard': { titulo: 'Visao geral', breadcrumb: 'Inicio' },
-  '/app/crm': { titulo: 'CRM', breadcrumb: 'Vendas' },
+  '/app/dashboard': { titulo: 'Início', breadcrumb: 'Painel' },
+  '/app/crm': { titulo: 'Clientes', breadcrumb: 'Atendimento' },
   '/app/mensagens': { titulo: 'Mensagens', breadcrumb: 'Atendimento' },
   '/app/agenda': { titulo: 'Agenda', breadcrumb: 'Operacao' },
+  '/app/especialistas': { titulo: 'Especialistas', breadcrumb: 'Operacao' },
   '/app/vendas': { titulo: 'Vendas', breadcrumb: 'Operacao' },
-  '/app/catalogo': { titulo: 'Catalogo', breadcrumb: 'Produtos' },
+  '/app/catalogo': { titulo: 'Serviços', breadcrumb: 'Operacao' },
   '/app/estoque': { titulo: 'Estoque', breadcrumb: 'Produtos' },
   '/app/estoque/visao-geral': { titulo: 'Estoque · Visão geral', breadcrumb: 'Estoque · Produtos' },
   '/app/estoque/produtos': { titulo: 'Estoque · Produtos', breadcrumb: 'Estoque · Produtos' },
@@ -67,10 +82,16 @@ const TITULOS = {
   '/app/estoque/reposicao': { titulo: 'Estoque · Reposição', breadcrumb: 'Estoque · Produtos' },
   '/app/estoque/categorias': { titulo: 'Estoque · Categorias', breadcrumb: 'Estoque · Produtos' },
   '/app/financeiro': { titulo: 'Financeiro', breadcrumb: 'Gestao' },
+  '/app/financeiro/lancamentos': { titulo: 'Financeiro · Lançamentos', breadcrumb: 'Gestão' },
+  '/app/financeiro/caixa': { titulo: 'Financeiro · Caixa', breadcrumb: 'Gestão' },
+  '/app/financeiro/contas-pagar': { titulo: 'Financeiro · Contas a pagar', breadcrumb: 'Gestão' },
+  '/app/financeiro/categorias': { titulo: 'Financeiro · Categorias', breadcrumb: 'Gestão' },
   '/app/relatorios': { titulo: 'Relatorios', breadcrumb: 'Gestao' },
   '/app/relatorios/visao-executiva': { titulo: 'Relatório · Visão executiva', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/mensais': { titulo: 'Fechamento mensal', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/crm': { titulo: 'Relatório · CRM', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/financeiro': { titulo: 'Relatório · Financeiro', breadcrumb: 'Relatórios · Gestão' },
+  '/app/relatorios/caixa': { titulo: 'Relatório · Caixa', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/vendas': { titulo: 'Relatório · Vendas', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/estoque': { titulo: 'Relatório · Estoque & CMV', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/bots': { titulo: 'Relatório · Bots / IA', breadcrumb: 'Relatórios · Gestão' },
@@ -115,7 +136,7 @@ export default function ClientLayout() {
         />
       )}
 
-      <div className="lg:pl-16 min-h-screen flex flex-col">
+      <div className="lg:pl-20 min-h-screen flex flex-col">
         <Topbar
           titulo={meta.titulo}
           breadcrumb={meta.breadcrumb}

@@ -1,11 +1,10 @@
 // Tools de mensagens — envio para o cliente final via canal externo.
-// Suporta WhatsApp Cloud API e Telegram Bot API.
+// Suporta WhatsApp Cloud API.
 
 const prisma = require('../../prisma');
 const { cifrar } = require('../../cripto/cofreMensagens');
 const { carregarCredencialDecifrada } = require('../../credenciais');
 const whatsapp = require('../../canais/whatsapp');
-const telegram = require('../../canais/telegram');
 
 function exigirCliente(contexto) {
   if (!contexto?.clienteId) throw new Error('Contexto sem clienteId.');
@@ -60,18 +59,6 @@ const enviarMensagem = {
           accessToken: credencial.dados.accessToken,
           phoneNumberId,
           destinatario: conversa.identificador,
-          texto,
-        });
-        messageIdCanal = r.messageIdCanal;
-        break;
-      }
-      case 'TELEGRAM': {
-        if (credencial.tipo !== 'TELEGRAM_BOT_TOKEN') {
-          throw new Error(`Conversa Telegram exige credencial TELEGRAM_BOT_TOKEN, recebido ${credencial.tipo}.`);
-        }
-        const r = await telegram.enviarTexto({
-          token: credencial.dados.token,
-          chatId: conversa.identificador,
           texto,
         });
         messageIdCanal = r.messageIdCanal;

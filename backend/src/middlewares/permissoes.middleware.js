@@ -93,7 +93,7 @@ function requerModuloLiberado(modulo) {
  * @param {string} acao   - 'visualizar' | 'criar' | 'editar' | 'excluir'
  */
 function requerPermissao(modulo, acao) {
-  const acoesValidas = ['visualizar', 'criar', 'editar', 'excluir'];
+  const acoesValidas = ['visualizar', 'criar', 'editar', 'excluir', 'responder', 'atribuir'];
   if (!acoesValidas.includes(acao)) {
     throw new Error(`Acao invalida: ${acao}. Use: ${acoesValidas.join(', ')}`);
   }
@@ -127,6 +127,37 @@ function requerPermissao(modulo, acao) {
   };
 }
 
+/**
+ * Bloqueia VENDEDOR (mesmo com permissoes granulares concedidas).
+ * Usado em decisoes estruturais do tenant que so podem ser feitas por quem
+ * gerencia a conta — ex: configurar etapas do CRM, mexer em modulos.
+ *
+ * Permite: ADMIN do sistema, CLIENT (dono do tenant), ADMINISTRADOR.
+ * Bloqueia: VENDEDOR.
+ */
+function requerPapelPrivilegiado(req, res, next) {
+  if (ehAdmin(req.usuario)) return next();
+  if (ehDonoTenant(req.usuario)) return next();
+  if (req.usuario?.perfil === 'ADMINISTRADOR') return next();
+  return res.status(403).json({
+    erro: 'Acao restrita ao dono da conta ou administrador. Pede pra eles habilitarem pra voce.',
+  });
+}
+
+/**
+ * Retorna o escopo de um modulo para o usuario:
+ *   - ADMIN / CLIENT / ADMINISTRADOR -> 'TODAS' (sempre veem tudo).
+ *   - VENDEDOR -> permissoes[modulo].escopo (default 'PROPRIAS').
+ * `permissoes` e o objeto Usuario.permissoes carregado do banco.
+ * Usado pelas rotas que filtram registros por responsavel (ex.: inbox de Mensagens).
+ */
+function escopoDoUsuario(usuario, permissoes, modulo) {
+  if (ehAdmin(usuario) || ehDonoTenant(usuario) || usuario?.perfil === 'ADMINISTRADOR') {
+    return 'TODAS';
+  }
+  return permissoes?.[modulo]?.escopo === 'TODAS' ? 'TODAS' : 'PROPRIAS';
+}
+
 module.exports = {
   ehAdmin,
   ehDonoTenant,
@@ -136,5 +167,7 @@ module.exports = {
   requerTenant,
   requerModuloLiberado,
   requerPermissao,
+  requerPapelPrivilegiado,
+  escopoDoUsuario,
   PERFIS_TENANT,
 };

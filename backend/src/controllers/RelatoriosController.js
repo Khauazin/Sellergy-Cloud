@@ -358,8 +358,7 @@ async function relatorioCRM(req, res) {
           quantidade: true,
           variacao: {
             select: {
-              id: true, nome: true, preco: true, precoCatalogo: true,
-              usarPrecoCatalogo: true, imagemUrl: true,
+              id: true, nome: true, preco: true, imagemUrl: true,
               produto: { select: { nome: true, imagemUrl: true } },
             },
           },
@@ -470,7 +469,7 @@ async function relatorioCRM(req, res) {
     for (const lv of topProdutosFunil) {
       const v = lv.variacao;
       if (!v) continue;
-      const preco = v.usarPrecoCatalogo && v.precoCatalogo != null ? Number(v.precoCatalogo) : Number(v.preco || 0);
+      const preco = Number(v.preco || 0);
       const qtd = Math.max(1, Number(lv.quantidade) || 1);
       const valor = preco * qtd;
       const key = v.id;
@@ -575,6 +574,9 @@ async function relatorioFinanceiro(req, res) {
     // Filtros extras
     const filtroCategoria = typeof req.query.categoriaId === 'string' && req.query.categoriaId ? req.query.categoriaId : null;
     const filtroTipo = req.query.tipo === 'RECEITA' || req.query.tipo === 'DESPESA' ? req.query.tipo : null;
+    // subTipo só se aplica a DESPESA. Quando vier, força tipo=DESPESA no
+    // where via aninhamento na relação categoria.
+    const filtroSubTipo = req.query.subTipo === 'VARIAVEL' || req.query.subTipo === 'FIXA' ? req.query.subTipo : null;
 
     const [
       lancamentosPagos,        // tudo que foi PAGO no periodo (DRE + por categoria + fluxo)
@@ -587,7 +589,11 @@ async function relatorioFinanceiro(req, res) {
           status: 'PAGO',
           dataPagamento: { gte: periodo.inicio, lte: periodo.fim },
           ...(filtroCategoria ? { categoriaId: filtroCategoria } : {}),
-          ...(filtroTipo ? { tipo: filtroTipo } : {}),
+          // filtroSubTipo implica DESPESA — sobrescreve filtroTipo se houver
+          // conflito (decisão de UX: subTipo é mais específico).
+          ...(filtroSubTipo
+            ? { tipo: 'DESPESA', categoria: { subTipo: filtroSubTipo } }
+            : (filtroTipo ? { tipo: filtroTipo } : {})),
         },
         include: { categoria: true },
         orderBy: { dataPagamento: 'asc' },
@@ -639,15 +645,37 @@ async function relatorioFinanceiro(req, res) {
     ]);
 
     // ============== DRE ==============
-    // Categorias com "venda" ou "imposto" no nome viram despesa variavel.
-    // O resto vira despesa fixa. (Mesma regra do FinanceiroController.relatorioDRE.)
+    // Categoriza despesa em variável vs fixa. Regra primária: usar
+    // `categoria.subTipo` (campo dedicado, configurado pelo usuário).
+    // Fallback (categorias antigas sem subTipo definido): heurística pelo
+    // nome — palavras "venda"/"imposto"/"taxa"/"comissão" indicam variável.
+    // Sem categoria nenhuma = fixa por padrão.
     const dre = { receitaBruta: 0, despesasVariaveis: 0, despesasFixas: 0, resultadoLiquido: 0 };
     for (const l of lancamentosPagos) {
-      const cat = l.categoria?.nome?.toLowerCase() || '';
       const valor = Number(l.valor || 0);
-      if (l.tipo === 'RECEITA') dre.receitaBruta += valor;
-      else if (cat.includes('venda') || cat.includes('imposto')) dre.despesasVariaveis += valor;
-      else dre.despesasFixas += valor;
+      if (l.tipo === 'RECEITA') {
+        dre.receitaBruta += valor;
+      } else {
+        const subTipo = l.categoria?.subTipo;
+        if (subTipo === 'VARIAVEL') {
+          dre.despesasVariaveis += valor;
+        } else if (subTipo === 'FIXA') {
+          dre.despesasFixas += valor;
+        } else {
+          // Fallback heurístico para categorias antigas
+          const nomeCat = l.categoria?.nome?.toLowerCase() || '';
+          if (
+            nomeCat.includes('venda') ||
+            nomeCat.includes('imposto') ||
+            nomeCat.includes('taxa') ||
+            nomeCat.includes('comiss')
+          ) {
+            dre.despesasVariaveis += valor;
+          } else {
+            dre.despesasFixas += valor;
+          }
+        }
+      }
     }
     dre.resultadoLiquido = dre.receitaBruta - dre.despesasVariaveis - dre.despesasFixas;
     dre.margemLiquida = dre.receitaBruta > 0 ? Number(((dre.resultadoLiquido / dre.receitaBruta) * 100).toFixed(2)) : 0;
@@ -1277,7 +1305,7 @@ async function relatorioBots(req, res) {
 
     // Filtros extras
     const filtroBot = typeof req.query.botId === 'string' && req.query.botId ? req.query.botId : null;
-    const canaisValidos = ['WHATSAPP', 'INSTAGRAM', 'TELEGRAM', 'WEBSITE'];
+    const canaisValidos = ['WHATSAPP'];
     const filtroCanal = canaisValidos.includes(req.query.canal) ? req.query.canal : null;
 
     // Mapeamento dos filtros pra cada query.
@@ -1511,6 +1539,147 @@ async function relatorioBots(req, res) {
   }
 }
 
+// =====================================================================
+// CAIXA — controle das sessoes de caixa (abertura/fechamento, sangria,
+// suprimento, divergencia entre saldo esperado vs real)
+// =====================================================================
+async function relatorioCaixa(req, res) {
+  try {
+    const { clienteId } = req.usuario;
+    if (!clienteId) return res.status(403).json({ error: 'Acesso negado.' });
+
+    const { inicio, fim } = resolverPeriodo(req.query);
+
+    // Filtros extras (todos opcionais):
+    //   - origem: 'MANUAL' | 'AUTO_BOT' — filtra por como o caixa foi criado
+    //   - comDivergencia: 'true' — só sessões que fecharam com diferença != 0
+    const filtroOrigem = req.query.origem === 'MANUAL' || req.query.origem === 'AUTO_BOT'
+      ? req.query.origem
+      : null;
+    const apenasDivergencia = req.query.comDivergencia === 'true';
+
+    // Busca sessoes FECHADAS no periodo (filtrando por fechadaEm).
+    // Inclui movs de sangria/suprimento pra agregados.
+    const sessoes = await prisma.sessaoCaixa.findMany({
+      where: {
+        clienteId,
+        status: 'FECHADA',
+        fechadaEm: { gte: inicio, lte: fim },
+        ...(filtroOrigem ? { origem: filtroOrigem } : {}),
+        ...(apenasDivergencia ? { NOT: { diferenca: 0 } } : {}),
+      },
+      orderBy: { fechadaEm: 'desc' },
+      include: {
+        movimentacoesSaldo: {
+          where: { tipo: { in: ['SANGRIA', 'SUPRIMENTO'] } },
+          select: { tipo: true, valor: true, motivo: true },
+        },
+      },
+    });
+
+    // KPIs agregados
+    let totalSangrias = 0;
+    let totalSuprimentos = 0;
+    let qtdSangrias = 0;
+    let qtdSuprimentos = 0;
+    let diferencaAcumulada = 0;
+    let saldoMedio = 0;
+    let tempoTotalMs = 0;
+    const motivosSangria = new Map();
+    const motivosSuprimento = new Map();
+
+    for (const s of sessoes) {
+      diferencaAcumulada += Number(s.diferenca || 0);
+      saldoMedio += Number(s.saldoFinalReal || 0);
+      if (s.abertaEm && s.fechadaEm) {
+        tempoTotalMs += s.fechadaEm.getTime() - s.abertaEm.getTime();
+      }
+      for (const mov of s.movimentacoesSaldo || []) {
+        const motivo = (mov.motivo || 'Sem motivo').trim() || 'Sem motivo';
+        if (mov.tipo === 'SANGRIA') {
+          totalSangrias += Number(mov.valor || 0);
+          qtdSangrias += 1;
+          motivosSangria.set(motivo, (motivosSangria.get(motivo) || 0) + Number(mov.valor || 0));
+        } else {
+          totalSuprimentos += Number(mov.valor || 0);
+          qtdSuprimentos += 1;
+          motivosSuprimento.set(motivo, (motivosSuprimento.get(motivo) || 0) + Number(mov.valor || 0));
+        }
+      }
+    }
+    saldoMedio = sessoes.length > 0 ? saldoMedio / sessoes.length : 0;
+    const tempoMedioMs = sessoes.length > 0 ? tempoTotalMs / sessoes.length : 0;
+
+    // Vendas em dinheiro no periodo (independente da sessao — agregado direto).
+    const vendasDinheiro = await prisma.venda.aggregate({
+      where: {
+        clienteId,
+        status: 'COMPLETED',
+        metodoPagamento: 'DINHEIRO',
+        criadoEm: { gte: inicio, lte: fim },
+      },
+      _sum: { valor: true },
+      _count: true,
+    });
+
+    // Sessoes com divergencia (diferenca != 0) — destaca pra auditoria.
+    const divergencias = sessoes.filter((s) => Number(s.diferenca || 0) !== 0).map((s) => ({
+      id: s.id,
+      abertaEm: s.abertaEm,
+      fechadaEm: s.fechadaEm,
+      fundoCaixa: s.fundoCaixa,
+      saldoEsperado: s.saldoFinalEsperado,
+      saldoReal: s.saldoFinalReal,
+      diferenca: s.diferenca,
+      origem: s.origem,
+      usuarioFechouNome: s.usuarioFechouNome,
+    }));
+
+    // Top motivos (ordena por valor agregado)
+    const ordenarMotivos = (mapa) => Array.from(mapa.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([motivo, valor]) => ({ motivo, valor }));
+
+    return res.json({
+      periodo: { inicio, fim },
+      kpis: {
+        totalSessoes: sessoes.length,
+        sessoesComDivergencia: divergencias.length,
+        vendasDinheiro: {
+          valor: vendasDinheiro._sum.valor || 0,
+          qtd: vendasDinheiro._count || 0,
+        },
+        saldoMedioDiario: saldoMedio,
+        totalSangrias,
+        qtdSangrias,
+        totalSuprimentos,
+        qtdSuprimentos,
+        diferencaAcumulada,
+        tempoMedioMs,
+      },
+      sessoes: sessoes.map((s) => ({
+        id: s.id,
+        origem: s.origem,
+        abertaEm: s.abertaEm,
+        fechadaEm: s.fechadaEm,
+        fundoCaixa: s.fundoCaixa,
+        saldoEsperado: s.saldoFinalEsperado,
+        saldoReal: s.saldoFinalReal,
+        diferenca: s.diferenca,
+        usuarioAbriuNome: s.usuarioAbriuNome,
+        usuarioFechouNome: s.usuarioFechouNome,
+      })),
+      divergencias,
+      topMotivosSangria: ordenarMotivos(motivosSangria),
+      topMotivosSuprimento: ordenarMotivos(motivosSuprimento),
+    });
+  } catch (erro) {
+    console.error('[relatorios/caixa]', erro);
+    res.status(500).json({ error: 'Erro ao gerar relatorio de caixa.' });
+  }
+}
+
 module.exports = {
   visaoExecutiva,
   relatorioCRM,
@@ -1518,4 +1687,5 @@ module.exports = {
   relatorioVendas,
   relatorioEstoque,
   relatorioBots,
+  relatorioCaixa,
 };

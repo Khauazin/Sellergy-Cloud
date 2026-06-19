@@ -6,7 +6,7 @@ import credenciaisService from '../../services/credenciaisService';
 import { configDoTipo } from './catalogoNos';
 
 // Credenciais que fazem sentido em HTTP Request — HTTP_* genericas + LLMs
-// (que tambem injetam Authorization). Canais (WhatsApp/Telegram) tem fluxo
+// (que tambem injetam Authorization). Canais (WhatsApp) tem fluxo
 // proprio em outros nos.
 const TIPOS_CREDENCIAL_HTTP = new Set([
   'HTTP_BEARER',
@@ -110,7 +110,7 @@ function FormEnviarMensagem({ data, setData }) {
         hint="Por padrao usa a conversa que disparou o fluxo. So preencha se quiser mandar pra outra."
       />
       <p className="text-[10px] text-[var(--text-muted)] leading-snug">
-        Envia pelo canal vinculado ao bot (WhatsApp/Telegram). A credencial e o destinatario sao resolvidos automaticamente a partir da conversa.
+        Envia pelo canal vinculado ao bot (WhatsApp). A credencial e o destinatario sao resolvidos automaticamente a partir da conversa.
       </p>
     </>
   );

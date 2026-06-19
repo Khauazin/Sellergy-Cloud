@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Bot, ArrowRight, MessageCircle, Calendar, ShoppingBag, BarChart3, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, MessageCircle, Calendar, ShoppingBag, BarChart3, ShieldCheck, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui';
+import SellergyLogo from '../components/SellergyLogo';
 
 export default function LandingPage() {
   return (
@@ -8,9 +9,7 @@ export default function LandingPage() {
       {/* Header */}
       <header className="px-6 lg:px-12 py-5 flex items-center justify-between max-w-[1400px] mx-auto">
         <Link to="/" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center">
-            <Bot size={18} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-          </div>
+          <SellergyLogo size={36} />
           <span className="text-base font-semibold tracking-tight text-[var(--text-main)]">
             Sellergy Cloud
           </span>
@@ -50,7 +49,7 @@ export default function LandingPage() {
           <Recurso
             icon={MessageCircle}
             titulo="Inbox unificada"
-            desc="Atenda whatsapp, instagram e site por um painel so. Bot responde sozinho ou passa pra voce."
+            desc="Atenda o WhatsApp por um painel so. Bot responde sozinho ou passa pra voce."
           />
           <Recurso
             icon={Calendar}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { BarChart3, TrendingUp, Users, Bot, DollarSign, AlertCircle } from 'lucide-react';
 import api from '../services/api';
-import { Card, CardHeader, CardTitle, Badge, EmptyState } from '../components/ui';
+import { Card, CardHeader, CardTitle, Badge, EmptyState, KpiCard } from '../components/ui';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -68,10 +68,10 @@ export default function ReportsPage() {
         </CardHeader>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Kpi icon={Users} label="Clientes ativos" valor={stats.clientesAtivos} sublabel={`${stats.totalClientes} no total`} />
-          <Kpi icon={DollarSign} label="MRR" valor={fmtBRL(stats.mrr)} variant="accent" />
-          <Kpi icon={Bot} label="Bots online" valor={stats.botsOnline} sublabel={`${stats.totalBots} cadastrados`} />
-          <Kpi icon={AlertCircle} label="Alertas abertos" valor={stats.alertasAbertos} variant={stats.alertasAbertos > 0 ? 'warning' : 'neutral'} sublabel={`${stats.alertasCriticos} criticos`} />
+          <KpiCard icon={Users} color="info" label="Clientes ativos" valor={stats.clientesAtivos} subvalor={`${stats.totalClientes} no total`} />
+          <KpiCard icon={DollarSign} color="accent" label="MRR" valor={fmtBRL(stats.mrr)} />
+          <KpiCard icon={Bot} color="success" label="Bots online" valor={stats.botsOnline} subvalor={`${stats.totalBots} cadastrados`} />
+          <KpiCard icon={AlertCircle} color={stats.alertasAbertos > 0 ? 'warning' : 'neutral'} label="Alertas abertos" valor={stats.alertasAbertos} subvalor={`${stats.alertasCriticos} criticos`} />
         </div>
       </Card>
 
@@ -102,8 +102,8 @@ export default function ReportsPage() {
           </div>
         </CardHeader>
         <div className="grid grid-cols-2 gap-4">
-          <Kpi icon={TrendingUp} label="Mensagens hoje" valor={stats.msgsHoje.toLocaleString('pt-BR')} />
-          <Kpi icon={BarChart3} label="Total acumulado" valor={stats.msgsTotal.toLocaleString('pt-BR')} variant="accent" />
+          <KpiCard icon={TrendingUp} color="info" label="Mensagens hoje" valor={stats.msgsHoje.toLocaleString('pt-BR')} />
+          <KpiCard icon={BarChart3} color="accent" label="Total acumulado" valor={stats.msgsTotal.toLocaleString('pt-BR')} />
         </div>
       </Card>
 
@@ -126,23 +126,7 @@ export default function ReportsPage() {
   );
 }
 
-function Kpi({ icon: Icon, label, valor, sublabel, variant }) {
-  const cls = {
-    accent: 'bg-[var(--accent-soft)] text-[var(--accent)]',
-    warning: 'bg-[var(--warning-soft)] text-[var(--warning)]',
-    neutral: 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
-  };
-  return (
-    <Card padding="lg" variant="flat" className="border border-[var(--border-main)]">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${cls[variant] || cls.neutral}`}>
-        <Icon size={16} strokeWidth={2} />
-      </div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
-      <div className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1 tabular-nums">{valor}</div>
-      {sublabel && <div className="text-xs text-[var(--text-muted)] mt-1">{sublabel}</div>}
-    </Card>
-  );
-}
+// Kpi local removido — usa KpiCard compartilhado do ui/.
 
 function FuturoCard({ titulo, desc }) {
   return (

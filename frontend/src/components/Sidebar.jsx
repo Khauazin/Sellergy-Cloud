@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
-import { Bot, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import SellergyLogo from './SellergyLogo';
 
 /**
  * Sidebar do design system v2 com comportamento "hover-to-expand":
@@ -15,24 +16,24 @@ export default function Sidebar({ sections = [], mobileOpen = false, onClose, fo
         'bg-[var(--bg-sidebar)] border-r border-[var(--border-main)]',
         'overflow-hidden',
         'transition-[width,transform] duration-200 ease-out',
-        // Desktop: w-16 sempre, expande no hover para w-64
-        'lg:w-16 lg:hover:w-64 lg:translate-x-0',
-        // Mobile: drawer com w-64
-        'w-64',
+        // Desktop: 80px sempre (cabe icone com respiro), expande no hover para 320px
+        'lg:w-20 lg:hover:w-80 lg:translate-x-0',
+        // Mobile: drawer com 320px (mesma largura do expandido)
+        'w-80',
         mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         // Sombra quando expandida (hover ou mobile aberto)
         'lg:hover:shadow-[var(--shadow-md)]'
       )}
     >
-      {/* Logo */}
+      {/* Logo — branding do tenant (se houver) sobrepoe o default Sellergy */}
       <div className="h-16 flex items-center gap-2.5 px-4 border-b border-[var(--border-main)] flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center flex-shrink-0">
-          {branding?.logo ? (
-            <img src={branding.logo} alt={branding.nome || 'Logo'} className="w-full h-full object-cover rounded-lg" />
-          ) : (
-            <Bot size={16} className="text-[var(--text-on-primary)]" strokeWidth={2.25} />
-          )}
-        </div>
+        {branding?.logo ? (
+          <div className="w-9 h-9 rounded-lg bg-[var(--primary)] flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <img src={branding.logo} alt={branding.nome || 'Logo'} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <SellergyLogo size={36} className="flex-shrink-0" />
+        )}
         <div className="overflow-hidden flex-1 min-w-0 opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 delay-75">
           <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight leading-tight whitespace-nowrap">
             {branding?.nome || 'Sellergy Cloud'}

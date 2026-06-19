@@ -24,10 +24,14 @@ model Usuario {
   criadoEm           DateTime     @default(now())
   atualizadoEm       DateTime     @updatedAt
   clienteId          String?
-  alertas            Alerta[]
-  cliente            Cliente?     @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  execucoes          Execucao[]
-  credenciaisCriadas Credencial[]
+  alertas             Alerta[]
+  cliente             Cliente?      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  execucoes           Execucao[]
+  credenciaisCriadas  Credencial[]
+  notificacoes        Notificacao[]
+  preferenciasNotif   PreferenciaNotificacao[]
+  especialista        Especialista?
+  conversasAtribuidas Conversa[]
 
   @@map("usuarios")
 }
@@ -37,7 +41,7 @@ model Cliente {
   nome                   String
   email                  String?                @unique
   telefone               String?
-  segmento               String?
+  segmento               SegmentoCliente?
   plano                  Plano                  @default(BASIC)
   status                 StatusCliente          @default(ACTIVE)
   mensalidade            Float                  @default(0)
@@ -59,20 +63,97 @@ model Cliente {
   categoriasFinanceiras  CategoriaFinanceira[]
   saldosHistorico        SaldoHistorico[]
   credenciais            Credencial[]
+  sessoesCaixa           SessaoCaixa[]
+  contasPagar            ContaPagar[]
+  notificacoes           Notificacao[]
+  relatoriosMensais      RelatorioMensal[]
+  especialistas          Especialista[]
+  // Horario de funcionamento (JSON). Usado pelo cron pra abrir/fechar caixa
+  // automatico do bot. Formato sugerido:
+  //   { "abertura": "08:00", "fechamento": "18:00", "dias": [1,2,3,4,5] }
+  // Nullable: sem isso, cron usa default 00:00.
+  horarioFuncionamento   Json?
 
   @@map("clientes")
 }
 
+// Movimentacoes manuais de saldo no caixa fisico. NAO confunde com
+// LancamentoFinanceiro (que e contabil/receita-despesa). Aqui e operacional:
+//   - SUPRIMENTO: dinheiro entrando no caixa (troco, abertura)
+//   - SANGRIA:    dinheiro saindo do caixa (deposito banco, retirada socio)
+//   - AJUSTE:     correcao manual (conferencia divergente) — legado, em desuso
+//
+// Quando vinculada a uma sessao de caixa, conta no saldo esperado do
+// fechamento. valor sempre positivo; o `tipo` decide a direcao.
 model SaldoHistorico {
-  id        String   @id @default(uuid())
-  clienteId String
-  valor     Float
-  motivo    String?
-  data      DateTime @default(now())
+  id            String              @id @default(uuid())
+  clienteId     String
+  valor         Float
+  tipo          TipoMovimentoCaixa  @default(AJUSTE)
+  motivo        String?
+  sessaoCaixaId String?
+  // Auditoria: snapshot do usuario que fez o ajuste. usuarioId pode virar
+  // null se o usuario for deletado depois; o nome fica preservado.
+  usuarioId     String?
+  usuarioNome   String?
+  data          DateTime            @default(now())
 
-  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  cliente Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  sessao  SessaoCaixa?  @relation(fields: [sessaoCaixaId], references: [id], onDelete: SetNull)
 
+  @@index([sessaoCaixaId, data])
   @@map("saldo_historico")
+}
+
+enum TipoMovimentoCaixa {
+  SUPRIMENTO
+  SANGRIA
+  AJUSTE
+}
+
+// Sessao de caixa: 1 sessao aberta por vez por tenant.
+//   - origem MANUAL: aberta pelo usuario com fundo de caixa inicial
+//   - origem AUTO_BOT: criada pelo cron 00:00 (ou ao chegar venda do bot sem caixa)
+//
+// Saldo esperado = fundoCaixa + soma(vendas RECEITA da sessao) + suprimentos - sangrias
+// Diferenca = saldoFinalReal - saldoFinalEsperado (positivo = sobra; negativo = falta)
+model SessaoCaixa {
+  id                    String              @id @default(uuid())
+  clienteId             String
+  fundoCaixa            Float               @default(0)
+  saldoFinalEsperado    Float?
+  saldoFinalReal        Float?
+  diferenca             Float?
+  observacaoAbertura    String?
+  observacaoFechamento  String?
+  // Auditoria de quem abriu/fechou. Snapshot do nome pra preservar.
+  usuarioAbriuId        String?
+  usuarioAbriuNome      String?
+  usuarioFechouId       String?
+  usuarioFechouNome     String?
+  abertaEm              DateTime            @default(now())
+  fechadaEm             DateTime?
+  status                StatusSessaoCaixa   @default(ABERTA)
+  origem                OrigemSessaoCaixa   @default(MANUAL)
+
+  cliente               Cliente                 @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  vendas                Venda[]
+  lancamentos           LancamentoFinanceiro[]
+  movimentacoesSaldo    SaldoHistorico[]
+
+  @@index([clienteId, status])
+  @@index([clienteId, abertaEm])
+  @@map("sessoes_caixa")
+}
+
+enum StatusSessaoCaixa {
+  ABERTA
+  FECHADA
+}
+
+enum OrigemSessaoCaixa {
+  MANUAL
+  AUTO_BOT
 }
 
 // ==========================================
@@ -95,10 +176,27 @@ model Bot {
   provedorIa         ProvedorIA?
   promptSistemaIa    String?
   temperaturaIa      Float?        @default(0.7)
+  // FK para `Credencial` cifrada (tipo OPENAI_API_KEY/ANTHROPIC_API_KEY/GEMINI_API_KEY).
+  // Substituiu `apiKeyIa` (texto puro) — esse campo legado fica nullable
+  // pra compatibilidade reversa, mas não é mais usado no fluxo novo.
+  credencialIaId     String?
+  // DEPRECATED — usar `credencialIaId`. Mantido só pra não quebrar bots antigos
+  // até migração explícita.
   apiKeyIa           String?
   // Lista de nomes de tools que o agente deste bot pode invocar
   // (ex: ["crm.criarLead", "agenda.criarAgendamento"]). Default vazio = nenhuma.
   toolsHabilitadas   Json          @default("[]")
+  // Politicas do agente (JSON). Alcada, descontos, recompra e handoff.
+  // Formato (campos opcionais; default = comportamento conservador):
+  //   {
+  //     "exigirConfirmacaoVenda": true,   // confirma antes de fechar venda / baixar estoque
+  //     "valorMaxVendaAuto": 500,         // acima disso escala pra humano (null = sem teto)
+  //     "permiteDesconto": false,         // bot pode oferecer desconto?
+  //     "descontoMaxPercent": 0,          // teto de desconto em %
+  //     "cadenciaRecompraDias": 30,       // dias ate o follow-up de recompra
+  //     "handoff": { "palavrasChave": ["humano","atendente"], "maxTurnosSemResolver": 3 }
+  //   }
+  politicasAgente    Json?
   // Canal externo (WhatsApp Cloud, Telegram, etc.):
   //   credencialCanalId  -> Credencial (token do canal)
   //   identificadorCanal -> ex: phoneNumberId do WhatsApp / chatId do Telegram
@@ -110,11 +208,34 @@ model Bot {
   fluxoPadraoId      String?
   alertas            Alerta[]
   variaveis          VariavelBot[]
+  faqs               FaqBot[]
   cliente            Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   fluxos             Fluxo[]       @relation("FluxosDoBot")
   fluxoPadrao        Fluxo?        @relation("FluxoPadraoDoBot", fields: [fluxoPadraoId], references: [id], onDelete: SetNull)
+  // Credencial da IA — cifrada em repouso. SetNull quando a credencial é apagada
+  // (bot permanece configurado, só não roda IA até receber outra credencial).
+  credencialIa       Credencial?   @relation("CredencialIa", fields: [credencialIaId], references: [id], onDelete: SetNull)
 
   @@map("bots")
+}
+
+// Base de conhecimento / FAQ do bot — pares pergunta/resposta que alimentam o
+// "atender". O agente consulta isto (tool conhecimento.buscar) alem de puxar
+// catalogo/horario automaticamente. Editavel pelo dono na config do bot.
+model FaqBot {
+  id           String   @id @default(uuid())
+  botId        String
+  pergunta     String
+  resposta     String
+  ativo        Boolean  @default(true)
+  ordem        Int      @default(0)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, ativo])
+  @@map("faq_bot")
 }
 
 model VariavelBot {
@@ -277,11 +398,17 @@ model EtapaLead {
   nome         String
   ordem        Int
   cor          String?
+  // slug do catalogo de etapas pre-definidas (ex: 'novo', 'qualificado').
+  // Nullable pra acomodar etapas legadas com nome livre (pre-catalogo).
+  // Combinacao (clienteId, slug) e unica — o tenant nao pode habilitar a
+  // mesma etapa do catalogo 2x. Slug NULL e permitido multiplos (legados).
+  slug         String?
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
   cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   leads        Lead[]
 
+  @@unique([clienteId, slug])
   @@map("lead_etapas")
 }
 
@@ -292,6 +419,12 @@ model Lead {
   nome                   String
   telefone               String?
   email                  String?
+  // CPF do cliente — armazenado so com digitos (sem mascara). Nullable
+  // porque lead inicial pode chegar sem. Nao e unique: cliente recorrente
+  // pode virar lead de novo no funil.
+  cpf                    String?
+  // Data de nascimento — usado pra parabens automatico, segmentacao etaria.
+  dataNascimento         DateTime?
   valor                  Float?
   observacoes            String?
   ultimoContato          DateTime?
@@ -308,6 +441,7 @@ model Lead {
   vendas                 Venda[]
   lancamentosFinanceiros LancamentoFinanceiro[]
   variacoes              LeadVariacao[]
+  conversas              Conversa[]
 
   @@map("leads")
 }
@@ -349,13 +483,20 @@ model Agendamento {
   preco           Float?
   status          StatusAgendamento @default(PENDING)
   observacoes     String?
+  // Especialista (recurso agendavel) que vai atender. Nullable: agendamentos
+  // legados ou de tenant sem especialistas cadastrados. SetNull pra preservar
+  // o agendamento se o especialista for removido.
+  especialistaId  String?
   criadoEm        DateTime          @default(now())
   atualizadoEm    DateTime          @updatedAt
 
-  cliente   Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  lead      Lead?                  @relation(fields: [leadId], references: [id])
-  historico HistoricoAgendamento[]
+  cliente      Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead         Lead?                  @relation(fields: [leadId], references: [id])
+  especialista Especialista?          @relation(fields: [especialistaId], references: [id], onDelete: SetNull)
+  venda        Venda?
+  historico    HistoricoAgendamento[]
 
+  @@index([especialistaId, data])
   @@map("agendamentos")
 }
 
@@ -384,6 +525,56 @@ model HistoricoAgendamento {
   @@map("agendamento_historico")
 }
 
+// ==========================================
+// ESPECIALISTAS (recurso agendavel — perfil Servico)
+// ==========================================
+// Especialista = quem executa servicos e pode ser agendado (barbeiro,
+// dentista, esteticista). Pode ou nao ter login (usuarioId opcional 1:1).
+// A capacidade de um horario = nº de especialistas aptos ao servico e livres.
+model Especialista {
+  id           String   @id @default(uuid())
+  clienteId    String
+  // Vinculo opcional 1:1 com um Usuario (login). Especialista sem usuario =
+  // so agendavel (ex.: barbeiro que nao acessa o sistema). @unique garante
+  // que um usuario seja, no maximo, um especialista.
+  usuarioId    String?  @unique
+  nome         String
+  ativo        Boolean  @default(true)
+  // Jornada de trabalho (JSON). null = herda o expediente da loja
+  // (Cliente.horarioFuncionamento). Formato por dia (1=segunda..7=domingo):
+  //   { "1": [{ "inicio": "08:00", "fim": "12:00" }, { "inicio": "13:00", "fim": "18:00" }], ... }
+  jornada      Json?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cliente      Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  usuario      Usuario?              @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  servicos     EspecialistaServico[]
+  agendamentos Agendamento[]
+  conversas    Conversa[]
+
+  @@index([clienteId, ativo])
+  @@map("especialistas")
+}
+
+// M:N entre Especialista e Produto (tipo SERVICO): quais servicos cada
+// especialista executa. Escolha por nivel Produto ("faz Corte"), nao por
+// variacao — cobre as variacoes do servico. A disponibilidade cruza isto com
+// a jornada e os agendamentos existentes.
+model EspecialistaServico {
+  id             String   @id @default(uuid())
+  especialistaId String
+  produtoId      String
+  criadoEm       DateTime @default(now())
+
+  especialista Especialista @relation(fields: [especialistaId], references: [id], onDelete: Cascade)
+  produto      Produto      @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@unique([especialistaId, produtoId])
+  @@index([produtoId])
+  @@map("especialista_servicos")
+}
+
 model Venda {
   id                     String                 @id @default(uuid())
   clienteId              String
@@ -392,6 +583,9 @@ model Venda {
   // O `numero` e o que aparece pra cliente final ("Venda #42").
   numero                 Int
   leadId                 String?
+  // Sessao de caixa em que a venda foi registrada. Pra venda manual, exige
+  // caixa aberto. Pra venda do bot, criada AUTO se nao tem nenhum.
+  sessaoCaixaId          String?
   valor                  Float
   metodoPagamento        String?
   status                 StatusVenda            @default(COMPLETED)
@@ -400,14 +594,21 @@ model Venda {
   dataCancelamento       DateTime?
   motivoCancelamento     String?
   canceladaPorId         String?
+  // Quando a venda nasce da conclusao de um agendamento (servico atendido).
+  // @unique = 1 venda por agendamento (trava dupla-conclusao no banco). SetNull
+  // preserva a venda se o agendamento for apagado.
+  agendamentoId          String?                @unique
   criadoEm               DateTime               @default(now())
   atualizadoEm           DateTime               @updatedAt
   cliente                Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   lead                   Lead?                  @relation(fields: [leadId], references: [id])
+  sessao                 SessaoCaixa?           @relation(fields: [sessaoCaixaId], references: [id], onDelete: SetNull)
+  agendamento            Agendamento?           @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
   lancamentosFinanceiros LancamentoFinanceiro[]
   movimentacoesEstoque   MovimentacaoEstoque[]
 
   @@unique([clienteId, numero])
+  @@index([sessaoCaixaId])
   @@map("vendas")
 }
 
@@ -427,9 +628,10 @@ model Produto {
   criadoEm     DateTime            @default(now())
   atualizadoEm DateTime            @updatedAt
 
-  cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  categoria CategoriaFinanceira? @relation(fields: [categoriaId], references: [id])
-  variacoes VariacaoProduto[]
+  cliente       Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  categoria     CategoriaFinanceira?  @relation(fields: [categoriaId], references: [id])
+  variacoes     VariacaoProduto[]
+  especialistas EspecialistaServico[]
 
   @@map("produtos")
 }
@@ -439,9 +641,7 @@ model VariacaoProduto {
   produtoId         String
   nome              String // Ex: "Tamanho P", "Cor Azul"
   sku               String?  @unique
-  preco             Float // Preço de Venda (estoque)
-  precoCatalogo     Float? // Preço alternativo exibido no catálogo público
-  usarPrecoCatalogo Boolean  @default(false) // Quando true, vendas/agenda usam precoCatalogo
+  preco             Float // Preço de Venda (usado em vendas, agenda e bot)
   precoCusto        Float?   @default(0) // Preço de Compra
   estoqueAtual      Int      @default(0)
   estoqueMinimo     Int?     @default(0)
@@ -467,8 +667,7 @@ model VariacaoProduto {
 // ==========================================
 // Tabela M:N entre Lead e VariacaoProduto, com quantidade pra suportar
 // "2x camiseta P + 1x camiseta G". O `valor` agregado do lead e calculado
-// no servidor a partir dessa relacao (preco × quantidade respeitando
-// usarPrecoCatalogo).
+// no servidor a partir dessa relacao (preco × quantidade).
 model LeadVariacao {
   id          String   @id @default(uuid())
   leadId      String
@@ -525,28 +724,136 @@ model LancamentoFinanceiro {
   dataCancelamento   DateTime?
   motivoCancelamento String?
   idAgrupamento      String?
+  // Sessao de caixa em que o lancamento foi gerado (so se PAGO e veio de
+  // venda/sangria/suprimento da sessao). Receitas/despesas com vencimento
+  // futuro nao tem sessao — sao agendamentos contabeis, nao caixa fisico.
+  sessaoCaixaId      String?
+  // Quando o pagamento veio de uma Conta a Pagar cadastrada (rastreamento
+  // de pagamento recorrente). Nullable porque despesas avulsas nao tem.
+  contaPagarId       String?
   criadoEm           DateTime         @default(now())
   atualizadoEm       DateTime         @updatedAt
 
-  cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  lead      Lead?                @relation(fields: [leadId], references: [id])
-  venda     Venda?               @relation(fields: [vendaId], references: [id])
-  categoria CategoriaFinanceira? @relation(fields: [categoriaId], references: [id])
+  cliente    Cliente                 @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  lead       Lead?                   @relation(fields: [leadId], references: [id])
+  venda      Venda?                  @relation(fields: [vendaId], references: [id])
+  categoria  CategoriaFinanceira?    @relation(fields: [categoriaId], references: [id])
+  sessao     SessaoCaixa?            @relation(fields: [sessaoCaixaId], references: [id], onDelete: SetNull)
+  contaPagar ContaPagar?             @relation(fields: [contaPagarId], references: [id], onDelete: SetNull)
+  historico  HistoricoLancamento[]
 
+  @@index([sessaoCaixaId])
+  @@index([contaPagarId])
   @@map("lancamentos_financeiros")
 }
 
+// Log auditavel de toda mudanca em lancamento financeiro.
+// acao: CRIADO | EDITADO | STATUS_MUDADO | CANCELADO | EXCLUIDO | ADIADO
+// alteracoes: JSON com { campo: { de, para } } (ou snapshot pra CRIADO/EXCLUIDO)
+// usuarioId/Nome: snapshot pra preservar mesmo apos delete do usuario.
+//
+// lancamentoId e nullable + ON DELETE SET NULL: log de EXCLUIDO sobrevive
+// ao delete do lancamento (auditoria preserva trilha). Snapshot em alteracoes
+// identifica o lancamento.
+model HistoricoLancamento {
+  id            String   @id @default(uuid())
+  lancamentoId  String?
+  acao          String
+  alteracoes    Json?
+  usuarioId     String?
+  usuarioNome   String?
+  criadoEm      DateTime @default(now())
+
+  lancamento LancamentoFinanceiro? @relation(fields: [lancamentoId], references: [id], onDelete: SetNull)
+
+  @@index([lancamentoId, criadoEm])
+  @@map("lancamento_historico")
+}
+
 model CategoriaFinanceira {
-  id        String         @id @default(uuid())
+  id        String              @id @default(uuid())
   clienteId String
   nome      String
   tipo      TipoLancamento
+  // Uso/contexto da categoria — controla em quais telas ela aparece (ver enum
+  // UsoCategoria). Nullable: categorias antigas ficam sem uso ate o usuario
+  // classificar; novas exigem o uso no cadastro.
+  uso       UsoCategoria?
+  // SubTipo só se aplica a DESPESA: VARIAVEL (taxas, impostos, comissões —
+  // sobem/descem com volume) vs FIXA (aluguel, salário, internet — paga
+  // todo mês). Nullable porque RECEITA não usa e categorias antigas ainda
+  // não foram migradas. DRE/relatórios fazem fallback ao nome quando null.
+  subTipo   SubTipoCategoria?
 
   cliente     Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   lancamentos LancamentoFinanceiro[]
   produtos    Produto[]
+  contasPagar ContaPagar[]
 
   @@map("categorias_financeiras")
+}
+
+enum SubTipoCategoria {
+  VARIAVEL
+  FIXA
+}
+
+// "Uso" da categoria (a chave de contexto): define EM QUAIS telas ela aparece.
+//   SERVICO  -> cadastro de servico (Catalogo)
+//   PRODUTO  -> cadastro de produto / estoque / vendas
+//   CAIXA    -> lancamentos avulsos do caixa (sangria, suprimento, avulsos)
+//   DESPESA  -> contas a pagar / despesas
+// Relatorios e a visao de caixa mostram TODAS (leitura). Nullable = ainda nao
+// classificada (aparece so em Configuracoes/Relatorios ate receber um uso).
+enum UsoCategoria {
+  SERVICO
+  PRODUTO
+  CAIXA
+  DESPESA
+}
+
+// =====================================================================
+// CONTAS A PAGAR — catalogo de despesas recorrentes/pontuais
+// =====================================================================
+// Conceito: cadastro de despesas que o usuario precisa pagar (aluguel,
+// internet, fornecedor, etc.). NAO e um lancamento — quando o pagamento
+// acontece (manualmente ou pelo caixa via "Pagar despesa"), cria um
+// LancamentoFinanceiro DESPESA PAGO vinculado.
+//
+// Periodicidade:
+//   - PONTUAL: paga uma unica vez, depois pode ser arquivada
+//   - MENSAL: gera lembrete todo mes no diaVencimento
+//   - ANUAL: gera lembrete uma vez por ano no diaVencimento+mesVencimento
+//
+// `ativa` permite pausar sem deletar (preserva historico de pagamentos
+// via LancamentoFinanceiro.contaPagarId).
+
+enum PeriodicidadeContaPagar {
+  PONTUAL
+  MENSAL
+  ANUAL
+}
+
+model ContaPagar {
+  id            String                   @id @default(uuid())
+  clienteId     String
+  nome          String                   // ex: "Aluguel", "Internet Vivo"
+  valorPadrao   Float                    // valor sugerido (usuario pode editar no momento do pagamento)
+  categoriaId   String?                  // CategoriaFinanceira tipo DESPESA
+  periodicidade PeriodicidadeContaPagar  @default(MENSAL)
+  diaVencimento Int?                     // 1-31, opcional pra PONTUAL
+  mesVencimento Int?                     // 1-12, so faz sentido pra ANUAL
+  observacoes   String?
+  ativa         Boolean                  @default(true)
+  criadoEm      DateTime                 @default(now())
+  atualizadoEm  DateTime                 @updatedAt
+
+  cliente     Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  categoria   CategoriaFinanceira?   @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  pagamentos  LancamentoFinanceiro[]
+
+  @@index([clienteId, ativa])
+  @@map("contas_pagar")
 }
 
 model Alerta {
@@ -580,13 +887,28 @@ model Conversa {
   canal         Canal              @default(WHATSAPP)
   identificador String? // ex: telefone do contato no canal externo
   estado        Json               @default("{}") // estado livre do fluxo manual (ex.: { passo: 'NOME', nome: 'Joao' })
+  // Responsavel pela conversa (roteamento + escopo da inbox):
+  //   especialistaId -> especialista apto a quem o bot roteou (pelo servico).
+  //   usuarioId      -> atendente humano que assumiu/foi atribuido (handoff).
+  // Escopo PROPRIAS = conversas onde o usuario logado e o responsavel (direto
+  // por usuarioId, ou via o especialista vinculado a ele).
+  especialistaId String?
+  usuarioId      String?
   ultimaMsgEm   DateTime?
   criadoEm      DateTime           @default(now())
   atualizadoEm  DateTime           @updatedAt
   mensagens     MensagemConversa[]
+  especialista  Especialista?      @relation(fields: [especialistaId], references: [id], onDelete: SetNull)
+  usuario       Usuario?           @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  // Lead (contato) da conversa. A coluna leadId ja existia; faltava a relacao —
+  // por isso a inbox quebrava ao fazer include: { lead }. SetNull preserva a
+  // conversa se o lead for apagado.
+  lead          Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@index([clienteId, ultimaMsgEm(sort: Desc)])
   @@index([leadId])
+  @@index([especialistaId])
+  @@index([usuarioId])
   @@map("conversas")
 }
 
@@ -653,7 +975,10 @@ model AuditoriaAcaoAgente {
 // objeto JSON serializado e cifrado (AES-256-GCM) — formato livre por tipo.
 model Credencial {
   id            String         @id @default(uuid())
-  clienteId     String
+  // Nullable: clienteId null = credencial de PLATAFORMA (gerida pelo ADMIN do
+  // sistema, ex.: a chave de IA usada por padrao pelos bots). Cifrada com uma
+  // chave estavel de plataforma (ver credenciais.js). Tenant tem clienteId.
+  clienteId     String?
   nome          String
   tipo          TipoCredencial
   descricao     String?
@@ -666,11 +991,31 @@ model Credencial {
   criadoEm      DateTime       @default(now())
   atualizadoEm  DateTime       @updatedAt
 
-  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  cliente   Cliente? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   criadoPor Usuario? @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  // Bots que usam essa credencial como chave da IA (relation reversa).
+  botsComEssaIa Bot[] @relation("CredencialIa")
 
   @@index([clienteId, tipo])
   @@map("credenciais")
+}
+
+// Log append-only de uso de IA por execucao do agente. A credencial de IA pode
+// ser da plataforma (admin), mas o consumo e do tenant — esta tabela mede isso
+// pra controle de custo / futura cobranca. Sem FK (igual auditoria) pra
+// sobreviver a delete de bot/execucao.
+model UsoIa {
+  id         String   @id @default(uuid())
+  clienteId  String
+  botId      String?
+  execucaoId String?
+  provedor   String
+  modelo     String
+  tokens     Int      @default(0)
+  criadoEm   DateTime @default(now())
+
+  @@index([clienteId, criadoEm])
+  @@map("uso_ia")
 }
 
 // ==========================================
@@ -697,6 +1042,15 @@ enum StatusCliente {
   SUSPENDED
 }
 
+// Segmento estruturado do tenant. Controla o preset do bot e quais
+// modulos/telas fazem sentido (Servico ve Especialistas/Agenda; Produto ve
+// Estoque/Pedido; Hibrido ve os dois). Nullable = ainda nao classificado.
+enum SegmentoCliente {
+  SERVICO
+  PRODUTO
+  HIBRIDO
+}
+
 enum StatusBot {
   ONLINE
   OFFLINE
@@ -705,9 +1059,6 @@ enum StatusBot {
 
 enum Canal {
   WHATSAPP
-  INSTAGRAM
-  WEBSITE
-  TELEGRAM
 }
 
 enum Severidade {
@@ -814,7 +1165,6 @@ enum TipoCredencial {
   GEMINI_API_KEY
   // Canais de mensagem
   WHATSAPP_CLOUD_TOKEN
-  TELEGRAM_BOT_TOKEN
   // Genericas (HTTP node)
   HTTP_BEARER
   HTTP_BASIC
@@ -891,4 +1241,101 @@ enum StatusFinanceiro {
 enum TipoLancamento {
   RECEITA
   DESPESA
+}
+
+// =====================================================================
+// NOTIFICAÇÕES — sino + opt-in por tipo
+// =====================================================================
+// `Notificacao` é cada item exibido no sino. Pode ser direcionada a um
+// usuário específico (usuarioId não nulo) ou ao tenant inteiro (todos os
+// usuários do `clienteId` veem).
+//
+// `lida` é por notificação. Para "marcar todas como lidas", o backend
+// atualiza em lote.
+//
+// `link` é uma rota interna do frontend pra abrir ao clicar (ex.:
+// "/app/relatorios/mensal/2026-04"). Opcional.
+//
+// `dados` é payload JSON livre — útil pra notificações tipadas que o
+// frontend precisa renderizar diferente.
+//
+// Index composto (usuarioId, lida) + (clienteId, criadoEm) atende as
+// consultas mais comuns sem table scan.
+
+enum TipoNotificacao {
+  LEMBRETE_FECHAMENTO_MES   // dia 1 e 5: lance suas despesas
+  RELATORIO_MENSAL_PRONTO   // dia 7: relatório do mês anterior disponível
+  CAIXA_AUTO_FECHADO        // cron diário fechou caixa do bot
+  CAIXA_DIVERGENCIA         // fechamento manual com diferença != 0
+  CONTA_PAGAR_VENCENDO      // contas a pagar com diaVencimento próximo
+  GENERICA                  // tipo livre pra avisos avulsos
+}
+
+model Notificacao {
+  id           String          @id @default(uuid())
+  clienteId    String          // tenant
+  usuarioId    String?         // nullable = vai pra todos os usuários do tenant
+  tipo         TipoNotificacao
+  titulo       String
+  mensagem     String
+  link         String?         // rota interna pra abrir ao clicar (opcional)
+  dados        Json?           // payload livre pra renderização customizada
+  lida         Boolean         @default(false)
+  lidaEm       DateTime?
+  criadoEm     DateTime        @default(now())
+
+  cliente Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, lida])
+  @@index([clienteId, criadoEm])
+  @@map("notificacoes")
+}
+
+// Opt-in/opt-out por tipo. Sem registro = considera ativo (padrão).
+// Quando o usuário desativa um tipo, criamos a linha com `ativa=false`.
+// Helper `criarNotificacao` consulta antes de gravar.
+model PreferenciaNotificacao {
+  id        String          @id @default(uuid())
+  usuarioId String
+  tipo      TipoNotificacao
+  ativa     Boolean         @default(true)
+  atualizadoEm DateTime     @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, tipo])
+  @@map("preferencias_notificacao")
+}
+
+// =====================================================================
+// RELATÓRIO MENSAL — snapshot persistido do fechamento de cada mês
+// =====================================================================
+// Gerado automaticamente pelo cron no dia 7 de cada mês, com os dados do
+// mês ANTERIOR. Snapshot é imutável depois de criado: se o usuário editar
+// algum lançamento retroativamente, o relatório do mês passado NÃO muda.
+// Garante estabilidade contábil — "o que foi fechado, foi fechado".
+//
+// Regras:
+//   - Apenas sessões de caixa FECHADAS entre 1º e último dia do mês contam.
+//     Sessão que abriu dia 30 e fechou dia 5 vai pro mês seguinte (porque
+//     foi nesse mês que ela foi fechada).
+//   - Lançamentos consideram dataPagamento (PAGO) dentro do mês.
+//   - Unique (clienteId, ano, mes) — só um snapshot por mês por tenant.
+
+model RelatorioMensal {
+  id           String   @id @default(uuid())
+  clienteId    String
+  ano          Int
+  mes          Int      // 1-12
+  dados        Json     // snapshot completo (KPIs + listas)
+  geradoEm     DateTime @default(now())
+  // Opcional: identifica como foi gerado (cron automático vs. botão manual).
+  geradoPor    String?  // 'CRON' | 'MANUAL' | usuarioId
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, ano, mes])
+  @@index([clienteId, ano, mes])
+  @@map("relatorios_mensais")
 }

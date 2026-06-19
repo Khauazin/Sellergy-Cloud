@@ -33,6 +33,7 @@ const SECTIONS = [
     titulo: 'Sistema',
     items: [
       { to: '/admin/usuarios', label: 'Equipe', icon: Users },
+      { to: '/admin/ia', label: 'Inteligencia (IA)', icon: Sparkles },
       { to: '/admin/configuracoes', label: 'Configuracoes', icon: Settings },
     ],
   },
@@ -47,6 +48,7 @@ const TITULOS = {
   '/admin/alertas': { titulo: 'Alertas', breadcrumb: 'Operacao' },
   '/admin/relatorios': { titulo: 'Relatorios', breadcrumb: 'Operacao' },
   '/admin/usuarios': { titulo: 'Equipe', breadcrumb: 'Sistema' },
+  '/admin/ia': { titulo: 'Inteligencia Artificial', breadcrumb: 'Sistema' },
   '/admin/configuracoes': { titulo: 'Configuracoes', breadcrumb: 'Sistema' },
   '/admin/_design': { titulo: 'Design system', breadcrumb: 'Sistema' },
 };
@@ -72,7 +74,7 @@ export default function AdminLayout() {
         />
       )}
 
-      <div className="lg:pl-16 min-h-screen flex flex-col">
+      <div className="lg:pl-20 min-h-screen flex flex-col">
         <Topbar
           titulo={meta.titulo}
           breadcrumb={meta.breadcrumb}

@@ -5,12 +5,17 @@ const {
   ehAdmin,
   requerModuloLiberado,
   requerPermissao,
+  requerPapelPrivilegiado,
 } = require('../middlewares/permissoes.middleware');
 const {
   substituirVinculosDoLead,
   adicionarVinculo,
   removerVinculo,
 } = require('../leadProdutos');
+const {
+  ETAPAS_CATALOGO,
+  buscarEtapaCatalogo,
+} = require('../constants/etapasCatalogo');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
@@ -58,7 +63,104 @@ roteador.get('/stages', requerPermissao('CRM', 'visualizar'), async (req, res) =
   }
 });
 
-roteador.post('/stages', requerPermissao('CRM', 'criar'), async (req, res) => {
+// =====================================================================
+// CATALOGO DE ETAPAS PRE-DEFINIDAS
+// =====================================================================
+// O usuario nao cria etapa com nome livre — escolhe do catalogo curado.
+// Mantemos esses endpoints sob requerPapelPrivilegiado: VENDEDOR nao mexe
+// na estrutura do funil, mesmo com permissao CRM/criar.
+
+// GET /crm/stages/catalogo
+// Retorna o catalogo completo + flag 'habilitada' (se ja existe no tenant).
+// Visualizacao e liberada pra qualquer perfil do tenant — assim o front mostra
+// o estado pro vendedor (so leitura) sem precisar de chamada extra.
+roteador.get('/stages/catalogo', requerPermissao('CRM', 'visualizar'), async (req, res) => {
+  try {
+    const clienteId = tenantDoSolicitante(req, req.query.clienteId);
+    if (!clienteId) return res.status(400).json({ error: 'clienteId eh obrigatorio' });
+
+    // Pega o que ja existe pro tenant pra marcar 'habilitada'.
+    const existentes = await prisma.etapaLead.findMany({
+      where: { clienteId, slug: { not: null } },
+      select: { id: true, slug: true },
+    });
+    const habilitadas = new Map(existentes.map((e) => [e.slug, e.id]));
+
+    const catalogo = ETAPAS_CATALOGO.map((e) => ({
+      ...e,
+      habilitada: habilitadas.has(e.slug),
+      etapaId: habilitadas.get(e.slug) || null,
+    }));
+    res.json(catalogo);
+  } catch (error) {
+    console.error('[crm/stages-catalogo]', error);
+    res.status(500).json({ error: 'Erro ao carregar catalogo de etapas' });
+  }
+});
+
+// POST /crm/stages/catalogo/:slug
+// Habilita uma etapa do catalogo pro tenant. Idempotente: se ja existe,
+// retorna a existente sem erro.
+roteador.post('/stages/catalogo/:slug', requerPapelPrivilegiado, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const def = buscarEtapaCatalogo(slug);
+    if (!def) return res.status(400).json({ error: 'Slug invalido. Use um do catalogo.' });
+
+    const clienteId = tenantDoSolicitante(req, req.body?.clienteId);
+    if (!clienteId) return res.status(400).json({ error: 'clienteId eh obrigatorio' });
+
+    // Upsert pra ser idempotente: 2 cliques no toggle nao quebra.
+    const stage = await prisma.etapaLead.upsert({
+      where: { clienteId_slug: { clienteId, slug } },
+      create: { clienteId, slug, nome: def.nome, ordem: def.ordem, cor: def.cor },
+      update: {}, // se ja existe, nao mexe (preserva customizacoes)
+    });
+    res.status(201).json(stage);
+  } catch (error) {
+    console.error('[crm/stages-catalogo-habilitar]', error);
+    res.status(500).json({ error: 'Erro ao habilitar etapa' });
+  }
+});
+
+// DELETE /crm/stages/catalogo/:slug
+// Desabilita (deleta) a etapa do tenant. Bloqueia se houver leads — o cliente
+// precisa mover ou excluir os leads antes pra evitar perda silenciosa.
+roteador.delete('/stages/catalogo/:slug', requerPapelPrivilegiado, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const clienteId = tenantDoSolicitante(req, req.query?.clienteId);
+    if (!clienteId) return res.status(400).json({ error: 'clienteId eh obrigatorio' });
+
+    const stage = await prisma.etapaLead.findUnique({
+      where: { clienteId_slug: { clienteId, slug } },
+      include: { _count: { select: { leads: true } } },
+    });
+    if (!stage) return res.status(404).json({ error: 'Etapa nao esta habilitada.' });
+
+    if (stage._count.leads > 0) {
+      return res.status(409).json({
+        error: `Esta etapa tem ${stage._count.leads} lead(s). Mova ou exclua eles antes de desabilitar.`,
+        codigo: 'ETAPA_COM_LEADS',
+        totalLeads: stage._count.leads,
+      });
+    }
+
+    await prisma.etapaLead.delete({ where: { id: stage.id } });
+    res.json({ message: 'Etapa desabilitada' });
+  } catch (error) {
+    console.error('[crm/stages-catalogo-desabilitar]', error);
+    res.status(500).json({ error: 'Erro ao desabilitar etapa' });
+  }
+});
+
+// =====================================================================
+// ETAPAS LIVRES (LEGACY — nao expor mais no front)
+// =====================================================================
+// Mantemos o POST/PUT/DELETE livres pra migracao/uso interno, mas sob
+// requerPapelPrivilegiado (CLIENT + ADMINISTRADOR). VENDEDOR nao mexe.
+
+roteador.post('/stages', requerPapelPrivilegiado, async (req, res) => {
   try {
     const { nome, ordem, cor, clienteId: bodyClienteId } = req.body;
     const clienteId = tenantDoSolicitante(req, bodyClienteId);
@@ -77,7 +179,7 @@ roteador.post('/stages', requerPermissao('CRM', 'criar'), async (req, res) => {
   }
 });
 
-roteador.put('/stages/:id', requerPermissao('CRM', 'editar'), async (req, res) => {
+roteador.put('/stages/:id', requerPapelPrivilegiado, async (req, res) => {
   try {
     const { id } = req.params;
     const { nome, ordem, cor } = req.body;
@@ -101,7 +203,7 @@ roteador.put('/stages/:id', requerPermissao('CRM', 'editar'), async (req, res) =
   }
 });
 
-roteador.delete('/stages/:id', requerPermissao('CRM', 'excluir'), async (req, res) => {
+roteador.delete('/stages/:id', requerPapelPrivilegiado, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -143,10 +245,25 @@ roteador.get('/leads', requerPermissao('CRM', 'visualizar'), async (req, res) =>
   }
 });
 
+// Normaliza CPF — guarda so digitos (front manda com mascara). Vazio = null.
+function normalizarCpf(cpf) {
+  if (!cpf) return null;
+  const d = String(cpf).replace(/\D/g, '');
+  return d.length > 0 ? d : null;
+}
+
+// Normaliza dataNascimento — aceita ISO ou null/undefined. String vazia = null.
+function normalizarDataNasc(data) {
+  if (!data) return null;
+  const d = new Date(data);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 roteador.post('/leads', requerPermissao('CRM', 'criar'), async (req, res) => {
   try {
     const {
       etapaId, nome, telefone, email, tags, prioridade, origem, observacoes,
+      cpf, dataNascimento,
       variacoes, // novo: [{ variacaoId, quantidade?, observacao? }]
       clienteId: bodyClienteId,
     } = req.body;
@@ -160,7 +277,12 @@ roteador.post('/leads', requerPermissao('CRM', 'criar'), async (req, res) => {
     // recalculado por `substituirVinculosDoLead` se houver variacoes.
     const lead = await prisma.$transaction(async (tx) => {
       const novo = await tx.lead.create({
-        data: { clienteId, etapaId, nome, telefone, email, valor: 0, tags, prioridade, origem, observacoes },
+        data: {
+          clienteId, etapaId, nome, telefone, email, valor: 0,
+          tags, prioridade, origem, observacoes,
+          cpf: normalizarCpf(cpf),
+          dataNascimento: normalizarDataNasc(dataNascimento),
+        },
       });
       if (Array.isArray(variacoes) && variacoes.length > 0) {
         await substituirVinculosDoLead({ leadId: novo.id, clienteId, vinculos: variacoes, tx });
@@ -191,6 +313,7 @@ roteador.put('/leads/:id', requerPermissao('CRM', 'editar'), async (req, res) =>
     const { id } = req.params;
     const {
       etapaId, nome, telefone, email, tags, prioridade, origem, observacoes,
+      cpf, dataNascimento,
       variacoes, // novo: se vier, substitui o conjunto de produtos vinculados
       clienteId: bodyClienteId,
     } = req.body;
@@ -211,6 +334,9 @@ roteador.put('/leads/:id', requerPermissao('CRM', 'editar'), async (req, res) =>
           etapaId, nome, telefone, email,
           tags, prioridade, origem, observacoes,
           clienteId: clienteIdEfetivo,
+          // CPF/nascimento: undefined no body = nao atualiza; null/'' = limpa.
+          ...(cpf !== undefined ? { cpf: normalizarCpf(cpf) } : {}),
+          ...(dataNascimento !== undefined ? { dataNascimento: normalizarDataNasc(dataNascimento) } : {}),
           // valor sera recalculado por substituirVinculosDoLead se variacoes vier
         },
       });

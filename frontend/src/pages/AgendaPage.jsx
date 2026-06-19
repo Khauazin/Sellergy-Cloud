@@ -6,10 +6,11 @@ import {
 import api from '../services/api';
 import {
   Card, Button, IconButton, Input, Textarea, Select, Badge,
-  EmptyState, Drawer, useToast, Tabs, TabsList, TabsTrigger, Combobox
+  Drawer, useToast, Tabs, TabsList, TabsTrigger, Combobox
 } from '../components/ui';
 import Modal from '../components/Modal';
 import { formatarTelefoneBR } from '../utils/formatTelefone';
+import { useAuthStore } from '../store/auth.store';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const STATUS_LABELS = {
@@ -48,17 +49,26 @@ export default function AgendaPage() {
   const [dataAtual, setDataAtual] = useState(new Date());
   const [agendamentos, setAgendamentos] = useState([]);
   const [variacoes, setVariacoes] = useState([]);
+  const [especialistas, setEspecialistas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [modal, setModal] = useState({ open: false, data: null });
   const [drawer, setDrawer] = useState({ open: false, ag: null });
+  const [filtroEspecialista, setFiltroEspecialista] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+
+  const user = useAuthStore((s) => s.user);
+  // Só gestor (CLIENT/ADMINISTRADOR) filtra por especialista; o especialista
+  // com escopo próprio já vê só a agenda dele (o backend ignora o filtro).
+  const podeFiltrarEspecialista = ['CLIENT', 'ADMINISTRADOR', 'ADMIN'].includes(user?.perfil);
 
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, dataAtual]);
+  }, [view, dataAtual, filtroEspecialista]);
 
   useEffect(() => {
     carregarVariacoes();
+    carregarEspecialistas();
   }, []);
 
   const carregarVariacoes = async () => {
@@ -71,6 +81,17 @@ export default function AgendaPage() {
       setVariacoes(flat);
     } catch {
       setVariacoes([]);
+    }
+  };
+
+  // Especialistas ativos — fallback do seletor na edição (quando não há serviço
+  // re-selecionado, mostra todos pra manter/trocar o profissional).
+  const carregarEspecialistas = async () => {
+    try {
+      const r = await api.get('/especialistas');
+      setEspecialistas((r.data || []).filter((e) => e.ativo));
+    } catch {
+      setEspecialistas([]);
     }
   };
 
@@ -92,11 +113,20 @@ export default function AgendaPage() {
         inicio.setHours(0, 0, 0, 0);
         fim = new Date(dataAtual);
         fim.setHours(23, 59, 59, 999);
+      } else if (view === 'semana') {
+        // Domingo a sábado da semana que contém dataAtual.
+        inicio = new Date(dataAtual);
+        inicio.setDate(dataAtual.getDate() - dataAtual.getDay());
+        inicio.setHours(0, 0, 0, 0);
+        fim = new Date(inicio);
+        fim.setDate(inicio.getDate() + 6);
+        fim.setHours(23, 59, 59, 999);
       } else {
         inicio = new Date(dataAtual.getFullYear(), dataAtual.getMonth(), 1, 0, 0, 0, 0);
         fim = new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0, 23, 59, 59, 999);
       }
-      const url = `/agenda?inicio=${encodeURIComponent(inicio.toISOString())}&fim=${encodeURIComponent(fim.toISOString())}`;
+      let url = `/agenda?inicio=${encodeURIComponent(inicio.toISOString())}&fim=${encodeURIComponent(fim.toISOString())}`;
+      if (filtroEspecialista) url += `&especialistaId=${encodeURIComponent(filtroEspecialista)}`;
       const r = await api.get(url);
       setAgendamentos(r.data || []);
     } catch {
@@ -145,18 +175,59 @@ export default function AgendaPage() {
     }
   };
 
+  // Concluir = fecha o ciclo serviço→venda. Diferente de só mudar status:
+  // marca COMPLETED E lança a venda do serviço no caixa (endpoint /concluir).
+  // Por isso a conclusão NÃO passa por handleMudarStatus.
+  const handleConcluir = async (ag) => {
+    try {
+      const r = await api.patch(`/agenda/${ag.id}/concluir`, {});
+      const v = r.data?.venda;
+      toast.success(
+        v
+          ? `Atendimento concluido · Venda #${v.numero}${v.valor > 0 ? ` (${fmtBRL(v.valor)})` : ''}`
+          : 'Atendimento concluido'
+      );
+      setDrawer({ open: false, ag: null });
+      carregar();
+    } catch (e) {
+      toast.error(e.response?.data?.erro || 'Erro ao concluir o atendimento');
+    }
+  };
+
   const navegar = (dir) => {
     const nova = new Date(dataAtual);
     if (view === 'dia') nova.setDate(nova.getDate() + dir);
+    else if (view === 'semana') nova.setDate(nova.getDate() + dir * 7);
     else nova.setMonth(nova.getMonth() + dir);
     setDataAtual(nova);
   };
 
   const irHoje = () => setDataAtual(new Date());
 
-  const fmtData = view === 'dia'
-    ? dataAtual.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-    : dataAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const fmtData = (() => {
+    if (view === 'dia') {
+      return dataAtual.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    if (view === 'semana') {
+      const ini = new Date(dataAtual);
+      ini.setDate(dataAtual.getDate() - dataAtual.getDay());
+      const f = new Date(ini);
+      f.setDate(ini.getDate() + 6);
+      return `${ini.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })} – ${f.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}`;
+    }
+    return dataAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  })();
+
+  // Status filtra no cliente — assim a faixa de resumo continua refletindo o
+  // período inteiro, independente do filtro de status selecionado.
+  const agendamentosFiltrados = filtroStatus
+    ? agendamentos.filter((a) => a.status === filtroStatus)
+    : agendamentos;
+  const stats = {
+    agendados: agendamentos.length,
+    concluidos: agendamentos.filter((a) => a.status === 'COMPLETED').length,
+    cancelados: agendamentos.filter((a) => a.status === 'CANCELED').length,
+  };
 
   return (
     <div className="space-y-5">
@@ -175,6 +246,7 @@ export default function AgendaPage() {
           <Tabs value={view} onValueChange={setView}>
             <TabsList variant="pills">
               <TabsTrigger value="dia" variant="pills">Dia</TabsTrigger>
+              <TabsTrigger value="semana" variant="pills">Semana</TabsTrigger>
               <TabsTrigger value="mes" variant="pills">Mes</TabsTrigger>
             </TabsList>
           </Tabs>
@@ -184,28 +256,51 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* Conteudo */}
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        {podeFiltrarEspecialista && (
+          <Select
+            value={filtroEspecialista}
+            onChange={(e) => setFiltroEspecialista(e.target.value)}
+            placeholder="Todos os especialistas"
+            options={especialistas.map((e) => ({ value: e.id, label: e.nome }))}
+            fullWidth={false}
+            className="w-56"
+          />
+        )}
+        <Select
+          value={filtroStatus}
+          onChange={(e) => setFiltroStatus(e.target.value)}
+          placeholder="Todos os status"
+          options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v.label }))}
+          fullWidth={false}
+          className="w-44"
+        />
+      </div>
+
+      {/* Resumo do período — neutro, sem cor e sem faturamento (dado do Financeiro). */}
+      <div className="grid grid-cols-3 gap-3">
+        <ResumoCard label="Agendados" valor={stats.agendados} />
+        <ResumoCard label="Concluidos" valor={stats.concluidos} />
+        <ResumoCard label="Cancelados" valor={stats.cancelados} />
+      </div>
+
+      {/* Conteudo — a grade sempre aparece (mesmo vazia, mostra a estrutura). */}
       {carregando ? (
         <Card padding="lg">
           <div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando...</div>
         </Card>
-      ) : agendamentos.length === 0 ? (
-        <Card padding="lg">
-          <EmptyState
-            icon={Calendar}
-            title="Nada agendado para esse periodo"
-            description="Os agendamentos do bot ou cadastrados manualmente aparecem aqui."
-            action={
-              <Button variant="primary" icon={Plus} onClick={() => setModal({ open: true, data: null })}>
-                Novo agendamento
-              </Button>
-            }
-          />
-        </Card>
       ) : view === 'dia' ? (
-        <ViewDia agendamentos={agendamentos} onSelecionar={(ag) => setDrawer({ open: true, ag })} />
+        <ViewDia
+          agendamentos={agendamentosFiltrados}
+          especialistas={filtroEspecialista ? especialistas.filter((e) => e.id === filtroEspecialista) : especialistas}
+          onSelecionar={(ag) => setDrawer({ open: true, ag })}
+          onNovo={() => setModal({ open: true, data: null })}
+        />
+      ) : view === 'semana' ? (
+        <ViewSemana agendamentos={agendamentosFiltrados} dataReferencia={dataAtual} onSelecionar={(ag) => setDrawer({ open: true, ag })} />
       ) : (
-        <ViewMes agendamentos={agendamentos} dataReferencia={dataAtual} onSelecionar={(ag) => setDrawer({ open: true, ag })} />
+        <ViewMes agendamentos={agendamentosFiltrados} dataReferencia={dataAtual} onSelecionar={(ag) => setDrawer({ open: true, ag })} />
       )}
 
       <ModalAgendamento
@@ -213,6 +308,7 @@ export default function AgendaPage() {
         onClose={() => setModal({ open: false, data: null })}
         ag={modal.data}
         variacoes={variacoes}
+        especialistas={especialistas}
         onSalvar={handleSalvar}
       />
 
@@ -226,66 +322,169 @@ export default function AgendaPage() {
         }}
         onExcluir={() => handleExcluir(drawer.ag)}
         onStatus={(s) => handleMudarStatus(drawer.ag, s)}
+        onConcluir={() => handleConcluir(drawer.ag)}
       />
     </div>
   );
 }
 
-function ViewDia({ agendamentos, onSelecionar }) {
-  const ordenados = [...agendamentos].sort((a, b) => new Date(a.data) - new Date(b.data));
+// Card de resumo do período — propositalmente neutro (sem cor), no padrão sóbrio.
+function ResumoCard({ label, valor }) {
+  return (
+    <div className="bg-[var(--bg-subtle)] rounded-xl p-4">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+      <div className="text-2xl font-semibold tracking-tight mt-1 tabular-nums text-[var(--text-main)]">{valor}</div>
+    </div>
+  );
+}
+
+// Bloco de agendamento usado nas grades (Dia/Semana). Cor pelo status.
+function BlocoAgendamento({ ag, onSelecionar }) {
+  const cores = coresPorStatus(ag.status);
+  const ehCancelado = ag.status === 'CANCELED';
+  const data = new Date(ag.data);
+  return (
+    <button
+      onClick={() => onSelecionar(ag)}
+      className={`w-full text-left rounded-md px-2 py-1.5 mb-1 hover:opacity-80 transition-opacity ${ehCancelado ? 'line-through' : ''}`}
+      style={{ backgroundColor: cores.soft, color: cores.text }}
+      title={`${ag.nomeCliente}${ag.servico ? ' · ' + ag.servico : ''}`}
+    >
+      <div className="text-[11px] font-bold tabular-nums">
+        {data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+      </div>
+      <div className="text-xs font-semibold truncate">{ag.nomeCliente}</div>
+      {ag.servico && <div className="text-[11px] truncate opacity-80">{ag.servico}</div>}
+    </button>
+  );
+}
+
+// VISÃO DIA — uma coluna por profissional, linhas por hora. Os "buracos" entre
+// atendimentos ficam à mostra (hover revela "livre"). Padrão de clínica/salão.
+function ViewDia({ agendamentos, especialistas = [], onSelecionar, onNovo }) {
+  // Colunas: 1 por especialista ativo; + "Sem profissional" se houver
+  // agendamento sem vínculo; fallback pra 1 coluna se não houver especialista.
+  const semEspecialista = agendamentos.some((a) => !a.especialistaId);
+  let colunas = especialistas.map((e) => ({ id: e.id, nome: e.nome }));
+  if (semEspecialista) colunas.push({ id: null, nome: 'Sem profissional' });
+  if (colunas.length === 0) colunas = [{ id: null, nome: 'Agendamentos' }];
+
+  // Faixa de horas: do 1º ao último atendimento do dia (default 8h–18h).
+  const horas = useMemo(() => {
+    let min = 8;
+    let max = 18;
+    agendamentos.forEach((a) => {
+      const h = new Date(a.data).getHours();
+      if (h < min) min = h;
+      if (h + 1 > max) max = h + 1;
+    });
+    const arr = [];
+    for (let h = min; h <= max; h++) arr.push(h);
+    return arr;
+  }, [agendamentos]);
+
+  // Índice [especialista]_[hora] -> agendamentos.
+  const porCelula = useMemo(() => {
+    const m = {};
+    agendamentos.forEach((a) => {
+      const h = new Date(a.data).getHours();
+      const k = `${a.especialistaId || 'null'}_${h}`;
+      (m[k] = m[k] || []).push(a);
+    });
+    return m;
+  }, [agendamentos]);
 
   return (
-    <Card padding="none">
-      <div className="divide-y divide-[var(--border-subtle)]">
-        {ordenados.map((ag) => {
-          const data = new Date(ag.data);
-          const status = STATUS_LABELS[ag.status] || { label: ag.status, variant: 'neutral' };
-          const cores = coresPorStatus(ag.status);
-          const ehCancelado = ag.status === 'CANCELED';
-          return (
-            <div
-              key={ag.id}
-              onClick={() => onSelecionar(ag)}
-              className="flex items-stretch gap-4 px-5 py-4 hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors"
-            >
-              {/* Barra lateral colorida pelo status — leitura rapida do estado */}
-              <div
-                className="w-1 rounded-full flex-shrink-0"
-                style={{ backgroundColor: cores.solid }}
-                aria-hidden="true"
-              />
-              <div className="text-center w-16 flex-shrink-0 self-center">
-                <div className={`text-xl font-semibold tracking-tight tabular-nums ${ehCancelado ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>
-                  {data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </div>
-                <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] font-bold mt-0.5">
-                  {ag.duracao}min
-                </div>
+    <div className="rounded-xl border border-[var(--border-main)] overflow-hidden bg-[var(--bg-card)]">
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: `${56 + colunas.length * 150}px` }}>
+          <div className="flex bg-[var(--bg-subtle)] border-b border-[var(--border-main)]">
+            <div className="w-14 flex-shrink-0" />
+            {colunas.map((c) => (
+              <div key={c.id || 'null'} className="flex-1 min-w-[150px] py-2.5 px-2 text-center text-sm font-semibold text-[var(--text-main)] border-l border-[var(--border-main)] truncate">
+                {c.nome}
               </div>
-              <div className="w-px self-stretch bg-[var(--border-main)]" />
-              <div className="flex-1 min-w-0 self-center">
-                <div className={`text-base font-semibold tracking-tight ${ehCancelado ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>
-                  {ag.servico || 'Servico'}
-                </div>
-                <div className="text-sm text-[var(--text-secondary)] mt-1 flex items-center gap-2 flex-wrap">
-                  <span className="font-medium">{ag.nomeCliente}</span>
-                  {ag.telefoneCliente && <><span className="text-[var(--text-muted)]">·</span><span>{ag.telefoneCliente}</span></>}
-                </div>
+            ))}
+          </div>
+          {horas.map((h) => (
+            <div key={h} className="flex border-b border-[var(--border-subtle)]">
+              <div className="w-14 flex-shrink-0 pt-1.5 px-1 text-center text-[11px] text-[var(--text-muted)] tabular-nums">
+                {String(h).padStart(2, '0')}:00
               </div>
-              <div className="flex items-center gap-2 self-center flex-shrink-0">
-                {ag.preco > 0 && (
-                  <div className={`text-base font-semibold tabular-nums ${ehCancelado ? 'line-through text-[var(--text-muted)]' : 'text-[var(--text-main)]'}`}>
-                    {fmtBRL(ag.preco)}
+              {colunas.map((c) => {
+                const ags = (porCelula[`${c.id || 'null'}_${h}`] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
+                return (
+                  <div key={c.id || 'null'} className="flex-1 min-w-[150px] min-h-[56px] border-l border-[var(--border-subtle)] p-1">
+                    {ags.length === 0 ? (
+                      <button
+                        onClick={onNovo}
+                        className="w-full h-full min-h-[48px] rounded-md text-[11px] text-[var(--text-muted)] opacity-0 hover:opacity-100 hover:bg-[var(--bg-subtle)] transition-opacity flex items-center justify-center gap-1"
+                      >
+                        <Plus size={12} /> livre
+                      </button>
+                    ) : (
+                      ags.map((ag) => <BlocoAgendamento key={ag.id} ag={ag} onSelecionar={onSelecionar} />)
+                    )}
                   </div>
-                )}
-                {ag.origem === 'AI' && <Badge variant="accent" size="sm" icon={Sparkles}>Bot</Badge>}
-                <Badge variant={status.variant} size="sm">{status.label}</Badge>
-              </div>
+                );
+              })}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
-    </Card>
+    </div>
+  );
+}
+
+// VISÃO SEMANA — 7 colunas (dom–sáb), cada dia com seus atendimentos em chips.
+function ViewSemana({ agendamentos, dataReferencia, onSelecionar }) {
+  const inicioSemana = useMemo(() => {
+    const d = new Date(dataReferencia);
+    d.setDate(d.getDate() - d.getDay());
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [dataReferencia]);
+  const dias = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(inicioSemana);
+      d.setDate(inicioSemana.getDate() + i);
+      return d;
+    }),
+    [inicioSemana]
+  );
+  const porDia = useMemo(() => {
+    const m = {};
+    agendamentos.forEach((a) => {
+      const k = new Date(a.data).toDateString();
+      (m[k] = m[k] || []).push(a);
+    });
+    return m;
+  }, [agendamentos]);
+  const hojeStr = new Date().toDateString();
+  const nomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+
+  return (
+    <div className="grid grid-cols-7 gap-2">
+      {dias.map((d, i) => {
+        const ags = (porDia[d.toDateString()] || []).sort((a, b) => new Date(a.data) - new Date(b.data));
+        const ehHoje = d.toDateString() === hojeStr;
+        return (
+          <div key={i} className="border border-[var(--border-main)] rounded-lg overflow-hidden min-h-[160px]">
+            <div className="flex items-center justify-between px-2 py-1.5 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)]">
+              <span className={`text-xs font-semibold ${ehHoje ? 'text-[var(--accent)]' : 'text-[var(--text-main)]'}`}>{nomes[d.getDay()]} {d.getDate()}</span>
+              {ags.length > 0 && <span className="text-[11px] text-[var(--text-muted)]">{ags.length}</span>}
+            </div>
+            <div className="p-1.5">
+              {ags.length === 0 ? (
+                <div className="text-center text-[11px] text-[var(--text-muted)] py-6">livre</div>
+              ) : (
+                ags.map((ag) => <BlocoAgendamento key={ag.id} ag={ag} onSelecionar={onSelecionar} />)
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -378,22 +577,18 @@ function ViewMes({ agendamentos, dataReferencia, onSelecionar }) {
   );
 }
 
-// Helper: retorna o preco efetivo da variacao (catalogo se ativo, senao estoque)
+// Helper: retorna o preco de venda da variacao
 function precoEfetivoVariacao(v) {
   if (!v) return 0;
-  if (v.usarPrecoCatalogo && v.precoCatalogo != null) return v.precoCatalogo;
   return v.preco || 0;
 }
 
-function ModalAgendamento({ isOpen, onClose, ag, variacoes = [], onSalvar }) {
-  // tipoItem controla o filtro da lista de catalogo. Em UX:
-  //   1. usuario escolhe se quer agendar um SERVICO ou um PRODUTO
-  //   2. so depois aparece o combobox com a lista daquele tipo
-  //   3. se for SERVICO e a variacao tiver duracaoMin, auto-preenche duracao
-  const [tipoItem, setTipoItem] = useState('SERVICO');
+function ModalAgendamento({ isOpen, onClose, ag, variacoes = [], especialistas = [], onSalvar }) {
+  // Agenda é orientada ao SERVIÇO: escolhe pela busca e tudo (valor, duração,
+  // especialista) vem do cadastro do serviço. Sem campos livres.
   const [form, setForm] = useState({
     nomeCliente: '', telefoneCliente: '', data: '', hora: '', duracao: 30,
-    variacaoId: '', servico: '', preco: 0,
+    variacaoId: '', servico: '', preco: 0, especialistaId: '',
     observacoes: '', status: 'PENDING', origem: 'MANUAL',
   });
 
@@ -405,78 +600,89 @@ function ModalAgendamento({ isOpen, onClose, ag, variacoes = [], onSalvar }) {
         data: d.toISOString().split('T')[0],
         hora: d.toTimeString().slice(0, 5),
         preco: ag.preco || 0,
-        variacaoId: '', // edicao mantem o servico em texto livre, sem ligar variacao
+        variacaoId: '', // edição mantém o serviço já gravado; não re-liga variação
+        especialistaId: ag.especialistaId || '',
         observacoes: ag.observacoes || '',
       });
-      // Edicao: default pra SERVICO ja que e o caso mais comum em agenda.
-      setTipoItem('SERVICO');
     } else {
       const agora = new Date();
       setForm({
         nomeCliente: '', telefoneCliente: '',
         data: agora.toISOString().split('T')[0],
         hora: '09:00',
-        duracao: 30, variacaoId: '', servico: '', preco: 0, observacoes: '',
-        status: 'PENDING', origem: 'MANUAL',
+        duracao: 30, variacaoId: '', servico: '', preco: 0, especialistaId: '',
+        observacoes: '', status: 'PENDING', origem: 'MANUAL',
       });
-      setTipoItem('SERVICO');
     }
   }, [ag, isOpen]);
 
-  // Filtra variacoes pelo tipo selecionado.
-  const variacoesFiltradas = useMemo(
-    () => variacoes.filter((v) => v.produto?.tipo === tipoItem),
-    [variacoes, tipoItem]
+  // Só serviços entram na agenda (produtos são vendidos, não agendados).
+  const servicosVariacoes = useMemo(
+    () => variacoes.filter((v) => v.produto?.tipo === 'SERVICO'),
+    [variacoes]
   );
 
   const variacaoSel = variacoes.find((v) => v.id === form.variacaoId);
 
-  // Mudou o tipo? Reseta a variacao escolhida (a lista vai ser outra).
-  const handleMudarTipo = (novoTipo) => {
-    setTipoItem(novoTipo);
-    setForm((f) => ({ ...f, variacaoId: '', servico: '', preco: 0 }));
-  };
+  // Especialistas do seletor: os do serviço escolhido; sem serviço re-selecionado
+  // (edição), cai pra lista geral pra manter/trocar o profissional.
+  const especialistasDoServico = variacaoSel?.produto?.especialistas || [];
+  const opcoesEspecialista = especialistasDoServico.length > 0 ? especialistasDoServico : especialistas;
 
-  // Quando seleciona variacao, atualiza servico, preco e — se for SERVICO
-  // com duracaoMin cadastrado — tambem a duracao.
+  // Ao escolher o serviço, tudo vem do cadastro: nome, preço, duração e os
+  // especialistas. Se o serviço tem só 1 especialista, já seleciona.
   const handleSelectVariacao = (id) => {
     if (id) {
       const v = variacoes.find((x) => x.id === id);
       if (v) {
+        const esps = v.produto?.especialistas || [];
         setForm((f) => ({
           ...f,
           variacaoId: id,
           servico: `${v.produto?.nome} - ${v.nome}`,
           preco: precoEfetivoVariacao(v),
-          // Auto-preenche duracao so se for servico com duracaoMin cadastrado.
-          // Se nao tiver, mantem o que o usuario digitou.
-          duracao: v.produto?.tipo === 'SERVICO' && v.duracaoMin
-            ? v.duracaoMin
-            : f.duracao,
+          duracao: v.duracaoMin || f.duracao,
+          especialistaId: esps.length === 1 ? esps[0].id : '',
         }));
       }
     } else {
-      setForm((f) => ({ ...f, variacaoId: '', servico: '', preco: 0 }));
+      setForm((f) => ({ ...f, variacaoId: '', servico: '', preco: 0, especialistaId: '' }));
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!form.servico) {
+      alert('Escolha um serviço.');
+      return;
+    }
+    if (!form.especialistaId) {
+      alert('Escolha o especialista que vai atender.');
+      return;
+    }
     const dataCompleta = new Date(`${form.data}T${form.hora}`);
     onSalvar({
       ...form,
       data: dataCompleta.toISOString(),
       duracao: parseInt(form.duracao) || 30,
       preco: parseFloat(form.preco) || 0,
+      especialistaId: form.especialistaId || null,
     });
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={ag ? 'Editar agendamento' : 'Novo agendamento'} size="lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Nome do cliente" value={form.nomeCliente} onChange={(e) => setForm({ ...form, nomeCliente: e.target.value })} required />
+    <Modal isOpen={isOpen} onClose={onClose} title={ag ? 'Editar agendamento' : 'Novo agendamento'} description={ag ? null : 'Marque um atendimento com cliente, data, hora e serviço.'} size="2xl">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
+            size="lg"
+            label="Nome do cliente"
+            value={form.nomeCliente}
+            onChange={(e) => setForm({ ...form, nomeCliente: e.target.value })}
+            required
+          />
+          <Input
+            size="lg"
             label="Telefone"
             value={form.telefoneCliente}
             onChange={(e) => setForm({ ...form, telefoneCliente: formatarTelefoneBR(e.target.value) })}
@@ -484,90 +690,81 @@ function ModalAgendamento({ isOpen, onClose, ag, variacoes = [], onSalvar }) {
             maxLength={15}
             inputMode="tel"
           />
-          <Input label="Data" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} required />
-          <Input label="Hora" type="time" value={form.hora} onChange={(e) => setForm({ ...form, hora: e.target.value })} required />
+          <Input size="lg" label="Data" type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} required />
+          <Input size="lg" label="Hora" type="time" value={form.hora} onChange={(e) => setForm({ ...form, hora: e.target.value })} required />
         </div>
 
-        {/* Item agendado — escolhe Tipo primeiro, dai filtra o catalogo. */}
-        <div className="border border-[var(--border-main)] rounded-xl p-4 space-y-3 bg-[var(--bg-subtle)]/40">
-          <div className="text-sm font-semibold text-[var(--text-main)]">Item agendado</div>
-
-          {/* Toggle Tipo: Servico vs Produto */}
-          <Tabs value={tipoItem} onValueChange={handleMudarTipo}>
-            <TabsList variant="pills">
-              <TabsTrigger value="SERVICO" variant="pills">Servico</TabsTrigger>
-              <TabsTrigger value="FISICO" variant="pills">Produto fisico</TabsTrigger>
-            </TabsList>
-          </Tabs>
+        {/* Serviço — fonte da verdade. Escolhe pela busca; valor, duração e os
+            especialistas vêm do cadastro. Sem campos livres. */}
+        <div className="border border-[var(--border-main)] rounded-xl p-5 space-y-4 bg-[var(--bg-subtle)]/40">
+          <div className="text-base font-semibold text-[var(--text-main)]">Serviço</div>
 
           <Combobox
-            label={tipoItem === 'SERVICO' ? 'Buscar servico do catalogo' : 'Buscar produto do catalogo'}
+            size="lg"
+            label="Buscar serviço do catálogo"
             value={form.variacaoId}
             onChange={handleSelectVariacao}
-            options={variacoesFiltradas.map((v) => ({
+            options={servicosVariacoes.map((v) => ({
               value: v.id,
               label: `${v.produto?.nome} - ${v.nome}`,
               sublabel: [
                 precoEfetivoVariacao(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-                v.produto?.tipo === 'FISICO' ? `${v.estoqueAtual} em estoque` : null,
-                v.produto?.tipo === 'SERVICO' && v.duracaoMin ? `${v.duracaoMin}min` : null,
+                v.duracaoMin ? `${v.duracaoMin}min` : null,
               ].filter(Boolean).join(' · '),
-              badge: v.usarPrecoCatalogo ? 'Catalogo' : null,
             }))}
-            placeholder={
-              variacoesFiltradas.length === 0
-                ? `Nenhum ${tipoItem === 'SERVICO' ? 'servico' : 'produto'} cadastrado`
-                : 'Selecione um item cadastrado'
-            }
+            placeholder={servicosVariacoes.length === 0 ? 'Nenhum serviço cadastrado' : 'Selecione um serviço'}
             clearable
-            hint="Ou preencha manualmente abaixo"
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label={tipoItem === 'SERVICO' ? 'Servico (texto livre)' : 'Produto (texto livre)'}
-              value={form.servico}
-              onChange={(e) => setForm({ ...form, servico: e.target.value, variacaoId: '' })}
-              placeholder={tipoItem === 'SERVICO' ? 'Ex: Corte de cabelo' : 'Ex: Caixa de chocolate'}
-              disabled={!!form.variacaoId}
-              hint={form.variacaoId ? 'Vinculado a um item cadastrado' : 'Edite se precisar'}
-            />
-            <Input
-              label="Preco (R$)"
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.preco}
-              onChange={(e) => setForm({ ...form, preco: e.target.value })}
-              disabled={!!form.variacaoId}
-              hint={form.variacaoId ? `Puxado do ${variacaoSel?.usarPrecoCatalogo ? 'catalogo' : 'estoque'}` : 'Manual'}
-            />
+          {/* Resumo do serviço escolhido (valor + duração, do cadastro) */}
+          {form.servico && (
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              {!form.variacaoId && <span className="text-[var(--text-secondary)] font-medium">{form.servico}</span>}
+              <span className="text-[var(--text-main)] font-semibold tabular-nums">{fmtBRL(form.preco)}</span>
+              <span className="text-[var(--text-muted)]">· {form.duracao}min</span>
+            </div>
+          )}
+
+          {/* Especialista — vem do serviço; obrigatório. */}
+          <div>
+            <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Especialista que vai atender</label>
+            {opcoesEspecialista.length === 0 ? (
+              <div className="text-sm text-[var(--text-muted)]">Escolha um serviço para ver os especialistas.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {opcoesEspecialista.map((esp) => {
+                  const sel = form.especialistaId === esp.id;
+                  return (
+                    <button
+                      type="button"
+                      key={esp.id}
+                      onClick={() => setForm({ ...form, especialistaId: esp.id })}
+                      className={`px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                        sel
+                          ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                          : 'border-[var(--border-main)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                      }`}
+                    >
+                      {esp.nome}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input
-            label="Duracao (min)"
-            type="number"
-            min="1"
-            value={form.duracao}
-            onChange={(e) => setForm({ ...form, duracao: e.target.value })}
-            hint={
-              variacaoSel?.duracaoMin && tipoItem === 'SERVICO'
-                ? `Puxado do servico cadastrado (${variacaoSel.duracaoMin}min)`
-                : 'Tempo total do atendimento'
-            }
-          />
-          <Select
-            label="Status"
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value })}
-            placeholder=""
-            options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v.label }))}
-          />
-        </div>
+        {/* Status (a duração vem do serviço e não é editada aqui). */}
+        <Select
+          size="lg"
+          label="Status"
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+          placeholder=""
+          options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v.label }))}
+        />
 
-        <Textarea label="Observacoes" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} rows={2} />
+        <Textarea size="lg" label="Observações" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} rows={2} />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
@@ -578,7 +775,7 @@ function ModalAgendamento({ isOpen, onClose, ag, variacoes = [], onSalvar }) {
   );
 }
 
-function DrawerAg({ isOpen, onClose, ag, onEditar, onExcluir, onStatus }) {
+function DrawerAg({ isOpen, onClose, ag, onEditar, onExcluir, onStatus, onConcluir }) {
   const [historico, setHistorico] = useState([]);
   const [carregandoHist, setCarregandoHist] = useState(false);
 
@@ -664,14 +861,47 @@ function DrawerAg({ isOpen, onClose, ag, onEditar, onExcluir, onStatus }) {
           </div>
         )}
 
-        {/* Botoes de status: desabilitados quando travado */}
+        {/* Desfecho do atendimento — só enquanto está em aberto (PENDING/CONFIRMED)
+            e não travado. "Concluir" gera a venda do serviço; "Não compareceu"
+            cancela sem gerar venda (no v1; o fluxo de reembolso é fase 2). */}
+        {!travado && (ag.status === 'PENDING' || ag.status === 'CONFIRMED') && (
+          <div className="border border-[var(--border-main)] rounded-xl p-4 bg-[var(--bg-subtle)]/40">
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1">Desfecho do atendimento</div>
+            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed mb-3">
+              Concluir marca como feito e lanca a venda do servico
+              {ag.preco > 0 ? ` (${fmtBRL(ag.preco)})` : ''} no caixa. "Nao compareceu" cancela sem gerar venda.
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              <Button variant="primary" size="sm" icon={CheckCircle2} onClick={onConcluir}>
+                Concluir e gerar venda
+              </Button>
+              <Button variant="danger-soft" size="sm" icon={XCircle} onClick={() => onStatus('CANCELED')}>
+                Nao compareceu
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Concluído: confirma o desfecho e a venda gerada. O controle de status
+            manual fica travado (a venda já existe; reverter exige o fluxo de
+            cancelamento/estorno da venda, em Vendas). */}
+        {ag.status === 'COMPLETED' && (
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-[var(--success-soft)] text-[var(--success-text)]">
+            <CheckCircle2 size={16} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed">
+              <strong>Atendimento concluido.</strong> A venda do servico foi lancada no caixa. Para reverter, cancele a venda em Vendas.
+            </div>
+          </div>
+        )}
+
+        {/* Controle manual de status (correções administrativas). Travado quando
+            o item está imutável OU já concluído (tem venda vinculada). */}
         <div>
           <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Mudar status</div>
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant={ag.status === 'CONFIRMED' ? 'primary' : 'secondary'} size="sm" icon={CheckCircle2} onClick={() => onStatus('CONFIRMED')} disabled={travado}>Confirmar</Button>
-            <Button variant={ag.status === 'COMPLETED' ? 'primary' : 'secondary'} size="sm" icon={CheckCircle2} onClick={() => onStatus('COMPLETED')} disabled={travado}>Concluir</Button>
-            <Button variant={ag.status === 'PENDING' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('PENDING')} disabled={travado}>Pendente</Button>
-            <Button variant={ag.status === 'CANCELED' ? 'danger' : 'secondary'} size="sm" icon={XCircle} onClick={() => onStatus('CANCELED')} disabled={travado}>Cancelar</Button>
+          <div className="grid grid-cols-3 gap-2">
+            <Button variant={ag.status === 'CONFIRMED' ? 'primary' : 'secondary'} size="sm" icon={CheckCircle2} onClick={() => onStatus('CONFIRMED')} disabled={travado || ag.status === 'COMPLETED'}>Confirmar</Button>
+            <Button variant={ag.status === 'PENDING' ? 'primary' : 'secondary'} size="sm" onClick={() => onStatus('PENDING')} disabled={travado || ag.status === 'COMPLETED'}>Pendente</Button>
+            <Button variant={ag.status === 'CANCELED' ? 'danger' : 'secondary'} size="sm" icon={XCircle} onClick={() => onStatus('CANCELED')} disabled={travado || ag.status === 'COMPLETED'}>Cancelar</Button>
           </div>
         </div>
 

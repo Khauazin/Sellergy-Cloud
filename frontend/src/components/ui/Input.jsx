@@ -34,10 +34,17 @@ const Input = forwardRef(function Input({
   const padLeft = Icon ? (size === 'sm' ? 'pl-9' : 'pl-11') : '';
   const padRight = (rightSlot || isPassword) ? 'pr-11' : '';
 
+  // Quando size=lg, label e hint sobem 1 step pra ficarem proporcionais
+  // ao input maior. Outros tamanhos mantem text-xs (padrao do app).
+  const labelCls = size === 'lg'
+    ? 'block text-sm font-semibold tracking-wide text-[var(--text-secondary)] mb-2'
+    : 'block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5';
+  const hintCls = size === 'lg' ? 'text-sm mt-1.5 font-medium' : 'text-xs mt-1.5 font-medium';
+
   return (
     <div className={clsx(fullWidth && 'w-full')}>
       {label && (
-        <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1.5">
+        <label className={labelCls}>
           {label}
         </label>
       )}
@@ -80,7 +87,7 @@ const Input = forwardRef(function Input({
       </div>
       {(error || hint) && (
         <p className={clsx(
-          'text-xs mt-1.5 font-medium',
+          hintCls,
           error ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'
         )}>
           {error || hint}

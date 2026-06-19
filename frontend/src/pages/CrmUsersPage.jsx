@@ -12,7 +12,7 @@ import {
 } from '../components/ui';
 import Modal from '../components/Modal';
 import {
-  MODULOS_COLABORADOR, ACOES, permissoesVazias, permissoesCompletas, moduloLiberado
+  MODULOS_COLABORADOR, acoesDoModulo, temEscopo, ESCOPOS, permissoesVazias, permissoesCompletas, moduloLiberado
 } from '../constants/permissoes';
 
 const PERFIL_INFO = {
@@ -240,11 +240,19 @@ function ModalUsuario({ isOpen, onClose, usuario, ehDono, modulosLiberados, onSa
   };
 
   const marcarTodoModulo = (modulo, valor) => {
+    const atual = form.permissoes[modulo] || {};
+    const novo = {};
+    for (const acao of acoesDoModulo(modulo)) novo[acao.id] = valor;
+    if (temEscopo(modulo)) novo.escopo = atual.escopo || 'PROPRIAS';
+    setForm({ ...form, permissoes: { ...form.permissoes, [modulo]: novo } });
+  };
+
+  const definirEscopo = (modulo, valor) => {
     setForm({
       ...form,
       permissoes: {
         ...form.permissoes,
-        [modulo]: { visualizar: valor, criar: valor, editar: valor, excluir: valor },
+        [modulo]: { ...form.permissoes[modulo], escopo: valor },
       },
     });
   };
@@ -341,7 +349,8 @@ function ModalUsuario({ isOpen, onClose, usuario, ehDono, modulosLiberados, onSa
               {modulosDisponiveis.map((modulo) => {
                 const Icone = modulo.icone;
                 const permModulo = form.permissoes[modulo.id] || {};
-                const total = Object.values(permModulo).filter(Boolean).length;
+                const acoes = acoesDoModulo(modulo.id);
+                const total = acoes.filter((a) => permModulo[a.id] === true).length;
 
                 return (
                   <div key={modulo.id} className="border border-[var(--border-main)] rounded-xl p-3">
@@ -349,7 +358,7 @@ function ModalUsuario({ isOpen, onClose, usuario, ehDono, modulosLiberados, onSa
                       <div className="flex items-center gap-2">
                         <Icone size={14} className="text-[var(--text-secondary)]" />
                         <span className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{modulo.nome}</span>
-                        <Badge variant="neutral" size="sm">{total}/4</Badge>
+                        <Badge variant="neutral" size="sm">{total}/{acoes.length}</Badge>
                       </div>
                       <div className="flex gap-1">
                         <button type="button" onClick={() => marcarTodoModulo(modulo.id, true)} className="text-[10px] font-bold uppercase tracking-tight text-[var(--accent)] hover:underline">Tudo</button>
@@ -358,11 +367,12 @@ function ModalUsuario({ isOpen, onClose, usuario, ehDono, modulosLiberados, onSa
                       </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {ACOES.map((acao) => {
+                      {acoes.map((acao) => {
                         const marcado = permModulo[acao.id] === true;
                         return (
                           <label
                             key={acao.id}
+                            title={acao.descricao}
                             className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-medium transition-colors ${
                               marcado ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-main)]'
                             }`}
@@ -378,6 +388,27 @@ function ModalUsuario({ isOpen, onClose, usuario, ehDono, modulosLiberados, onSa
                         );
                       })}
                     </div>
+                    {temEscopo(modulo.id) && (
+                      <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium text-[var(--text-secondary)]">Pode ver:</span>
+                        {ESCOPOS.map((esc) => {
+                          const ativo = (permModulo.escopo || 'PROPRIAS') === esc.id;
+                          return (
+                            <button
+                              type="button"
+                              key={esc.id}
+                              title={esc.descricao}
+                              onClick={() => definirEscopo(modulo.id, esc.id)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                ativo ? 'bg-[var(--accent)] text-[var(--text-on-primary)]' : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-main)]'
+                              }`}
+                            >
+                              {esc.nome}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}

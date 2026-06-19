@@ -3,7 +3,6 @@
 //   OPENAI_API_KEY        -> { apiKey, organizationId? }
 //   ANTHROPIC_API_KEY     -> { apiKey }
 //   WHATSAPP_CLOUD_TOKEN  -> { accessToken, phoneNumberId, businessAccountId }
-//   TELEGRAM_BOT_TOKEN    -> { token }
 //   HTTP_BEARER           -> { token }
 //   HTTP_BASIC            -> { usuario, senha }
 //   HTTP_API_KEY          -> { headerName, key }

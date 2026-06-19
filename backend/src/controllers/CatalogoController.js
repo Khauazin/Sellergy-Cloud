@@ -15,6 +15,34 @@ function validarImagemUrlDoTenant(imagemUrl, clienteId) {
   return null;
 }
 
+// Valida que os especialistas pertencem ao tenant. Retorna os ids validos.
+async function validarEspecialistas(clienteId, ids) {
+  if (!Array.isArray(ids)) return [];
+  const limpos = ids.filter((x) => typeof x === 'string');
+  if (limpos.length === 0) return [];
+  const esps = await prisma.especialista.findMany({
+    where: { id: { in: limpos }, clienteId },
+    select: { id: true },
+  });
+  return esps.map((e) => e.id);
+}
+
+// Include padrao dos especialistas vinculados (M:N via EspecialistaServico).
+const INCLUDE_ESPECIALISTAS = {
+  especialistas: { select: { especialista: { select: { id: true, nome: true, ativo: true } } } },
+};
+
+// Achata o produto pra UI: especialistas como [{ id, nome, ativo }].
+function formatarProduto(p) {
+  if (!p) return p;
+  return {
+    ...p,
+    especialistas: Array.isArray(p.especialistas)
+      ? p.especialistas.map((es) => es.especialista).filter(Boolean)
+      : [],
+  };
+}
+
 class CatalogoController {
   async listar(req, res) {
     try {
@@ -32,10 +60,10 @@ class CatalogoController {
 
       const produtos = await prisma.produto.findMany({
         where: onde,
-        include: { variacoes: true, categoria: true },
+        include: { variacoes: true, categoria: true, ...INCLUDE_ESPECIALISTAS },
         orderBy: { nome: 'asc' }
       });
-      res.json(produtos);
+      res.json(produtos.map(formatarProduto));
     } catch (error) {
       res.status(500).json({ error: 'Erro ao listar catálogo' });
     }
@@ -45,7 +73,7 @@ class CatalogoController {
     try {
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
-      const { nome, descricao, tipo, visibilidade, variacoes, categoriaId, imagemUrl } = req.body;
+      const { nome, descricao, tipo, visibilidade, variacoes, categoriaId, imagemUrl, duracaoMin, especialistasIds } = req.body;
 
       // Validação de Categoria Financeira (obrigatória conforme regra de negócio)
       if (!categoriaId) {
@@ -58,6 +86,13 @@ class CatalogoController {
 
       if (!categoriaExiste) {
         return res.status(400).json({ error: 'Categoria financeira não encontrada ou não pertence ao cliente.' });
+      }
+
+      // Serviço só existe ligado a quem o executa: exige ao menos 1 especialista
+      // (a agenda usa esse vínculo pra reservar o horário do profissional).
+      const especialistasValidos = await validarEspecialistas(clienteId, especialistasIds);
+      if (tipo === 'SERVICO' && especialistasValidos.length === 0) {
+        return res.status(422).json({ error: 'Selecione ao menos um especialista que atende este serviço.', campos: ['especialistasIds'] });
       }
 
       // Imagens: validamos o produto e CADA variacao individualmente. Nao deixa
@@ -73,6 +108,14 @@ class CatalogoController {
         }
       }
 
+      // duracaoMin no nivel do produto e atalho do Catalogo: cria uma variacao
+      // "Padrao" inicial com esse valor (so faz sentido pra SERVICO). Se ja
+      // veio variacoes explicitas no body, ignora pra nao duplicar.
+      const duracaoNum = duracaoMin != null && duracaoMin !== '' ? parseInt(duracaoMin, 10) || null : null;
+      if (duracaoNum && tipo === 'SERVICO' && variacoesNormalizadas.length === 0) {
+        variacoesNormalizadas.push({ nome: 'Padrao', preco: 0, duracaoMin: duracaoNum });
+      }
+
       const produto = await prisma.produto.create({
         data: {
           clienteId,
@@ -84,12 +127,15 @@ class CatalogoController {
           imagemUrl: imagemUrl || null,
           variacoes: variacoesNormalizadas.length > 0 ? {
             create: variacoesNormalizadas
+          } : undefined,
+          especialistas: especialistasValidos.length > 0 ? {
+            create: especialistasValidos.map((especialistaId) => ({ especialistaId }))
           } : undefined
         },
-        include: { variacoes: true }
+        include: { variacoes: true, ...INCLUDE_ESPECIALISTAS }
       });
 
-      res.status(201).json(produto);
+      res.status(201).json(formatarProduto(produto));
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Erro ao criar produto' });
@@ -104,11 +150,11 @@ class CatalogoController {
 
       const produto = await prisma.produto.findFirst({
         where: { id, clienteId },
-        include: { variacoes: true }
+        include: { variacoes: true, ...INCLUDE_ESPECIALISTAS }
       });
 
       if (!produto) return res.status(404).json({ error: 'Produto não encontrado' });
-      res.json(produto);
+      res.json(formatarProduto(produto));
     } catch (error) {
       res.status(500).json({ error: 'Erro ao buscar produto' });
     }
@@ -119,15 +165,60 @@ class CatalogoController {
       const { id } = req.params;
       const { clienteId } = req.usuario;
       if (!clienteId) return res.status(403).json({ error: 'Acesso negado: ID do cliente ausente.' });
-      const { nome, descricao, tipo, visibilidade } = req.body;
+      const { nome, descricao, tipo, visibilidade, categoriaId, imagemUrl, duracaoMin, especialistasIds } = req.body;
+
+      const dadosUpdate = {};
+      if (nome !== undefined) dadosUpdate.nome = nome;
+      if (descricao !== undefined) dadosUpdate.descricao = descricao;
+      if (tipo !== undefined) dadosUpdate.tipo = tipo;
+      if (visibilidade !== undefined) dadosUpdate.visibilidade = visibilidade;
+      if (categoriaId !== undefined) dadosUpdate.categoriaId = categoriaId;
+      if (imagemUrl !== undefined) dadosUpdate.imagemUrl = imagemUrl;
 
       const produto = await prisma.produto.update({
         where: { id, clienteId },
-        data: { nome, descricao, tipo, visibilidade }
+        data: dadosUpdate,
+        include: { variacoes: { orderBy: { criadoEm: 'asc' } } },
       });
 
-      res.json(produto);
+      // duracaoMin: propaga pra 1a variacao se for SERVICO. Se nao tem
+      // variacao ainda, cria 'Padrao'. Se tem, atualiza o duracaoMin da 1a.
+      if (duracaoMin !== undefined && produto.tipo === 'SERVICO') {
+        const duracaoNum = duracaoMin === '' || duracaoMin === null ? null : (parseInt(duracaoMin, 10) || null);
+        if (produto.variacoes.length === 0) {
+          await prisma.variacaoProduto.create({
+            data: { produtoId: produto.id, nome: 'Padrao', preco: 0, duracaoMin: duracaoNum },
+          });
+        } else {
+          await prisma.variacaoProduto.update({
+            where: { id: produto.variacoes[0].id },
+            data: { duracaoMin: duracaoNum },
+          });
+        }
+      }
+
+      // Especialistas do serviço: se a lista veio, substitui o conjunto inteiro.
+      if (especialistasIds !== undefined) {
+        const validos = await validarEspecialistas(clienteId, especialistasIds);
+        if (produto.tipo === 'SERVICO' && validos.length === 0) {
+          return res.status(422).json({ error: 'Selecione ao menos um especialista que atende este serviço.', campos: ['especialistasIds'] });
+        }
+        await prisma.$transaction([
+          prisma.especialistaServico.deleteMany({ where: { produtoId: id } }),
+          ...(validos.length
+            ? [prisma.especialistaServico.createMany({ data: validos.map((eid) => ({ especialistaId: eid, produtoId: id })) })]
+            : []),
+        ]);
+      }
+
+      // Retorna produto com variacoes atualizadas pra UI pegar o novo duracaoMin.
+      const produtoAtualizado = await prisma.produto.findUnique({
+        where: { id },
+        include: { variacoes: { orderBy: { criadoEm: 'asc' } }, ...INCLUDE_ESPECIALISTAS },
+      });
+      res.json(formatarProduto(produtoAtualizado));
     } catch (error) {
+      console.error('[catalogo/atualizar]', error);
       res.status(500).json({ error: 'Erro ao atualizar produto' });
     }
   }

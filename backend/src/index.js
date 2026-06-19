@@ -32,12 +32,18 @@ const rotasTools = require('./routes/tools.routes');
 const rotasBotVariables = require('./routes/bot-variables.routes');
 const rotasUsuarios = require('./routes/usuarios.routes');
 const rotasAgenda = require('./routes/agenda.routes');
+const rotasEspecialistas = require('./routes/especialistas.routes');
 const rotasCatalogo = require('./routes/catalogo.routes');
 const rotasEstoque = require('./routes/estoque.routes');
 const rotasFinanceiro = require('./routes/financeiro.routes');
+const rotasContasPagar = require('./routes/contas-pagar.routes');
+const rotasNotificacoes = require('./routes/notificacoes.routes');
+const rotasRelatoriosMensais = require('./routes/relatorios-mensais.routes');
 const rotasVendas = require('./routes/vendas.routes');
 const rotasCmv = require('./routes/cmv.routes');
 const rotasRelatorios = require('./routes/relatorios.routes');
+const rotasAdminIa = require('./routes/admin-ia.routes');
+const rotasCampanhas = require('./routes/campanhas.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
@@ -137,11 +143,17 @@ app.use('/credenciais', rotasCredenciais);
 app.use('/tools', rotasTools);
 app.use('/bot-variables', rotasBotVariables);
 app.use('/agenda', rotasAgenda);
+app.use('/especialistas', rotasEspecialistas);
 app.use('/catalogo', rotasCatalogo);
 app.use('/estoque', rotasEstoque);
 app.use('/financeiro', rotasFinanceiro);
+app.use('/contas-pagar', rotasContasPagar);
+app.use('/notificacoes', rotasNotificacoes);
+app.use('/relatorios-mensais', rotasRelatoriosMensais);
 app.use('/vendas', rotasVendas);
 app.use('/relatorios', rotasRelatorios);
+app.use('/admin/ia', rotasAdminIa);
+app.use('/campanhas', rotasCampanhas);
 
 // Rota de Teste de Saude (Health Check)
 app.get('/saude', (req, res) => {
@@ -201,6 +213,24 @@ servidor.listen(PORTA, async () => {
     if (r.criado) console.log('[boot] Bucket de midias criado.');
   } catch (e) {
     console.error('[boot] Falha ao garantir bucket:', e?.message);
+  }
+
+  // Cron diario do caixa (00:01) — fecha sessoes AUTO_BOT e abre novas com
+  // fundo = saldo final. Manual fica intocado.
+  try {
+    const { iniciar: iniciarCronCaixa } = require('./jobs/cronCaixaDiario');
+    iniciarCronCaixa();
+  } catch (e) {
+    console.error('[boot] Falha ao inicializar cron diario do caixa:', e?.message);
+  }
+
+  // Cron mensal — dia 1 (aviso), dia 5 (aviso) e dia 7 (gera snapshot do
+  // mês anterior + notifica que está pronto). Roda 03:00 BRT todo dia.
+  try {
+    const { iniciar: iniciarCronMensal } = require('./jobs/cronRelatorioMensal');
+    iniciarCronMensal();
+  } catch (e) {
+    console.error('[boot] Falha ao inicializar cron mensal:', e?.message);
   }
 });
 

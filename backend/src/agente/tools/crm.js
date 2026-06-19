@@ -23,6 +23,8 @@ const criarLead = {
       nome: { tipo: 'string', descricao: 'Nome do cliente' },
       telefone: { tipo: 'string', descricao: 'Telefone (opcional)', opcional: true },
       email: { tipo: 'string', descricao: 'E-mail (opcional)', opcional: true },
+      cpf: { tipo: 'string', descricao: 'CPF do cliente (so digitos ou formatado, opcional)', opcional: true },
+      dataNascimento: { tipo: 'string', descricao: 'Data de nascimento em ISO 8601 (ex: 1990-05-15) — opcional', opcional: true },
       observacoes: { tipo: 'string', descricao: 'Observacoes iniciais', opcional: true },
       etapaId: { tipo: 'string', descricao: 'ID da etapa do funil onde colocar o lead (opcional)', opcional: true },
     },
@@ -33,12 +35,23 @@ const criarLead = {
     const nome = trim(args.nome);
     if (!nome) throw new Error('nome obrigatorio.');
 
+    // CPF: limpa pra so digitos; vazio vira null.
+    const cpfLimpo = args.cpf ? String(args.cpf).replace(/\D/g, '') : null;
+    // Data de nascimento: aceita ISO, se invalido vira null (nao quebra).
+    let dataNasc = null;
+    if (args.dataNascimento) {
+      const d = new Date(args.dataNascimento);
+      if (!Number.isNaN(d.getTime())) dataNasc = d;
+    }
+
     const lead = await prisma.lead.create({
       data: {
         clienteId: contexto.clienteId,
         nome,
         telefone: trim(args.telefone) || null,
         email: trim(args.email) || null,
+        cpf: cpfLimpo || null,
+        dataNascimento: dataNasc,
         observacoes: trim(args.observacoes) || null,
         etapaId: args.etapaId || null,
       },

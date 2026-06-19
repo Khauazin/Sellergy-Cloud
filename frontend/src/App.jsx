@@ -36,16 +36,20 @@ import AdminPermissoesClientePage from './pages/AdminPermissoesClientePage';
 import BotsPage from './pages/BotsPage';
 import BotToolsPage from './pages/BotToolsPage';
 import BotCanalPage from './pages/BotCanalPage';
+import BotConfigPage from './pages/BotConfigPage';
+import MensagensPage from './pages/MensagensPage';
+import EspecialistasPage from './pages/EspecialistasPage';
 import BuilderPage from './pages/BuilderPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import RelatoriosPage from './pages/RelatoriosPage';
+import RelatorioMensalDetalhePage from './pages/RelatorioMensalDetalhePage';
 import UsersPage from './pages/UsersPage';
 import ConfiguracoesAdminPage from './pages/ConfiguracoesAdminPage';
+import AdminIaPage from './pages/AdminIaPage';
+import CampanhasPage from './pages/CampanhasPage';
 
 // Pacote 4 - placeholders.
-const MensagensPlaceholder = () => <PlaceholderPage titulo="Mensagens" descricao="Inbox unificada estilo whatsapp web. Isolada por tenant." pacote="Pacote 4 — Novidades" />;
-const CampanhasClientePlaceholder = () => <PlaceholderPage titulo="Campanhas" descricao="Disparos em massa via bot." pacote="Pacote 4 — Novidades" />;
 const BotsClientePlaceholder = () => <PlaceholderPage titulo="Bots" descricao="Configurar IA do bot." pacote="Pacote 4 — Novidades" />;
 // `RelatoriosClientePlaceholder` removido — agora usa RelatoriosPage real.
 
@@ -143,10 +147,12 @@ export default function App() {
             <Route path="/admin/bots" element={<BotsPage />} />
             <Route path="/admin/bots/:botId/tools" element={<BotToolsPage />} />
             <Route path="/admin/bots/:botId/canal" element={<BotCanalPage />} />
+            <Route path="/admin/bots/:botId/config" element={<BotConfigPage />} />
             <Route path="/admin/builder/:botId" element={<BuilderPage />} />
             <Route path="/admin/alertas" element={<AlertsPage />} />
             <Route path="/admin/relatorios" element={<ReportsPage />} />
             <Route path="/admin/usuarios" element={<UsersPage />} />
+            <Route path="/admin/ia" element={<AdminIaPage />} />
             <Route path="/admin/configuracoes" element={<ConfiguracoesAdminPage />} />
             <Route path="/admin/configuracoes/perfil" element={<PerfilPage />} />
             <Route path="/admin/_design" element={<DesignShowcasePage />} />
@@ -168,16 +174,20 @@ export default function App() {
             <Route path="/app/dashboard" element={<ClientDashboardPage />} />
             <Route path="/app/crm" element={<CRMPage />} />
             <Route path="/app/agenda" element={<AgendaPage />} />
+            <Route path="/app/especialistas" element={<EspecialistasPage />} />
             <Route path="/app/vendas" element={<VendasPage />} />
             <Route path="/app/catalogo" element={<CatalogoPage />} />
             <Route path="/app/estoque" element={<Navigate to="/app/estoque/visao-geral" replace />} />
             <Route path="/app/estoque/:aba" element={<EstoquePage />} />
-            <Route path="/app/financeiro" element={<FinanceiroPage />} />
-            <Route path="/app/mensagens" element={<MensagensPlaceholder />} />
+            <Route path="/app/financeiro" element={<Navigate to="/app/financeiro/lancamentos" replace />} />
+            <Route path="/app/financeiro/:aba" element={<FinanceiroPage />} />
+            <Route path="/app/mensagens" element={<MensagensPage />} />
             <Route path="/app/relatorios" element={<Navigate to="/app/relatorios/visao-executiva" replace />} />
+            {/* Detalhe do snapshot mensal — rota mais específica precisa vir ANTES da :aba. */}
+            <Route path="/app/relatorios/mensais/:periodo" element={<RelatorioMensalDetalhePage />} />
             <Route path="/app/relatorios/:aba" element={<RelatoriosPage />} />
             <Route path="/app/bots" element={<BotsClientePlaceholder />} />
-            <Route path="/app/campanhas" element={<CampanhasClientePlaceholder />} />
+            <Route path="/app/campanhas" element={<CampanhasPage />} />
             <Route path="/app/usuarios" element={<CrmUsersPage />} />
             <Route path="/app/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/app/configuracoes/perfil" element={<PerfilPage />} />

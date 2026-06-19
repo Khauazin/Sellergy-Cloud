@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import Modal from '../components/Modal';
 import { formatarTelefoneBR } from '../utils/formatTelefone';
+import { MODULOS_TENANT, modulosDoSegmento } from '../constants/permissoes';
 
 const fmtBRL = (v) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const PLANOS = [
@@ -234,6 +235,13 @@ function ModalCliente({ isOpen, onClose, cliente, onSalvar }) {
     else setForm({ nome: '', email: '', telefone: '', segmento: '', plano: 'BASIC', mensalidade: 0 });
   }, [cliente, isOpen]);
 
+  // Preview dos modulos que o backend vai auto-ativar pelo segmento (so na
+  // criacao). Da transparencia ao admin antes de salvar; ele ajusta em Permissoes.
+  const modulosPreview = useMemo(
+    () => modulosDoSegmento(form.segmento).map((id) => MODULOS_TENANT.find((m) => m.id === id)?.nome || id),
+    [form.segmento]
+  );
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSalvar({ ...form, mensalidade: parseFloat(form.mensalidade) || 0 });
@@ -253,10 +261,41 @@ function ModalCliente({ isOpen, onClose, cliente, onSalvar }) {
             maxLength={15}
             inputMode="tel"
           />
-          <Input label="Segmento" value={form.segmento} onChange={(e) => setForm({ ...form, segmento: e.target.value })} placeholder="Ex: Loja, Clinica, Barbearia" />
+          <Select
+            label="Segmento"
+            value={form.segmento}
+            onChange={(e) => setForm({ ...form, segmento: e.target.value })}
+            options={[
+              { value: 'SERVICO', label: 'Serviço' },
+              { value: 'PRODUTO', label: 'Produto' },
+              { value: 'HIBRIDO', label: 'Híbrido' },
+            ]}
+            placeholder="— Não definido —"
+          />
           <Select label="Plano" value={form.plano} onChange={(e) => setForm({ ...form, plano: e.target.value })} options={PLANOS} placeholder="" />
           <Input label="Mensalidade (R$)" type="number" step="0.01" min="0" value={form.mensalidade} onChange={(e) => setForm({ ...form, mensalidade: e.target.value })} />
         </div>
+
+        {/* Preview dos modulos auto-ativados pelo segmento — so na criacao.
+            Edicao nao re-deriva modulos (gerenciados em Permissoes). */}
+        {!cliente && (
+          <div className="border border-[var(--border-main)] rounded-xl p-4 bg-[var(--bg-subtle)]/40">
+            <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-1">
+              Modulos que serao ativados
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)] leading-relaxed mb-3">
+              {form.segmento
+                ? 'Definidos pelo segmento escolhido. Voce pode ajustar depois em Permissoes.'
+                : 'Sem segmento, ativamos o conjunto basico. Escolha um segmento para incluir Agenda e/ou Estoque.'}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {modulosPreview.map((nome) => (
+                <Badge key={nome} variant="success" size="sm">{nome}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose} type="button">Cancelar</Button>
           <Button variant="primary" type="submit">{cliente ? 'Salvar' : 'Criar cliente'}</Button>
@@ -275,7 +314,7 @@ function DrawerCliente({ isOpen, onClose, cliente, onEditar, onExcluir, onStatus
       isOpen={isOpen}
       onClose={onClose}
       title={cliente.nome}
-      description={cliente.segmento}
+      description={({ SERVICO: 'Serviço', PRODUTO: 'Produto', HIBRIDO: 'Híbrido' })[cliente.segmento] || cliente.segmento}
       size="md"
       footer={
         <div className="flex justify-between gap-2">
