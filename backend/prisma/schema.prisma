@@ -66,6 +66,11 @@ model Cliente {
   notificacoes           Notificacao[]
   relatoriosMensais      RelatorioMensal[]
   especialistas          Especialista[]
+  cobrancas              Cobranca[]
+  configuracaoPagamento  ConfiguracaoPagamento?
+  documentosFiscais      DocumentoFiscal[]
+  configuracaoFiscal     ConfiguracaoFiscal?
+  faqs                   Faq[]
   // Horario de funcionamento (JSON). Usado pelo cron pra abrir/fechar caixa
   // automatico do bot. Formato sugerido:
   //   { "abertura": "08:00", "fechamento": "18:00", "dias": [1,2,3,4,5] }
@@ -177,6 +182,9 @@ model Bot {
   credencialCanalId  String?
   identificadorCanal String?
   verifyTokenCanal   String?
+  // Configuracao do menu fixo do bot (sem IA) — roteador de atendimento/
+  // agendamento por opcoes. Formato livre (JSON), preenchido pela Frente 4.
+  menuConfig         Json?
   alertas            Alerta[]
   variaveis          VariavelBot[]
   cliente            Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -754,6 +762,127 @@ model Credencial {
 }
 
 // ==========================================
+// PAGAMENTOS (PSP) — camada agnostica de provedor
+// ==========================================
+// Nucleo unico: ConfiguracaoPagamento (escolha do provedor por tenant) +
+// Cobranca (agnostica). A logica especifica de cada PSP (Mercado Pago/Asaas/
+// Pagar.me) vive nos adaptadores (Frente 2). `provedorCobrancaId` guarda o id
+// da cobranca no PSP e e a chave de idempotencia do webhook. `credencialId`
+// aponta pra Credencial cifrada no cofre.
+
+model ConfiguracaoPagamento {
+  id           String            @id @default(uuid())
+  clienteId    String            @unique
+  provedor     ProvedorPagamento
+  credencialId String?
+  ativo        Boolean           @default(true)
+  criadoEm     DateTime          @default(now())
+  atualizadoEm DateTime          @updatedAt
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_pagamento")
+}
+
+model Cobranca {
+  id                 String            @id @default(uuid())
+  clienteId          String
+  origem             OrigemCobranca
+  refId              String? // id da Venda/Agendamento de origem (solto — varia por origem)
+  valor              Float
+  metodo             MetodoCobranca
+  status             StatusCobranca    @default(PENDENTE)
+  provedor           ProvedorPagamento
+  provedorCobrancaId String? // id no PSP — chave de idempotencia do webhook
+  qrCode             String? // copia-e-cola / payload do QR Pix
+  linkUrl            String?
+  vencimento         DateTime?
+  pagoEm             DateTime?
+  criadoEm           DateTime          @default(now())
+  atualizadoEm       DateTime          @updatedAt
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@unique([provedor, provedorCobrancaId])
+  @@index([clienteId, status])
+  @@index([clienteId, origem, refId])
+  @@map("cobrancas")
+}
+
+// ==========================================
+// FISCAL — emissao terceirizada (API), camada agnostica de provedor
+// ==========================================
+// Nucleo: ConfiguracaoFiscal (provedor + dados do emissor) + DocumentoFiscal
+// (agnostico). Adaptadores Focus NFe / Nuvem Fiscal na Frente 3. Emissao e
+// assincrona (fila) — nunca bloqueia a venda.
+
+model ConfiguracaoFiscal {
+  id             String         @id @default(uuid())
+  clienteId      String         @unique
+  provedor       ProvedorFiscal
+  credencialId   String?
+  regime         String? // regime tributario (Simples/Presumido/Real)
+  cnpj           String?
+  inscricao      String? // inscricao estadual/municipal
+  certificadoRef String? // referencia segura ao certificado digital (nunca o conteudo)
+  csc            String? // Codigo de Seguranca do Contribuinte (NFC-e)
+  serie          String?
+  ambiente       AmbienteFiscal @default(HOMOLOGACAO)
+  ativo          Boolean        @default(true)
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_fiscal")
+}
+
+model DocumentoFiscal {
+  id            String                @id @default(uuid())
+  clienteId     String
+  vendaId       String? // venda de origem (solto; pode nao existir p/ NFS-e avulsa)
+  tipo          TipoDocumentoFiscal
+  status        StatusDocumentoFiscal @default(PENDENTE)
+  provedor      ProvedorFiscal
+  provedorDocId String? // id do documento no provedor
+  numero        String?
+  chave         String? // chave de acesso (44 digitos)
+  urlPdf        String?
+  urlXml        String?
+  mensagemErro  String?
+  criadoEm      DateTime              @default(now())
+  atualizadoEm  DateTime              @updatedAt
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([clienteId, status])
+  @@index([clienteId, vendaId])
+  @@map("documentos_fiscais")
+}
+
+// ==========================================
+// FAQ simples — atendimento basico do bot (sem IA)
+// ==========================================
+// Pares pergunta/resposta por tenant. Modelo enxuto agora; evolui depois.
+// Usado pela Frente 4 no roteador de menu fixo do WhatsApp.
+
+model Faq {
+  id           String   @id @default(uuid())
+  clienteId    String
+  pergunta     String
+  resposta     String
+  ordem        Int      @default(0)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([clienteId, ativo, ordem])
+  @@map("faqs")
+}
+
+// ==========================================
 // ENUMS
 // ==========================================
 
@@ -810,12 +939,15 @@ enum StatusAlerta {
 }
 
 enum TipoCredencial {
-  // Provedores de LLM
-  OPENAI_API_KEY
-  ANTHROPIC_API_KEY
-  GEMINI_API_KEY
   // Canais de mensagem
   WHATSAPP_CLOUD_TOKEN
+  // Provedores de pagamento (PSP)
+  MERCADO_PAGO_KEY
+  ASAAS_KEY
+  PAGARME_KEY
+  // Provedores fiscais (emissao de nota terceirizada)
+  FOCUS_NFE_KEY
+  NUVEM_FISCAL_KEY
   // Genericas (HTTP node)
   HTTP_BEARER
   HTTP_BASIC
@@ -884,6 +1016,58 @@ enum StatusFinanceiro {
 enum TipoLancamento {
   RECEITA
   DESPESA
+}
+
+// --- Pagamentos (PSP) ---
+enum ProvedorPagamento {
+  MERCADO_PAGO
+  ASAAS
+  PAGARME
+}
+
+enum OrigemCobranca {
+  VENDA
+  AGENDAMENTO
+  AVULSA
+}
+
+enum MetodoCobranca {
+  PIX
+  LINK
+  CARTAO
+  RECORRENCIA
+}
+
+enum StatusCobranca {
+  PENDENTE
+  PAGO
+  EXPIRADO
+  CANCELADO
+  ESTORNADO
+}
+
+// --- Fiscal ---
+enum ProvedorFiscal {
+  FOCUS_NFE
+  NUVEM_FISCAL
+}
+
+enum TipoDocumentoFiscal {
+  NFCE
+  NFSE
+}
+
+enum StatusDocumentoFiscal {
+  PENDENTE
+  PROCESSANDO
+  EMITIDA
+  ERRO
+  CANCELADA
+}
+
+enum AmbienteFiscal {
+  HOMOLOGACAO
+  PRODUCAO
 }
 
 // =====================================================================

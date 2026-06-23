@@ -29,6 +29,8 @@ import CrmUsersPage from './pages/CrmUsersPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import PerfilPage from './pages/PerfilPage';
 import CredenciaisPage from './pages/CredenciaisPage';
+import PagamentosPage from './pages/PagamentosPage';
+import FiscalPage from './pages/FiscalPage';
 
 // Admin
 import ClientsPage from './pages/ClientsPage';
@@ -178,6 +180,8 @@ export default function App() {
             <Route path="/app/relatorios/:aba" element={<RelatoriosPage />} />
             <Route path="/app/bots" element={<BotsClientePlaceholder />} />
             <Route path="/app/campanhas" element={<CampanhasPage />} />
+            <Route path="/app/pagamentos" element={<PagamentosPage />} />
+            <Route path="/app/fiscal" element={<FiscalPage />} />
             <Route path="/app/usuarios" element={<CrmUsersPage />} />
             <Route path="/app/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/app/configuracoes/perfil" element={<PerfilPage />} />
