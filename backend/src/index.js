@@ -33,6 +33,9 @@ const rotasVendas = require('./routes/vendas.routes');
 const rotasCmv = require('./routes/cmv.routes');
 const rotasRelatorios = require('./routes/relatorios.routes');
 const rotasCampanhas = require('./routes/campanhas.routes');
+const rotasPagamentos = require('./routes/pagamentos.routes');
+const rotasFiscal = require('./routes/fiscal.routes');
+const rotasWebhooks = require('./routes/webhooks.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
@@ -129,6 +132,12 @@ app.use('/relatorios-mensais', rotasRelatoriosMensais);
 app.use('/vendas', rotasVendas);
 app.use('/relatorios', rotasRelatorios);
 app.use('/campanhas', rotasCampanhas);
+app.use('/pagamentos', rotasPagamentos);
+app.use('/fiscal', rotasFiscal);
+
+// Webhooks externos (PSP) — SEM autenticacao de usuario (o chamador e o
+// provedor; a autenticidade e validada por assinatura no handler, Frente 2).
+app.use('/webhooks', rotasWebhooks);
 
 // Rota de Teste de Saude (Health Check)
 app.get('/saude', (req, res) => {

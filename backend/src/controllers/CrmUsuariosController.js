@@ -17,13 +17,12 @@ const ACOES = ['visualizar', 'criar', 'editar', 'excluir'];
 const SENHA_PADRAO = '123456';
 
 // Acoes especificas de modulos que fogem do CRUD padrao (sync com o frontend).
-const ACOES_POR_MODULO = {
-  MENSAGENS: ['visualizar', 'responder', 'atribuir'],
-};
+// Vazio por enquanto — a Inbox/MENSAGENS (unico caso) saiu no pivo ERP-first.
+const ACOES_POR_MODULO = {};
 const acoesDoModulo = (modulo) => ACOES_POR_MODULO[modulo] || ACOES;
 
 // Modulos com dimensao de escopo (ve 'PROPRIAS' x 'TODAS').
-const MODULOS_COM_ESCOPO = new Set(['MENSAGENS', 'AGENDA']);
+const MODULOS_COM_ESCOPO = new Set(['AGENDA']);
 const ESCOPOS_VALIDOS = ['PROPRIAS', 'TODAS'];
 
 /**
@@ -32,7 +31,6 @@ const ESCOPOS_VALIDOS = ['PROPRIAS', 'TODAS'];
  */
 const MODULOS_CRM = [
   'CRM',
-  'MENSAGENS',
   'AGENDA',
   'CATALOGO',
   'ESTOQUE',

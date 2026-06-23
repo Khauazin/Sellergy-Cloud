@@ -13,7 +13,8 @@ import {
   Users,
   AlertTriangle,
   BarChart3,
-  MessageSquare,
+  CreditCard,
+  Receipt,
 } from 'lucide-react';
 
 /**
@@ -34,13 +35,6 @@ export const MODULOS_TENANT = [
     icone: Kanban,
     descricao: 'Funil de vendas em Kanban, gestao de leads, fases personalizaveis e historico de interacoes.',
     rotaApp: '/app/crm',
-  },
-  {
-    id: 'MENSAGENS',
-    nome: 'Mensagens',
-    icone: MessageSquare,
-    descricao: 'Inbox das conversas do bot. Atenda quando o cliente pede um humano. O escopo define se o usuario ve so as conversas atribuidas a ele ou todas.',
-    rotaApp: '/app/mensagens',
   },
   {
     id: 'AGENDA',
@@ -78,6 +72,20 @@ export const MODULOS_TENANT = [
     rotaApp: '/app/vendas',
   },
   {
+    id: 'PAGAMENTOS',
+    nome: 'Pagamentos',
+    icone: CreditCard,
+    descricao: 'Recebimento integrado: Pix, link de pagamento e recorrencia, com confirmacao automatica. Cobrancas vinculadas a vendas e agendamentos.',
+    rotaApp: '/app/pagamentos',
+  },
+  {
+    id: 'FISCAL',
+    nome: 'Fiscal',
+    icone: Receipt,
+    descricao: 'Emissao de nota via provedor (NFC-e para loja, NFS-e para servico) e acompanhamento dos documentos emitidos.',
+    rotaApp: '/app/fiscal',
+  },
+  {
     id: 'ALERTAS',
     nome: 'Alertas',
     icone: AlertTriangle,
@@ -104,7 +112,12 @@ export const MODULOS_TENANT = [
  * Modulos disponiveis para concessao a colaboradores (subset dos modulos do tenant).
  * Nao inclui USUARIOS (so o dono CLIENT e ADMINISTRADOR podem mexer em equipe).
  */
-export const MODULOS_COLABORADOR = MODULOS_TENANT.filter((m) => m.id !== 'USUARIOS');
+// Exclui USUARIOS (so o dono mexe em equipe) e PAGAMENTOS/FISCAL (dinheiro e
+// nota — sensiveis; ficam fora da matriz de colaborador ate as telas reais +
+// um gating granular existirem; por ora so o dono/admin acessa).
+export const MODULOS_COLABORADOR = MODULOS_TENANT.filter(
+  (m) => !['USUARIOS', 'PAGAMENTOS', 'FISCAL'].includes(m.id)
+);
 
 /**
  * Modulos auto-ativados por segmento ao CRIAR um cliente (onboarding sem atrito).
@@ -113,7 +126,7 @@ export const MODULOS_COLABORADOR = MODULOS_TENANT.filter((m) => m.id !== 'USUARI
  *   - SERVICO -> + AGENDA · PRODUTO -> + ESTOQUE · HIBRIDO -> + AGENDA + ESTOQUE
  */
 export const MODULOS_BASE_TENANT = [
-  'BOTS', 'CRM', 'MENSAGENS', 'CATALOGO', 'FINANCEIRO', 'VENDAS', 'RELATORIOS', 'ALERTAS', 'USUARIOS',
+  'BOTS', 'CRM', 'CATALOGO', 'FINANCEIRO', 'VENDAS', 'RELATORIOS', 'ALERTAS', 'USUARIOS', 'PAGAMENTOS', 'FISCAL',
 ];
 export const MODULOS_EXTRA_POR_SEGMENTO = {
   SERVICO: ['AGENDA'],
@@ -125,6 +138,35 @@ export const MODULOS_EXTRA_POR_SEGMENTO = {
 export function modulosDoSegmento(segmento) {
   const extras = MODULOS_EXTRA_POR_SEGMENTO[String(segmento || '').toUpperCase()] || [];
   return [...MODULOS_BASE_TENANT, ...extras];
+}
+
+/**
+ * Tipos de usuario oferecidos na tela de Usuarios & Equipe, por segmento.
+ * ADMINISTRADOR/VENDEDOR sempre; ESPECIALISTA so em servico (SERVICO/HIBRIDO),
+ * onde cria Usuario + Especialista numa transacao (doc erp-pivo §6.1).
+ * Espelha backend/src/utils/modulosSegmento.js — manter os dois em sync.
+ */
+export const TIPOS_USUARIO_BASE = ['ADMINISTRADOR', 'VENDEDOR'];
+export function tiposUsuarioPorSegmento(segmento) {
+  const seg = String(segmento || '').toUpperCase();
+  const ehServico = seg === 'SERVICO' || seg === 'HIBRIDO';
+  return ehServico ? [...TIPOS_USUARIO_BASE, 'ESPECIALISTA'] : [...TIPOS_USUARIO_BASE];
+}
+
+/**
+ * Modulos escondidos por segmento na matriz de permissoes / navegacao.
+ * Loja (PRODUTO) nao mexe com agenda; clinica (SERVICO) nao mexe com estoque.
+ * HIBRIDO e segmento nulo nao escondem nada. Espelha o backend.
+ */
+export const MODULOS_OCULTOS_POR_SEGMENTO = {
+  PRODUTO: ['AGENDA'],
+  SERVICO: ['ESTOQUE'],
+};
+export function modulosOcultosPorSegmento(segmento) {
+  return MODULOS_OCULTOS_POR_SEGMENTO[String(segmento || '').toUpperCase()] || [];
+}
+export function moduloVisivelNoSegmento(modulo, segmento) {
+  return !modulosOcultosPorSegmento(segmento).includes(modulo);
 }
 
 /**
@@ -154,16 +196,10 @@ export const ACOES = [
 ];
 
 /**
- * Acoes especificas de modulos que fogem do CRUD padrao.
- * MENSAGENS nao tem criar/excluir — tem responder e atribuir.
+ * Acoes especificas de modulos que fogem do CRUD padrao. Vazio por enquanto
+ * (a Inbox/MENSAGENS, unico caso, saiu no pivo ERP-first).
  */
-export const ACOES_POR_MODULO = {
-  MENSAGENS: [
-    { id: 'visualizar', nome: 'Ver conversas', descricao: 'Acessa a inbox e le as conversas (dentro do escopo).' },
-    { id: 'responder', nome: 'Responder', descricao: 'Envia mensagens ao cliente na conversa.' },
-    { id: 'atribuir', nome: 'Atribuir', descricao: 'Assume e transfere conversas entre atendentes.' },
-  ],
-};
+export const ACOES_POR_MODULO = {};
 
 /** Retorna a lista de acoes de um modulo (CRUD padrao se nao houver override). */
 export function acoesDoModulo(moduloId) {
@@ -172,10 +208,9 @@ export function acoesDoModulo(moduloId) {
 
 /**
  * Modulos com dimensao de ESCOPO: o usuario ve "proprias" (atribuidas a ele) ou
- * "todas". Reutilizavel — MENSAGENS agora; AGENDA entra quando o especialista
- * passar a ver so a propria agenda.
+ * "todas". AGENDA usa quando o especialista passa a ver so a propria agenda.
  */
-export const MODULOS_COM_ESCOPO = new Set(['MENSAGENS', 'AGENDA']);
+export const MODULOS_COM_ESCOPO = new Set(['AGENDA']);
 
 export const ESCOPOS = [
   { id: 'PROPRIAS', nome: 'Apenas as proprias', descricao: 'So as conversas atribuidas a este usuario.' },
