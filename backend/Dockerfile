@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# OpenSSL (Prisma) + toolchain para compilar isolated-vm e outros addons nativos.
+# OpenSSL (Prisma) + toolchain para compilar addons nativos.
 RUN apk add --no-cache openssl python3 make g++ linux-headers
 
 # Copia package.json e package-lock.json (se existir)
