@@ -88,7 +88,12 @@ io.use((socket, next) => {
 app.use(helmet());
 app.use(cors(opcoesCors));
 
-app.use(express.json({ limit: '1mb' }));
+// Captura o corpo cru (rawBody) junto do parse JSON — necessario pros webhooks
+// de PSP que validam assinatura HMAC sobre o payload original (Frente 2).
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 // Imagens — intercepta `res.json` e troca `imagemUrl` por URL assinada
 // (bucket privado + pre-signed URL). Plugado APOS o parser e ANTES das
