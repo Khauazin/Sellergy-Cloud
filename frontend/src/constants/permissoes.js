@@ -141,32 +141,40 @@ export function modulosDoSegmento(segmento) {
 }
 
 /**
- * Tipos de usuario oferecidos na tela de Usuarios & Equipe, por segmento.
- * ADMINISTRADOR/VENDEDOR sempre; ESPECIALISTA so em servico (SERVICO/HIBRIDO),
- * onde cria Usuario + Especialista numa transacao (doc erp-pivo §6.1).
- * Espelha backend/src/utils/modulosSegmento.js — manter os dois em sync.
+ * Gating da tela de Usuarios & Equipe por segmento. Espelha (mesmos nomes e
+ * semantica) backend/src/utils/modulosSegmento.js — manter os dois em sync.
+ *
+ * Tipos de usuario (UI/negocio) -> Perfil + (Especialista):
+ *   ADMINISTRADOR / VENDEDOR / RECEPCAO (preset, persiste como VENDEDOR) /
+ *   ESPECIALISTA (VENDEDOR + registro Especialista). Loja so tem Admin/Vendedor;
+ *   clinica tem Admin/Especialista/Recepcao; hibrido tem todos (doc erp-pivo §6.1).
  */
-export const TIPOS_USUARIO_BASE = ['ADMINISTRADOR', 'VENDEDOR'];
-export function tiposUsuarioPorSegmento(segmento) {
-  const seg = String(segmento || '').toUpperCase();
-  const ehServico = seg === 'SERVICO' || seg === 'HIBRIDO';
-  return ehServico ? [...TIPOS_USUARIO_BASE, 'ESPECIALISTA'] : [...TIPOS_USUARIO_BASE];
+const normSeg = (segmento) => String(segmento || '').toUpperCase();
+
+export const TIPOS_POR_SEGMENTO = {
+  PRODUTO: ['ADMINISTRADOR', 'VENDEDOR'],
+  SERVICO: ['ADMINISTRADOR', 'ESPECIALISTA', 'RECEPCAO'],
+  HIBRIDO: ['ADMINISTRADOR', 'VENDEDOR', 'ESPECIALISTA', 'RECEPCAO'],
+};
+const TODOS_OS_TIPOS = ['ADMINISTRADOR', 'VENDEDOR', 'ESPECIALISTA', 'RECEPCAO'];
+export function tiposPorSegmento(segmento) {
+  return TIPOS_POR_SEGMENTO[normSeg(segmento)] || TODOS_OS_TIPOS;
+}
+export function segmentoPermiteEspecialista(segmento) {
+  return tiposPorSegmento(segmento).includes('ESPECIALISTA');
 }
 
-/**
- * Modulos escondidos por segmento na matriz de permissoes / navegacao.
- * Loja (PRODUTO) nao mexe com agenda; clinica (SERVICO) nao mexe com estoque.
- * HIBRIDO e segmento nulo nao escondem nada. Espelha o backend.
- */
-export const MODULOS_OCULTOS_POR_SEGMENTO = {
-  PRODUTO: ['AGENDA'],
-  SERVICO: ['ESTOQUE'],
+// Modulos concediveis por segmento (loja esconde AGENDA; clinica esconde
+// ESTOQUE; VENDAS compartilhado). MENSAGENS saiu no pivo.
+const MODULOS_COMPARTILHADOS = ['CRM', 'CATALOGO', 'FINANCEIRO', 'VENDAS', 'RELATORIOS', 'ALERTAS'];
+export const MODULOS_POR_SEGMENTO = {
+  PRODUTO: [...MODULOS_COMPARTILHADOS, 'ESTOQUE'],
+  SERVICO: [...MODULOS_COMPARTILHADOS, 'AGENDA'],
+  HIBRIDO: [...MODULOS_COMPARTILHADOS, 'AGENDA', 'ESTOQUE'],
 };
-export function modulosOcultosPorSegmento(segmento) {
-  return MODULOS_OCULTOS_POR_SEGMENTO[String(segmento || '').toUpperCase()] || [];
-}
-export function moduloVisivelNoSegmento(modulo, segmento) {
-  return !modulosOcultosPorSegmento(segmento).includes(modulo);
+const TODOS_OS_MODULOS = [...MODULOS_COMPARTILHADOS, 'AGENDA', 'ESTOQUE'];
+export function modulosPorSegmento(segmento) {
+  return MODULOS_POR_SEGMENTO[normSeg(segmento)] || TODOS_OS_MODULOS;
 }
 
 /**
