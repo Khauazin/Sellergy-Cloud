@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingBag, Kanban, Calendar, Package, Box,
-  DollarSign, MessageCircle, Send, Bot, Settings, BarChart3, UserCog
+  DollarSign, MessageCircle, Send, Bot, Settings, BarChart3, UserCog,
+  CreditCard, Receipt
 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -43,6 +44,8 @@ const NAV_TENANT = [
       { to: '/app/financeiro/categorias', label: 'Categorias' },
     ],
   },
+  { to: '/app/pagamentos', label: 'Pagamentos', icon: CreditCard, modulo: 'PAGAMENTOS' },
+  { to: '/app/fiscal', label: 'Fiscal', icon: Receipt, modulo: 'FISCAL' },
   {
     to: '/app/relatorios',
     label: 'Relatorios',
@@ -84,6 +87,8 @@ const TITULOS = {
   '/app/financeiro/caixa': { titulo: 'Financeiro · Caixa', breadcrumb: 'Gestão' },
   '/app/financeiro/contas-pagar': { titulo: 'Financeiro · Contas a pagar', breadcrumb: 'Gestão' },
   '/app/financeiro/categorias': { titulo: 'Financeiro · Categorias', breadcrumb: 'Gestão' },
+  '/app/pagamentos': { titulo: 'Pagamentos', breadcrumb: 'Gestão' },
+  '/app/fiscal': { titulo: 'Fiscal', breadcrumb: 'Gestão' },
   '/app/relatorios': { titulo: 'Relatorios', breadcrumb: 'Gestao' },
   '/app/relatorios/visao-executiva': { titulo: 'Relatório · Visão executiva', breadcrumb: 'Relatórios · Gestão' },
   '/app/relatorios/mensais': { titulo: 'Fechamento mensal', breadcrumb: 'Relatórios · Gestão' },
