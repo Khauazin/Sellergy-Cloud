@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const {
   modulosPorSegmento,
   segmentoPermiteEspecialista,
-} = require('../constants/gatingSegmento');
+} = require('../utils/modulosSegmento');
 
 // Perfis que um colaborador de tenant pode ter (o Prisma só conhece estes).
 // "Especialista" e "Recepção" são TIPOS de UI que persistem como VENDEDOR:
