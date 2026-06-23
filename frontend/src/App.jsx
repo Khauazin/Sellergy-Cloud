@@ -45,9 +45,9 @@ import RelatorioMensalDetalhePage from './pages/RelatorioMensalDetalhePage';
 import UsersPage from './pages/UsersPage';
 import ConfiguracoesAdminPage from './pages/ConfiguracoesAdminPage';
 import CampanhasPage from './pages/CampanhasPage';
+import BotsClientePage from './pages/BotsClientePage';
 
-// Pacote 4 - placeholders.
-const BotsClientePlaceholder = () => <PlaceholderPage titulo="Bots" descricao="Configurar IA do bot." pacote="Pacote 4 — Novidades" />;
+// Bots do tenant: tela real BotsClientePage (conexao + FAQ), Frente 4.
 // `RelatoriosClientePlaceholder` removido — agora usa RelatoriosPage real.
 
 const ProtectedRoute = ({ children }) => {
@@ -178,7 +178,7 @@ export default function App() {
             {/* Detalhe do snapshot mensal — rota mais específica precisa vir ANTES da :aba. */}
             <Route path="/app/relatorios/mensais/:periodo" element={<RelatorioMensalDetalhePage />} />
             <Route path="/app/relatorios/:aba" element={<RelatoriosPage />} />
-            <Route path="/app/bots" element={<BotsClientePlaceholder />} />
+            <Route path="/app/bots" element={<BotsClientePage />} />
             <Route path="/app/campanhas" element={<CampanhasPage />} />
             <Route path="/app/pagamentos" element={<PagamentosPage />} />
             <Route path="/app/fiscal" element={<FiscalPage />} />

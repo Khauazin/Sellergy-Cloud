@@ -36,6 +36,8 @@ const rotasCampanhas = require('./routes/campanhas.routes');
 const rotasPagamentos = require('./routes/pagamentos.routes');
 const rotasFiscal = require('./routes/fiscal.routes');
 const rotasWebhooks = require('./routes/webhooks.routes');
+const rotasFaq = require('./routes/faq.routes');
+const rotasWebhooksWhatsapp = require('./routes/webhooksWhatsapp.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
@@ -132,12 +134,14 @@ app.use('/relatorios-mensais', rotasRelatoriosMensais);
 app.use('/vendas', rotasVendas);
 app.use('/relatorios', rotasRelatorios);
 app.use('/campanhas', rotasCampanhas);
+app.use('/faq', rotasFaq);
 app.use('/pagamentos', rotasPagamentos);
 app.use('/fiscal', rotasFiscal);
 
-// Webhooks externos (PSP) — SEM autenticacao de usuario (o chamador e o
-// provedor; a autenticidade e validada por assinatura no handler, Frente 2).
-app.use('/webhooks', rotasWebhooks);
+// Webhooks externos — SEM autenticacao de usuario (o chamador e o provedor/Meta;
+// a autenticidade vem da assinatura/verify token validada no handler).
+app.use('/webhooks', rotasWebhooks);          // pagamento (Frente 2)
+app.use('/webhooks', rotasWebhooksWhatsapp);  // whatsapp (Frente 4)
 
 // Rota de Teste de Saude (Health Check)
 app.get('/saude', (req, res) => {
