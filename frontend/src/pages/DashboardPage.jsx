@@ -47,9 +47,14 @@ export default function DashboardPage() {
   const ultimosAlertas = alertas.slice(0, 5);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">Visão geral</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Resumo de clientes, bots e alertas do sistema.</p>
+      </div>
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
           icon={Users}
           color="info"
@@ -60,7 +65,7 @@ export default function DashboardPage() {
         />
         <KpiCard
           icon={DollarSign}
-          color="accent"
+          color="info"
           label="MRR"
           valor={fmtBRL(mrr)}
           subvalor="Receita mensal recorrente"
@@ -87,10 +92,10 @@ export default function DashboardPage() {
       {/* Linha principal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Ultimos clientes */}
-        <Card padding="lg" className="lg:col-span-2">
+        <Card padding="md" className="lg:col-span-2">
           <CardHeader>
             <div>
-              <CardTitle>Ultimos clientes cadastrados</CardTitle>
+              <CardTitle>Últimos clientes cadastrados</CardTitle>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Os 5 clientes mais recentes
               </p>
@@ -119,7 +124,7 @@ export default function DashboardPage() {
                 <Link
                   to={`/admin/clientes/${c.id}`}
                   key={c.id}
-                  className="flex items-center gap-3 px-2 py-3 rounded-lg hover:bg-[var(--bg-subtle)]/60 transition-colors"
+                  className="flex items-center gap-3 px-2 py-3 rounded-lg hover:bg-[var(--bg-subtle)] transition-colors"
                 >
                   <Avatar name={c.nome} size="md" />
                   <div className="flex-1 min-w-0">
@@ -131,7 +136,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">
+                    <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight tabular-nums">
                       {fmtBRL(c.mensalidade)}
                     </div>
                     <Badge variant={c.status === 'ACTIVE' ? 'success' : 'warning'} size="sm">
@@ -145,12 +150,12 @@ export default function DashboardPage() {
         </Card>
 
         {/* Ultimos alertas */}
-        <Card padding="lg">
+        <Card padding="md">
           <CardHeader>
             <div>
               <CardTitle>Alertas recentes</CardTitle>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Ultimos eventos do sistema
+                Últimos eventos do sistema
               </p>
             </div>
             <Link to="/admin/alertas">
@@ -171,7 +176,7 @@ export default function DashboardPage() {
               {ultimosAlertas.map((a) => (
                 <div
                   key={a.id}
-                  className="flex items-start gap-3 p-3 rounded-xl bg-[var(--bg-subtle)]/60 border border-[var(--border-subtle)]"
+                  className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]"
                 >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                     a.severidade === 'CRITICAL' ? 'bg-[var(--danger-soft)] text-[var(--danger)]' :
@@ -196,17 +201,17 @@ export default function DashboardPage() {
       </div>
 
       {/* Acoes rapidas */}
-      <Card padding="lg">
+      <Card padding="md">
         <CardHeader>
           <div>
-            <CardTitle>Acoes rapidas</CardTitle>
+            <CardTitle>Ações rápidas</CardTitle>
           </div>
         </CardHeader>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <QuickAction to="/admin/clientes" icon={Plus} label="Novo cliente" desc="Cadastrar assinante" />
-          <QuickAction to="/admin/clientes/permissoes" icon={ShieldCheck} label="Permissoes" desc="Liberar modulos" />
+          <QuickAction to="/admin/clientes/permissoes" icon={ShieldCheck} label="Permissões" desc="Liberar módulos" />
           <QuickAction to="/admin/bots" icon={Bot} label="Configurar bot" desc="IA e canais" />
-          <QuickAction to="/admin/relatorios" icon={TrendingUp} label="Relatorios" desc="Visao consolidada" />
+          <QuickAction to="/admin/relatorios" icon={TrendingUp} label="Relatórios" desc="Visão consolidada" />
         </div>
       </Card>
     </div>
@@ -219,10 +224,10 @@ function QuickAction({ to, icon: Icon, label, desc }) {
   return (
     <Link
       to={to}
-      className="group flex items-start gap-3 p-4 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)] hover:border-[var(--text-muted)] hover:shadow-[var(--shadow-xs)] transition-all"
+      className="group flex items-start gap-3 p-4 rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] hover:border-[var(--text-muted)] hover:bg-[var(--bg-subtle)] transition-colors"
     >
-      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 group-hover:bg-[var(--accent-soft)] group-hover:text-[var(--accent)] transition-colors">
-        <Icon size={16} strokeWidth={1.75} className="text-[var(--text-secondary)] group-hover:text-[var(--accent)] transition-colors" />
+      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0 transition-colors">
+        <Icon size={16} strokeWidth={1.75} className="text-[var(--text-secondary)] group-hover:text-[var(--text-main)] transition-colors" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">

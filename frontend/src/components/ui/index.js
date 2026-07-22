@@ -21,6 +21,7 @@ export { default as Combobox } from './Combobox';
 export { default as UploadImagem } from './UploadImagem';
 export { default as InputDuracao } from './InputDuracao';
 export { default as Tooltip } from './Tooltip';
+export { default as LabelAjuda } from './LabelAjuda';
 export { default as KpiCard } from './KpiCard';
 export { default as PeriodoPills, PRESETS_PERIODO, calcularIntervalo as calcularIntervaloPeriodo } from './PeriodoPills';
 export { default as FiltroRapido } from './FiltroRapido';

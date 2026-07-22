@@ -25,6 +25,8 @@ const rotasAgenda = require('./routes/agenda.routes');
 const rotasEspecialistas = require('./routes/especialistas.routes');
 const rotasCatalogo = require('./routes/catalogo.routes');
 const rotasEstoque = require('./routes/estoque.routes');
+const rotasFornecedores = require('./routes/fornecedores.routes');
+const rotasNotasCompra = require('./routes/notas-compra.routes');
 const rotasFinanceiro = require('./routes/financeiro.routes');
 const rotasContasPagar = require('./routes/contas-pagar.routes');
 const rotasNotificacoes = require('./routes/notificacoes.routes');
@@ -41,6 +43,7 @@ const rotasWebhooksWhatsapp = require('./routes/webhooksWhatsapp.routes');
 const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
+const { limitadorApi } = require('./middlewares/rateLimit.middleware');
 
 // Origens permitidas por CORS. Em desenvolvimento, libera localhost.
 // Em producao, exige a variavel CORS_ORIGINS (lista separada por virgula).
@@ -109,6 +112,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Rate limiting geral da API — defesa contra flood/DoS nos endpoints (agregacoes
+// caras rodavam sem teto). Webhooks e /saude ficam de fora (ver o middleware).
+app.use(limitadorApi);
+
 // Rotas Base
 app.use('/autenticacao', rotasAutenticacao);
 app.use('/usuarios', rotasUsuarios);
@@ -132,6 +139,8 @@ app.use('/agenda', rotasAgenda);
 app.use('/especialistas', rotasEspecialistas);
 app.use('/catalogo', rotasCatalogo);
 app.use('/estoque', rotasEstoque);
+app.use('/fornecedores', rotasFornecedores);
+app.use('/notas-compra', rotasNotasCompra);
 app.use('/financeiro', rotasFinanceiro);
 app.use('/contas-pagar', rotasContasPagar);
 app.use('/notificacoes', rotasNotificacoes);

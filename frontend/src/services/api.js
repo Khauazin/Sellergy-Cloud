@@ -9,6 +9,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Pula a pagina de aviso do ngrok-free: sem isso, ao chamar a API pelo tunel,
+  // o ngrok devolve HTML (a interstitial) no lugar do JSON. Inofensivo fora do ngrok.
+  config.headers['ngrok-skip-browser-warning'] = 'true';
   return config;
 });
 

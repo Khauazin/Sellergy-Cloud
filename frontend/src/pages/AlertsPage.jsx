@@ -97,9 +97,14 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">Alertas</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Eventos do sistema em tempo real, por cliente e bot.</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
         <KpiCard icon={Bell} color={stats.abertos > 0 ? 'warning' : 'neutral'} label="Abertos" valor={stats.abertos} />
-        <KpiCard icon={AlertTriangle} color={stats.criticos > 0 ? 'danger' : 'neutral'} label="Criticos abertos" valor={stats.criticos} />
+        <KpiCard icon={AlertTriangle} color={stats.criticos > 0 ? 'danger' : 'neutral'} label="Críticos abertos" valor={stats.criticos} />
         <KpiCard icon={CheckCircle2} color="success" label="Resolvidos" valor={stats.resolvidos} />
       </div>
 
@@ -126,9 +131,9 @@ export default function AlertsPage() {
       </div>
 
       {carregando ? (
-        <Card padding="lg"><div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando...</div></Card>
+        <Card padding="md"><div className="text-center py-12 text-[var(--text-muted)] text-sm">Carregando...</div></Card>
       ) : filtrados.length === 0 ? (
-        <Card padding="lg">
+        <Card padding="md">
           <EmptyState
             icon={CheckCircle2}
             title={alertas.length === 0 ? 'Nenhum alerta' : 'Sem resultados'}
@@ -143,9 +148,9 @@ export default function AlertsPage() {
               const status = STATUS_CFG[a.status] || STATUS_CFG.OPEN;
               const SevIcone = sev.icon;
               return (
-                <div key={a.id} className="px-5 py-4 hover:bg-[var(--bg-subtle)]/50 transition-colors">
+                <div key={a.id} className="px-5 py-4 hover:bg-[var(--bg-subtle)] transition-colors">
                   <div className="flex items-start gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
                       a.severidade === 'CRITICAL' || a.severidade === 'ERROR' ? 'bg-[var(--danger-soft)] text-[var(--danger)]' :
                       a.severidade === 'WARNING' ? 'bg-[var(--warning-soft)] text-[var(--warning)]' :
                       'bg-[var(--info-soft)] text-[var(--info)]'

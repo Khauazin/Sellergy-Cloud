@@ -26,7 +26,7 @@ export default function Button({
   className,
   ...props
 }) {
-  const base = 'inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-150 rounded-xl select-none';
+  const base = 'inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-150 rounded-lg select-none';
 
   const variants = {
     primary: 'bg-[var(--primary)] text-[var(--text-on-primary)] hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)] disabled:opacity-40 disabled:cursor-not-allowed',

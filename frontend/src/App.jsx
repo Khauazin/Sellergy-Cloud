@@ -24,6 +24,8 @@ import AgendaPage from './pages/AgendaPage';
 import VendasPage from './pages/VendasPage';
 import CatalogoPage from './pages/CatalogoPage';
 import EstoquePage from './pages/EstoquePage';
+import FornecedoresPage from './pages/FornecedoresPage';
+import EntradaNotaPage from './pages/EntradaNotaPage';
 import FinanceiroPage from './pages/FinanceiroPage';
 import CrmUsersPage from './pages/CrmUsersPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
@@ -37,7 +39,6 @@ import ClientsPage from './pages/ClientsPage';
 import AdminPermissoesClientePage from './pages/AdminPermissoesClientePage';
 import BotsPage from './pages/BotsPage';
 import BotCanalPage from './pages/BotCanalPage';
-import EspecialistasPage from './pages/EspecialistasPage';
 import AlertsPage from './pages/AlertsPage';
 import ReportsPage from './pages/ReportsPage';
 import RelatoriosPage from './pages/RelatoriosPage';
@@ -167,10 +168,12 @@ export default function App() {
             <Route path="/app/dashboard" element={<ClientDashboardPage />} />
             <Route path="/app/crm" element={<CRMPage />} />
             <Route path="/app/agenda" element={<AgendaPage />} />
-            <Route path="/app/especialistas" element={<EspecialistasPage />} />
             <Route path="/app/vendas" element={<VendasPage />} />
             <Route path="/app/catalogo" element={<CatalogoPage />} />
             <Route path="/app/estoque" element={<Navigate to="/app/estoque/visao-geral" replace />} />
+            {/* Rotas especificas precisam vir ANTES do catch-all :aba. */}
+            <Route path="/app/estoque/fornecedores" element={<FornecedoresPage />} />
+            <Route path="/app/estoque/notas" element={<EntradaNotaPage />} />
             <Route path="/app/estoque/:aba" element={<EstoquePage />} />
             <Route path="/app/financeiro" element={<Navigate to="/app/financeiro/lancamentos" replace />} />
             <Route path="/app/financeiro/:aba" element={<FinanceiroPage />} />

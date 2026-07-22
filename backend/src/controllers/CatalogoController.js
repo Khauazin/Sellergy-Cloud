@@ -1,5 +1,6 @@
 const prisma = require('../prisma');
 const { chaveDeUrl } = require('../storage/minio');
+const { calcularPreco } = require('../produto');
 
 /**
  * Valida que a URL de imagem foi gerada por nosso storage e pertence a este
@@ -25,6 +26,21 @@ async function validarEspecialistas(clienteId, ids) {
     select: { id: true },
   });
   return esps.map((e) => e.id);
+}
+
+// Normaliza o preco de uma variacao: quando o body traz custo/lucro, recalcula o
+// `preco` derivado. Sem custo/lucro no body, nao mexe (compat com cliente legado
+// que ainda manda o preco cheio).
+function normalizarPrecoVariacao(dados) {
+  if (!dados || typeof dados !== 'object') return dados;
+  const temCustoLucro = dados.precoCusto !== undefined
+    || dados.lucroTipo !== undefined
+    || dados.lucroValor !== undefined;
+  if (!temCustoLucro) return dados;
+  const lucroTipo = dados.lucroTipo === 'PERCENTUAL' ? 'PERCENTUAL' : 'VALOR';
+  const lucroValor = Number(dados.lucroValor) || 0;
+  const precoCusto = Number(dados.precoCusto) || 0;
+  return { ...dados, precoCusto, lucroTipo, lucroValor, preco: calcularPreco(precoCusto, lucroTipo, lucroValor) };
 }
 
 // Include padrao dos especialistas vinculados (M:N via EspecialistaServico).
@@ -126,7 +142,7 @@ class CatalogoController {
           visibilidade,
           imagemUrl: imagemUrl || null,
           variacoes: variacoesNormalizadas.length > 0 ? {
-            create: variacoesNormalizadas
+            create: variacoesNormalizadas.map(normalizarPrecoVariacao)
           } : undefined,
           especialistas: especialistasValidos.length > 0 ? {
             create: especialistasValidos.map((especialistaId) => ({ especialistaId }))
@@ -267,7 +283,7 @@ class CatalogoController {
       if (motivo) return res.status(422).json({ error: motivo, campos: ['imagemUrl'] });
 
       const variacao = await prisma.variacaoProduto.create({
-        data: { ...dados, produtoId }
+        data: { ...normalizarPrecoVariacao(dados), produtoId }
       });
       res.status(201).json(variacao);
     } catch (error) {
@@ -289,7 +305,7 @@ class CatalogoController {
 
       const atualizada = await prisma.variacaoProduto.update({
         where: { id },
-        data: dados
+        data: normalizarPrecoVariacao(dados)
       });
       res.json(atualizada);
     } catch (error) {

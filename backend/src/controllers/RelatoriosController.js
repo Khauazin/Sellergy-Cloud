@@ -100,6 +100,7 @@ async function visaoExecutiva(req, res) {
         },
         select: {
           quantidade: true,
+          custoUnitario: true,
           variacao: { select: { precoCusto: true } },
         },
       }),
@@ -164,7 +165,8 @@ async function visaoExecutiva(req, res) {
     let cmvTotal = 0;
     for (const m of cmvPeriodo) {
       const qtd = Math.abs(m.quantidade || 0);
-      const custo = Number(m.variacao?.precoCusto || 0);
+      // Custo congelado da venda (snapshot); fallback pro custo atual em vendas antigas.
+      const custo = Number(m.custoUnitario ?? m.variacao?.precoCusto ?? 0);
       cmvTotal += qtd * custo;
     }
     const cmvPercentual = totalReceita > 0 ? (cmvTotal / totalReceita) * 100 : 0;
@@ -864,7 +866,8 @@ async function relatorioVendas(req, res) {
     for (const m of movimentacoesVenda) {
       if (!m.vendaId) continue;
       const qtd = Math.abs(m.quantidade || 0);
-      const custo = Number(m.variacao?.precoCusto || 0);
+      // Custo congelado da venda (snapshot); fallback pro custo atual em vendas antigas.
+      const custo = Number(m.custoUnitario ?? m.variacao?.precoCusto ?? 0);
       const cmv = qtd * custo;
       cmvPorVenda.set(m.vendaId, (cmvPorVenda.get(m.vendaId) || 0) + cmv);
     }
@@ -932,7 +935,8 @@ async function relatorioVendas(req, res) {
       const cat = m.variacao?.produto?.categoria?.nome || 'Sem categoria';
       const qtd = Math.abs(m.quantidade || 0);
       const valor = qtd * Number(m.variacao?.preco || 0);
-      const custo = qtd * Number(m.variacao?.precoCusto || 0);
+      // Custo congelado da venda (snapshot); fallback pro custo atual em vendas antigas.
+      const custo = qtd * Number(m.custoUnitario ?? m.variacao?.precoCusto ?? 0);
       if (!catMap.has(cat)) {
         catMap.set(cat, { categoria: cat, qtd: 0, valor: 0, custo: 0 });
       }

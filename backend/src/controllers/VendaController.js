@@ -175,6 +175,9 @@ class VendaController {
                   variacaoId: it.variacao.id,
                   tipo: 'VENDA',
                   quantidade: -Math.abs(it.quantidade),
+                  // Congela o custo do momento da venda (custo medio corrente)
+                  // pra o CMV e o lucro ficarem imutaveis nos relatorios.
+                  custoUnitario: it.variacao.precoCusto ?? null,
                   motivo: `Venda #${venda.numero}`,
                   vendaId: venda.id,
                 },

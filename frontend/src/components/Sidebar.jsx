@@ -95,7 +95,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
               'transition-colors duration-150',
               'text-sm font-medium tracking-tight',
               (isActive || algumSubAtivo)
-                ? 'bg-[var(--bg-subtle)] text-[var(--text-main)]'
+                ? 'bg-[var(--primary)] text-[var(--text-on-primary)] font-semibold'
                 : 'text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]/60 hover:text-[var(--text-main)]'
             )
           }
@@ -103,7 +103,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
           {({ isActive }) => (
             <>
               {(isActive || algumSubAtivo) && (
-                <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--accent)]" />
+                <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--primary)]" />
               )}
               {Icon && (
                 <Icon
@@ -111,7 +111,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
                   strokeWidth={1.75}
                   className={clsx(
                     'flex-shrink-0',
-                    (isActive || algumSubAtivo) ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)] group-hover/item:text-[var(--text-secondary)]'
+                    (isActive || algumSubAtivo) ? 'text-[var(--text-on-primary)]' : 'text-[var(--text-muted)] group-hover/item:text-[var(--text-secondary)]'
                   )}
                 />
               )}
@@ -160,7 +160,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
             'transition-colors duration-150',
             'text-sm font-medium tracking-tight',
             isActive
-              ? 'bg-[var(--bg-subtle)] text-[var(--text-main)]'
+              ? 'bg-[var(--primary)] text-[var(--text-on-primary)] font-semibold'
               : 'text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]/60 hover:text-[var(--text-main)]'
           )
         }
@@ -168,7 +168,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
         {({ isActive }) => (
           <>
             {isActive && (
-              <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--accent)]" />
+              <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-[var(--primary)]" />
             )}
             {Icon && (
               <Icon
@@ -176,7 +176,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
                 strokeWidth={1.75}
                 className={clsx(
                   'flex-shrink-0',
-                  isActive ? 'text-[var(--text-main)]' : 'text-[var(--text-muted)] group-hover/item:text-[var(--text-secondary)]'
+                  isActive ? 'text-[var(--text-on-primary)]' : 'text-[var(--text-muted)] group-hover/item:text-[var(--text-secondary)]'
                 )}
               />
             )}
@@ -188,7 +188,7 @@ function SidebarItem({ to, label, icon: Icon, badge, onClick, end = false, subIt
                 'px-1.5 py-0.5 text-[10px] font-bold rounded-md flex-shrink-0',
                 'opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 delay-75',
                 isActive
-                  ? 'bg-[var(--primary)] text-[var(--text-on-primary)]'
+                  ? 'bg-[var(--text-on-primary)]/20 text-[var(--text-on-primary)]'
                   : 'bg-[var(--bg-subtle)] text-[var(--text-muted)]'
               )}>
                 {badge}
@@ -214,7 +214,7 @@ function SidebarSubItem({ to, label, onClick, end = false }) {
             'text-[13px] font-medium tracking-tight',
             'transition-colors duration-150',
             isActive
-              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+              ? 'bg-[var(--bg-subtle)] text-[var(--text-main)] font-semibold'
               : 'text-[var(--text-muted)] hover:bg-[var(--bg-subtle)]/60 hover:text-[var(--text-secondary)]'
           )
         }

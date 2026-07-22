@@ -22,9 +22,11 @@ class CmvController {
       });
 
       const totalCusto = movimentacoes.reduce((acc, mov) => {
-        const custoUnitario = mov.variacao.precoCusto || 0;
+        // Custo CONGELADO da venda (snapshot do momento). Fallback pro custo
+        // atual da variacao em vendas antigas (antes do snapshot existir).
+        const custoUnit = mov.custoUnitario ?? mov.variacao?.precoCusto ?? 0;
         // Quantidade em VENDA costuma ser negativa no ledger, usamos valor absoluto
-        return acc + (Math.abs(mov.quantidade) * custoUnitario);
+        return acc + (Math.abs(mov.quantidade) * custoUnit);
       }, 0);
 
       res.json({
@@ -103,7 +105,8 @@ class CmvController {
       movimentacoes.forEach(mov => {
         const qtd = Math.abs(mov.quantidade);
         receitaTotal += qtd * mov.variacao.preco;
-        custoTotal += qtd * (mov.variacao.precoCusto || 0);
+        // Custo congelado da venda (snapshot); fallback pro custo atual em vendas antigas.
+        custoTotal += qtd * (mov.custoUnitario ?? mov.variacao?.precoCusto ?? 0);
       });
 
       const lucroBruto = receitaTotal - custoTotal;

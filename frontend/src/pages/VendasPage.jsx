@@ -211,9 +211,9 @@ export default function VendasPage() {
       {/* KPIs — padrao KpiCard compartilhado (ui/KpiCard) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard icon={ShoppingBag} color="neutral" label="Vendas (total)" valor={vendas.length} />
-        <KpiCard icon={ShoppingBag} color="accent" label="Faturado total" valor={fmtBRL(vendas.reduce((acc, v) => acc + Number(v.valor || 0), 0))} />
-        <KpiCard icon={Calendar} color="info" label="Vendas no mes" valor={fmtBRL(totalMes)} />
-        <KpiCard icon={User} color="success" label="Vendas via lead" valor={vendas.filter((v) => v.leadId).length} />
+        <KpiCard icon={ShoppingBag} color="neutral" label="Faturado total" valor={fmtBRL(vendas.reduce((acc, v) => acc + Number(v.valor || 0), 0))} />
+        <KpiCard icon={Calendar} color="neutral" label="Vendas no mes" valor={fmtBRL(totalMes)} />
+        <KpiCard icon={User} color="neutral" label="Vendas via lead" valor={vendas.filter((v) => v.leadId).length} />
       </div>
 
       {/* Toolbar com busca + filtros + acao primaria */}
@@ -317,7 +317,7 @@ export default function VendasPage() {
                   >
                     <td className="py-3 px-5">
                       <div className="flex items-center gap-2">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${cancelada ? 'bg-[var(--danger-soft)] text-[var(--danger)]' : 'bg-[var(--success-soft)] text-[var(--success)]'}`}>
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${cancelada ? 'bg-[var(--danger-soft)] text-[var(--danger-text)]' : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)]'}`}>
                           <ShoppingBag size={16} strokeWidth={1.75} />
                         </div>
                         <div>
@@ -335,10 +335,10 @@ export default function VendasPage() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); navigate(`/app/crm?lead=${v.leadId}`); }}
-                          className="inline-flex items-center gap-1 text-[var(--accent)] hover:underline font-medium"
+                          className="inline-flex items-center gap-1 text-[var(--text-main)] hover:underline font-medium"
                         >
                           {v.lead.nome}
-                          <ExternalLink size={11} />
+                          <ExternalLink size={11} className="text-[var(--text-muted)]" />
                         </button>
                       ) : '—'}
                     </td>
@@ -348,7 +348,7 @@ export default function VendasPage() {
                     <td className="py-3 px-5 text-xs">
                       <Badge variant={cfgStatus.variant} size="sm">{cfgStatus.label}</Badge>
                     </td>
-                    <td className={`py-3 px-5 text-right text-sm font-semibold tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--success)]'}`}>
+                    <td className={`py-3 px-5 text-right text-sm font-semibold tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-main)]'}`}>
                       {fmtBRL(v.valor)}
                     </td>
                     <td className="py-3 px-5 text-xs text-[var(--text-muted)]">
@@ -646,7 +646,7 @@ function ModalVenda({ isOpen, onClose, variacoes, leads, categorias, onSalvar })
                       min={1}
                       value={item.quantidade}
                       onChange={(e) => mudarQuantidade(item.variacaoId, e.target.value)}
-                      className="w-12 h-9 text-center text-sm font-semibold tabular-nums rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                      className="w-12 h-9 text-center text-sm font-semibold tabular-nums rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--border-main)]"
                       aria-label="Quantidade"
                     />
                     <button
@@ -673,8 +673,8 @@ function ModalVenda({ isOpen, onClose, variacoes, leads, categorias, onSalvar })
             })}
 
             {/* Total agregado */}
-            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)] font-semibold">
-              <span className="text-sm">Total da venda</span>
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-main)] text-[var(--text-main)] font-semibold">
+              <span className="text-sm text-[var(--text-secondary)]">Total da venda</span>
               <span className="text-lg tabular-nums">{fmtBRL(valorTotal)}</span>
             </div>
           </div>
@@ -792,7 +792,7 @@ function DrawerVenda({ isOpen, onClose, venda, onCancelar, onVincularLead, onIrP
     >
       <div className="space-y-5">
         <div className="text-center py-4">
-          <div className={`text-4xl font-semibold tracking-tight tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--success)]'}`}>
+          <div className={`text-4xl font-semibold tracking-tight tabular-nums ${cancelada ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-main)]'}`}>
             {fmtBRL(venda.valor)}
           </div>
           <div className="text-xs text-[var(--text-muted)] mt-2">
@@ -830,10 +830,10 @@ function DrawerVenda({ isOpen, onClose, venda, onCancelar, onVincularLead, onIrP
               <button
                 type="button"
                 onClick={() => onIrParaCRM?.(venda.leadId)}
-                className="text-sm font-semibold text-[var(--accent)] hover:underline mt-0.5 inline-flex items-center gap-1 text-left"
+                className="text-sm font-semibold text-[var(--text-main)] hover:underline mt-0.5 inline-flex items-center gap-1 text-left"
               >
                 {venda.lead.nome}
-                <ExternalLink size={11} />
+                <ExternalLink size={11} className="text-[var(--text-muted)]" />
               </button>
             ) : (
               <div className="text-sm font-semibold text-[var(--text-muted)] mt-0.5">—</div>

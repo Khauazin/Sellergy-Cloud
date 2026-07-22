@@ -2,14 +2,15 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Box, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, TrendingUp,
-  Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag, Image as ImageIcon, ArrowLeftRight
+  Plus, Edit2, Trash2, MoreHorizontal, Activity, Tag, Image as ImageIcon, ArrowLeftRight,
+  HelpCircle,
 } from 'lucide-react';
 import api from '../services/api';
 import {
   Card, CardHeader, CardTitle, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, useToast, Tabs, TabsList, TabsTrigger, TabsContent,
   Dropdown, DropdownItem, DropdownDivider, UploadImagem, InputDuracao,
-  KpiCard,
+  KpiCard, Tooltip,
 } from '../components/ui';
 import Modal from '../components/Modal';
 import catalogoService from '../services/catalogoService';
@@ -195,10 +196,10 @@ export default function EstoquePage() {
       {/* Header — titulo dinamico vindo da sub-rota + acoes */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+          <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wider">
             Estoque
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-main)] mt-0.5">
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
             {tituloAba.titulo}
             {tab === 'reposicao' && reposicao.length > 0 && (
               <span className="ml-2 text-base font-semibold text-[var(--warning)] tabular-nums">({reposicao.length})</span>
@@ -207,7 +208,7 @@ export default function EstoquePage() {
               <span className="ml-2 text-base font-semibold text-[var(--text-muted)] tabular-nums">({categoriasProdutos.length})</span>
             )}
           </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">{tituloAba.descricao}</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">{tituloAba.descricao}</p>
         </div>
         {/* Botoes condicionais por aba — cada tela so mostra o que cabe.
             Visao geral nao tem botao de cadastro (e dashboard, nao cadastro). */}
@@ -295,6 +296,7 @@ export default function EstoquePage() {
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Estoque</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Custo</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Venda</th>
+                    <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Lucro</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5">Valor total</th>
                     <th className="text-right text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] py-3 px-5 w-14"></th>
                   </tr>
@@ -332,6 +334,7 @@ export default function EstoquePage() {
                         </td>
                         <td className="py-3 px-5 text-right text-sm text-[var(--text-secondary)] tabular-nums">{fmtBRL(v.precoCusto)}</td>
                         <td className="py-3 px-5 text-right text-sm text-[var(--text-main)] tabular-nums">{fmtBRL(v.preco)}</td>
+                        <td className="py-3 px-5 text-right text-sm text-[var(--success)] tabular-nums">{fmtBRL((v.preco || 0) - (v.precoCusto || 0))}</td>
                         <td className="py-3 px-5 text-right text-sm font-semibold text-[var(--text-main)] tabular-nums">{fmtBRL(v.estoqueAtual * (v.precoCusto || 0))}</td>
                         <td className="py-3 px-5 text-right">
                           <Dropdown trigger={<IconButton icon={MoreHorizontal} size="sm" variant="ghost" ariaLabel="Ações" />} align="right">
@@ -866,10 +869,99 @@ function ModalMovimentacao({ isOpen, onClose, variacoes, onSalvar, variacaoIdIni
 // Usa PUT /catalogo/variacoes/:id ja existente. Imagem usa o endpoint
 // definitivo (variacao ja existe). Categoria/tipo do produto pai nao
 // sao editaveis aqui — pra isso o cliente vai na tela de Catalogo.
+// Calcula o preco de venda a partir do custo + lucro. VALOR = R$ fixo somado ao
+// custo; PERCENTUAL = % sobre o custo. Em sync com o backend (CatalogoController).
+function calcularPrecoVenda(custo, lucroTipo, lucroValor) {
+  const c = parseFloat(custo) || 0;
+  const l = parseFloat(lucroValor) || 0;
+  const bruto = lucroTipo === 'PERCENTUAL' ? c * (1 + l / 100) : c + l;
+  return Math.round(bruto * 100) / 100;
+}
+
+// Rotulo de campo com a explicacao escondida num icone de ajuda (?) logo ao
+// lado do texto. Mantem o formulario limpo: a dica aparece no tooltip, nao
+// embaixo do campo. Passe o retorno na prop `label` do Input (e remova o `hint`).
+function rotuloAjuda(texto, ajuda) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{texto}</span>
+      {ajuda && (
+        <Tooltip content={ajuda} position="top">
+          <HelpCircle
+            size={15}
+            strokeWidth={2}
+            className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)] cursor-help"
+          />
+        </Tooltip>
+      )}
+    </span>
+  );
+}
+
+// Bloco de precificacao: o usuario digita o CUSTO e o LUCRO (R$ ou %), e o
+// PRECO DE VENDA aparece calculado (custo + lucro). Quando o custo mudar (nota),
+// o lucro fica e o preco recalcula sozinho. Usado nos forms de criar e editar.
+function CampoCustoLucro({ form, setForm }) {
+  const lucroTipo = form.lucroTipo === 'PERCENTUAL' ? 'PERCENTUAL' : 'VALOR';
+  const preco = calcularPrecoVenda(form.precoCusto, lucroTipo, form.lucroValor);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Input
+        size="lg"
+        label={rotuloAjuda('Quanto você pagou (R$)', 'O custo de cada unidade — o quanto você gastou pra comprar ou produzir.')}
+        type="number"
+        step="0.01"
+        min="0"
+        value={form.precoCusto}
+        onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
+      />
+      <div>
+        <label className="flex items-center gap-1.5 text-sm font-medium text-[var(--text-secondary)] mb-1.5">
+          <span>Seu lucro</span>
+          <Tooltip content="Quanto você ganha em cima do custo. Escolha R$ (valor fixo) ou % do custo." position="top">
+            <HelpCircle size={15} strokeWidth={2} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)] cursor-help" />
+          </Tooltip>
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.lucroValor ?? ''}
+            onChange={(e) => setForm({ ...form, lucroValor: e.target.value })}
+            className="flex-1 min-w-0 h-12 px-4 rounded-lg bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--text-main)] focus:outline-none focus:border-[var(--border-strong)]"
+          />
+          <div className="flex rounded-lg border border-[var(--border-main)] overflow-hidden flex-shrink-0">
+            {['VALOR', 'PERCENTUAL'].map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setForm({ ...form, lucroTipo: t })}
+                className={`px-3.5 text-sm font-medium transition-colors ${lucroTipo === t ? 'bg-[var(--primary)] text-[var(--text-on-primary)]' : 'text-[var(--text-muted)] hover:bg-[var(--bg-subtle)]'}`}
+              >
+                {t === 'VALOR' ? 'R$' : '%'}
+              </button>
+            ))}
+          </div>
+        </div>      </div>
+      <div>
+        <label className="flex items-center gap-1.5 text-sm font-medium text-[var(--text-secondary)] mb-1.5">
+          <span>Preço de venda</span>
+          <Tooltip content="Custo + lucro. É o valor que o cliente paga. Calculado automaticamente." position="top">
+            <HelpCircle size={15} strokeWidth={2} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)] cursor-help" />
+          </Tooltip>
+        </label>
+        <div className="h-12 px-4 flex items-center rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-main)] text-[var(--text-main)] font-semibold tabular-nums">
+          {preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+        </div>      </div>
+    </div>
+  );
+}
+
 function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
   const toast = useToast();
   const [form, setForm] = useState({
-    nome: '', sku: '', preco: 0, precoCusto: 0,
+    nome: '', sku: '', preco: 0, precoCusto: 0, lucroTipo: 'VALOR', lucroValor: 0,
     estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0,
     imagemUrl: '',
   });
@@ -882,6 +974,8 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
         sku: variacao.sku || '',
         preco: variacao.preco ?? 0,
         precoCusto: variacao.precoCusto ?? 0,
+        lucroTipo: variacao.lucroTipo || 'VALOR',
+        lucroValor: variacao.lucroValor ?? 0,
         estoqueAtual: variacao.estoqueAtual ?? 0,
         estoqueMinimo: variacao.estoqueMinimo ?? 0,
         estoqueIdeal: variacao.estoqueIdeal ?? 0,
@@ -912,8 +1006,10 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
       await api.put(`/catalogo/variacoes/${variacao.id}`, {
         nome: form.nome,
         sku: form.sku || null,
-        preco: parseFloat(form.preco) || 0,
         precoCusto: parseFloat(form.precoCusto) || 0,
+        lucroTipo: form.lucroTipo || 'VALOR',
+        lucroValor: parseFloat(form.lucroValor) || 0,
+        preco: calcularPrecoVenda(form.precoCusto, form.lucroTipo, form.lucroValor),
         estoqueAtual: parseInt(form.estoqueAtual, 10) || 0,
         estoqueMinimo: parseInt(form.estoqueMinimo, 10) || 0,
         estoqueIdeal: parseInt(form.estoqueIdeal, 10) || 0,
@@ -939,11 +1035,10 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
           />
           <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-              label="Versão / Modelo"
+              label={rotuloAjuda('Versão / Modelo', "Deixe 'Padrão' se o produto não tem versões.")}
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               required
-              hint="Deixe 'Padrão' se o produto não tem versões."
             />
             <Input
               label="Código interno (SKU)"
@@ -954,54 +1049,31 @@ function ModalEditarVariacao({ isOpen, onClose, variacao, onSucesso }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input
-            label="Preço de venda (R$)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.preco}
-            onChange={(e) => setForm({ ...form, preco: e.target.value })}
-            required
-            hint="Preço que você cobra normalmente."
-          />
-          <Input
-            label="Preço de custo (R$)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.precoCusto}
-            onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
-            hint="Quanto você paga ao fornecedor."
-          />
-        </div>
+        <CampoCustoLucro form={form} setForm={setForm} />
 
         {/* Estoque so lida com FISICO — campos de quantidade sempre visiveis,
             sem condicional. Duracao (servicos) e cadastrada no Catalogo. */}
         <div className="grid grid-cols-3 gap-3">
           <Input
-            label="Estoque atual"
+            label={rotuloAjuda('Estoque atual', 'A quantidade que está disponível na loja agora.')}
             type="number"
             min="0"
             value={form.estoqueAtual}
             onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
-            hint="Quantidade atual."
           />
           <Input
-            label="Estoque mínimo"
+            label={rotuloAjuda('Estoque mínimo', 'Quando chegar nessa quantidade, o sistema avisa que está acabando.')}
             type="number"
             min="0"
             value={form.estoqueMinimo}
             onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
-            hint="Quando avisar."
           />
           <Input
-            label="Estoque ideal"
+            label={rotuloAjuda('Estoque ideal', 'Quando precisar repor, é essa quantidade que você compra.')}
             type="number"
             min="0"
             value={form.estoqueIdeal}
             onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
-            hint="Quanto comprar."
           />
         </div>
 
@@ -1041,7 +1113,7 @@ function CardProdutoSelecionado({ variacao, estoqueBaixo }) {
           {variacao.produto?.categoria?.nome && (
             <span>{variacao.produto.categoria.nome}</span>
           )}
-          <span>Venda: <strong className="text-emerald-600 dark:text-emerald-400">{fmtBRL2(variacao.preco)}</strong></span>
+          <span>Venda: <strong className="text-[var(--text-main)]">{fmtBRL2(variacao.preco)}</strong></span>
           {variacao.precoCusto > 0 && (
             <span>Custo: {fmtBRL2(variacao.precoCusto)}</span>
           )}
@@ -1063,8 +1135,8 @@ function CardProdutoSelecionado({ variacao, estoqueBaixo }) {
 function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
   const [form, setForm] = useState({
     nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
-    nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
-    estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, duracaoMin: '', imagemVariacaoUrl: '',
+    nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: '', lucroTipo: 'VALOR', lucroValor: '',
+    estoqueAtual: '', estoqueMinimo: '', estoqueIdeal: '', duracaoMin: '', imagemVariacaoUrl: '',
   });
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
 
@@ -1072,7 +1144,7 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
     if (isOpen) {
       setForm({
         nome: '', descricao: '', categoriaId: '', tipo: 'FISICO', imagemUrl: '',
-        nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0,
+        nomeVariacao: 'Padrao', sku: '', preco: 0, precoCusto: 0, lucroTipo: 'VALOR', lucroValor: 0,
         estoqueAtual: 0, estoqueMinimo: 0, estoqueIdeal: 0, duracaoMin: '', imagemVariacaoUrl: '',
       });
       setTempsParaLimpar([]);
@@ -1132,8 +1204,10 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
       variacoes: [{
         nome: form.nomeVariacao || 'Padrao',
         sku: form.sku || null,
-        preco: parseFloat(form.preco) || 0,
         precoCusto: parseFloat(form.precoCusto) || 0,
+        lucroTipo: form.lucroTipo || 'VALOR',
+        lucroValor: parseFloat(form.lucroValor) || 0,
+        preco: calcularPrecoVenda(form.precoCusto, form.lucroTipo, form.lucroValor),
         estoqueAtual: parseInt(form.estoqueAtual) || 0,
         estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
         estoqueIdeal: parseInt(form.estoqueIdeal) || 0,
@@ -1200,7 +1274,6 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
           value={form.descricao}
           onChange={(e) => setForm({ ...form, descricao: e.target.value })}
           rows={2}
-          placeholder="Detalhes que ajudam na venda (ex.: 100% algodão, fabricado em SP)"
         />
 
         {/* Sem seletor de Tipo: Estoque cadastra so produtos fisicos.
@@ -1219,77 +1292,48 @@ function ModalProduto({ isOpen, onClose, categorias, onSalvar }) {
             <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 size="lg"
-                label="Tem cor/tamanho diferente?"
+                label={rotuloAjuda('Tem cor/tamanho diferente?', "Ex.: 'Tamanho M', 'Cor azul'. Se o produto vem em uma versão só, deixe 'Padrão'.")}
                 value={form.nomeVariacao}
                 onChange={(e) => setForm({ ...form, nomeVariacao: e.target.value })}
-                placeholder="Padrão, Tamanho M, Cor azul..."
                 required
-                hint="Ex.: 'Tamanho M', 'Cor azul'. Se o produto vem em uma versão só, deixe 'Padrão'."
               />
               <Input
                 size="lg"
-                label="Código do produto (opcional)"
+                label={rotuloAjuda('Código do produto', 'Um apelido seu pra achar rápido (também chamado de SKU). Opcional.')}
                 value={form.sku}
                 onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                placeholder="Ex.: CAM-AZUL-M"
-                hint="Um apelido seu pra achar rápido (também chamado de SKU)."
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              size="lg"
-              label="Por quanto você vende (R$)"
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.preco}
-              onChange={(e) => setForm({ ...form, preco: e.target.value })}
-              required
-              hint="O valor que o cliente paga."
-            />
-            <Input
-              size="lg"
-              label="Quanto você pagou (R$)"
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.precoCusto}
-              onChange={(e) => setForm({ ...form, precoCusto: e.target.value })}
-              hint="Quanto custou pra você comprar/fazer cada um. Serve pra saber o lucro."
-            />
-          </div>
+          <CampoCustoLucro form={form} setForm={setForm} />
 
           {/* Estoque so cadastra produtos fisicos — campos de quantidade
               sempre visiveis. Servicos com duracao vao pro Catalogo. */}
           <div className="grid grid-cols-3 gap-4 mt-4">
             <Input
               size="lg"
-              label="Quanto tem hoje?"
+              label={rotuloAjuda('Quanto tem hoje?', 'A quantidade que está disponível na loja agora.')}
               type="number"
               min="0"
               value={form.estoqueAtual}
               onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })}
-              hint="A quantidade que está disponível na loja agora."
             />
             <Input
               size="lg"
-              label="Avisar quando tiver"
+              label={rotuloAjuda('Avisar quando tiver', 'Quando chegar nessa quantidade, o sistema avisa que está acabando.')}
               type="number"
               min="0"
               value={form.estoqueMinimo}
               onChange={(e) => setForm({ ...form, estoqueMinimo: e.target.value })}
-              hint="Quando chegar nessa quantidade, o sistema avisa que está acabando."
             />
             <Input
               size="lg"
-              label="Quanto comprar quando acabar"
+              label={rotuloAjuda('Quanto comprar quando acabar', 'Quando precisar repor, é essa quantidade que você compra.')}
               type="number"
               min="0"
               value={form.estoqueIdeal}
               onChange={(e) => setForm({ ...form, estoqueIdeal: e.target.value })}
-              hint="Quando precisar repor, é essa quantidade que você compra."
             />
           </div>
         </div>

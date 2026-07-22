@@ -137,7 +137,7 @@ export default function BotsClientePage() {
   }
 
   return (
-    <div className="space-y-5 max-w-[1000px]">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">Bot WhatsApp</h1>
         <p className="text-sm text-[var(--text-muted)] mt-1">
@@ -152,7 +152,7 @@ export default function BotsClientePage() {
             icon={BotIcon}
             title="Nenhum bot ainda"
             description="Crie o bot do seu WhatsApp para comecar a configurar a conexao e o atendimento."
-            action={<Button variant="accent" icon={Plus} onClick={criarBot}>Criar bot</Button>}
+            action={<Button variant="primary" icon={Plus} onClick={criarBot}>Criar bot</Button>}
           />
         </Card>
       ) : (
@@ -168,7 +168,7 @@ export default function BotsClientePage() {
                 <Badge variant={online ? 'success' : 'neutral'} size="sm">
                   {online ? <Wifi size={12} /> : <WifiOff size={12} />} {online ? 'Online' : 'Offline'}
                 </Badge>
-                <Button variant={online ? 'secondary' : 'accent'} size="sm" onClick={alternarStatus}>
+                <Button variant={online ? 'secondary' : 'primary'} size="sm" onClick={alternarStatus}>
                   {online ? 'Desligar' : 'Ligar'}
                 </Button>
               </div>
@@ -209,7 +209,7 @@ export default function BotsClientePage() {
             </div>
 
             <div className="flex justify-end mt-5">
-              <Button variant="accent" onClick={salvarCanal} loading={salvandoCanal}>Salvar conexao</Button>
+              <Button variant="primary" onClick={salvarCanal} loading={salvandoCanal}>Salvar conexao</Button>
             </div>
           </Card>
 

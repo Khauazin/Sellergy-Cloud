@@ -94,11 +94,16 @@ export default function PerfilPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
-        <ArrowLeft size={12} /> Voltar para configurações
-      </Link>
+    <div className="space-y-5">
+      <div>
+        <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
+          <ArrowLeft size={12} /> Configurações
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-2">Meu perfil</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Seus dados pessoais e segurança da conta.</p>
+      </div>
 
+      <div className="space-y-5 max-w-3xl">
       {/* Header com avatar real */}
       <Card padding="lg">
         <div className="flex items-center gap-4">
@@ -106,7 +111,7 @@ export default function PerfilPage() {
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-semibold tracking-tight text-[var(--text-main)]">{user?.nome}</h2>
-              <Badge variant="accent" size="sm" icon={ShieldCheck}>
+              <Badge variant="neutral" size="sm" icon={ShieldCheck}>
                 {PERFIL_LABEL[user?.perfil] || user?.perfil}
               </Badge>
             </div>
@@ -236,6 +241,7 @@ export default function PerfilPage() {
           </div>
         </form>
       </Card>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Mail, Phone, Calendar, DollarSign, Bot, Activity, Wifi, WifiOff, AlertCircle, Trash2, PauseCircle, PlayCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building2, Mail, Phone, Calendar, DollarSign, Bot, Activity, Trash2, PauseCircle, PlayCircle, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
+import { Card, CardHeader, CardTitle, Button, Badge, Avatar, EmptyState, IconButton } from '../components/ui';
 
 export default function ClientProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const currentUser = useAuthStore(state => state.user);
-  
+
   const [client, setClient] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);
@@ -45,7 +46,7 @@ export default function ClientProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-full flex items-center justify-center py-20 text-gray-500">
+      <div className="min-h-full flex items-center justify-center py-20 text-[var(--text-muted)]">
         <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
@@ -56,155 +57,129 @@ export default function ClientProfilePage() {
   const isAtivo = client.status === 'ACTIVE';
 
   return (
-    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500 max-w-7xl mx-auto">
-      
+    <div className="space-y-5">
+
       {/* Botão Voltar */}
-      <button 
+      <button
         onClick={() => navigate('/clientes')}
-        className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-medium"
+        className="flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        Voltar para Clientes
+        Voltar para clientes
       </button>
 
       {/* Cabeçalho do Perfil */}
-      <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl relative overflow-hidden">
-        {/* Glow de Status */}
-        <div className={`absolute top-[-50%] right-[-5%] w-[40%] h-[200%] rounded-full blur-[100px] pointer-events-none opacity-20 ${
-          isAtivo ? 'bg-emerald-500' : 'bg-red-500'
-        }`} />
-
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-gray-700 flex items-center justify-center shadow-2xl">
-              <Building2 className="w-10 h-10 text-gray-300" />
+      <Card padding="lg">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-main)] flex items-center justify-center flex-shrink-0">
+              <Building2 className="w-8 h-8 text-[var(--text-secondary)]" />
             </div>
             <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-3xl font-bold text-white tracking-tight">{client.nome}</h1>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
-                  isAtivo ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                  'bg-red-500/10 text-red-400 border-red-500/20'
-                }`}>
+              <div className="flex items-center gap-3 mb-1 flex-wrap">
+                <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">{client.nome}</h1>
+                <Badge variant={isAtivo ? 'success' : 'warning'} size="sm">
                   {isAtivo ? 'Ativo' : 'Suspenso'}
-                </span>
+                </Badge>
               </div>
-              <p className="text-gray-400">{client.segmento || 'Sem segmento definido'}</p>
+              <p className="text-sm text-[var(--text-muted)]">{client.segmento || 'Sem segmento definido'}</p>
             </div>
           </div>
 
           {currentUser?.perfil === 'ADMIN' && (
             <div className="flex items-center gap-3 w-full md:w-auto">
-              <button 
+              <Button
                 onClick={handleToggleStatus}
                 disabled={isTogglingStatus}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all shadow-lg ${
-                  isAtivo 
-                    ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 shadow-red-500/10' 
-                    : 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-emerald-500/20'
-                }`}
+                loading={isTogglingStatus}
+                variant={isAtivo ? 'danger-soft' : 'primary'}
+                icon={isTogglingStatus ? undefined : (isAtivo ? PauseCircle : PlayCircle)}
+                fullWidth
+                className="md:w-auto"
               >
-                {isTogglingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : 
-                 isAtivo ? <><PauseCircle className="w-4 h-4" /> Suspender Cliente</> : <><PlayCircle className="w-4 h-4" /> Reativar Cliente</>}
-              </button>
+                {isAtivo ? 'Suspender cliente' : 'Reativar cliente'}
+              </Button>
             </div>
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-10 relative z-10 border-t border-white/5 pt-8">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/10 rounded-lg"><Mail className="w-5 h-5 text-blue-400" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">E-mail</p>
-              <p className="text-sm text-gray-200 truncate">{client.email || 'Não informado'}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg"><Phone className="w-5 h-5 text-indigo-400" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Telefone</p>
-              <p className="text-sm text-gray-200">{client.telefone || 'Não informado'}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg"><DollarSign className="w-5 h-5 text-emerald-400" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mensalidade</p>
-              <p className="text-sm font-bold text-white">R$ {(client.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/10 rounded-lg"><Calendar className="w-5 h-5 text-purple-400" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Criado em</p>
-              <p className="text-sm text-gray-200">{new Date(client.criadoEm).toLocaleDateString('pt-BR')}</p>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mt-8 border-t border-[var(--border-subtle)] pt-6">
+          <InfoLinha icon={Mail} label="E-mail" valor={client.email || 'Não informado'} truncate />
+          <InfoLinha icon={Phone} label="Telefone" valor={client.telefone || 'Não informado'} />
+          <InfoLinha
+            icon={DollarSign}
+            label="Mensalidade"
+            valor={`R$ ${(client.mensalidade || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+            forte
+          />
+          <InfoLinha icon={Calendar} label="Criado em" valor={new Date(client.criadoEm).toLocaleDateString('pt-BR')} />
         </div>
-      </div>
+      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
         {/* Painel Central: Automações/Bots */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Bot className="w-5 h-5 text-blue-400" /> 
-              Robôs Ativos ({client.bots?.length || 0})
+            <h2 className="text-base font-semibold tracking-tight text-[var(--text-main)] flex items-center gap-2">
+              <Bot className="w-4 h-4 text-[var(--text-muted)]" />
+              Robôs ativos ({client.bots?.length || 0})
             </h2>
             {currentUser?.perfil === 'ADMIN' && (
-              <span className="text-sm text-gray-500 font-medium">
-                Admin view
+              <span className="text-xs text-[var(--text-muted)] font-medium">
+                Visão de admin
               </span>
             )}
           </div>
 
           {client.bots?.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 border-dashed rounded-2xl p-10 text-center">
-              <Bot className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 font-medium">Nenhum bot associado a este cliente.</p>
-              <p className="text-gray-500 text-sm mt-1">Crie um bot na aba Bots (IA) e vincule a ele.</p>
-            </div>
+            <Card padding="lg">
+              <EmptyState
+                icon={Bot}
+                title="Nenhum bot associado a este cliente"
+                description="Crie um bot na aba Bots (IA) e vincule a ele."
+              />
+            </Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {client.bots.map(bot => (
-                <div key={bot.id} className="bg-black/40 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-colors">
+                <Card key={bot.id} padding="md" className="hover:border-[var(--border-strong)] transition-colors">
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-white font-semibold flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[var(--text-main)] flex items-center gap-2">
                       {bot.nome}
                     </h3>
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                      bot.status === 'ONLINE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                      bot.status === 'ERROR' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
-                      'bg-gray-500/10 text-gray-400 border-gray-500/20'
-                    }`}>
+                    <Badge
+                      variant={bot.status === 'ONLINE' ? 'success' : bot.status === 'ERROR' ? 'danger' : 'neutral'}
+                      size="sm"
+                    >
                       {bot.status === 'ONLINE' ? 'ONLINE' : bot.status}
-                    </span>
+                    </Badge>
                   </div>
                   <div className="flex justify-between items-center mb-4">
-                    <p className="text-xs text-gray-500">Canal: {bot.canal}</p>
+                    <p className="text-xs text-[var(--text-muted)]">Canal: {bot.canal}</p>
                     {currentUser?.perfil === 'ADMIN' && (
-                      <button 
+                      <IconButton
+                        icon={Bot}
+                        variant="ghost"
+                        size="sm"
+                        ariaLabel="Abrir construtor de fluxo"
+                        title="Abrir construtor de fluxo"
                         onClick={() => navigate(`/admin/builder/${bot.id}`)}
-                        className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
-                        title="Abrir Construtor de Fluxo"
-                      >
-                        <Bot className="w-4 h-4" />
-                      </button>
+                      />
                     )}
                   </div>
-                  
-                  <div className="flex items-center justify-between pt-3 border-t border-white/5">
+
+                  <div className="flex items-center justify-between pt-3 border-t border-[var(--border-subtle)]">
                     <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">Msgs Hoje</p>
-                      <p className="text-white text-sm font-medium">{bot.mensagensHoje}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-wider">Msgs hoje</p>
+                      <p className="text-sm font-medium text-[var(--text-main)] tabular-nums">{bot.mensagensHoje}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] text-gray-500 uppercase font-bold">Total Tráfego</p>
-                      <p className="text-white text-sm font-medium">{bot.totalMensagens}</p>
+                      <p className="text-[10px] text-[var(--text-muted)] uppercase font-bold tracking-wider">Total tráfego</p>
+                      <p className="text-sm font-medium text-[var(--text-main)] tabular-nums">{bot.totalMensagens}</p>
                     </div>
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           )}
@@ -212,48 +187,60 @@ export default function ClientProfilePage() {
 
         {/* Painel Lateral: Insights (Mockados para Fase Atual) */}
         <div className="space-y-4">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Activity className="w-5 h-5 text-amber-400" /> 
-            Plano & Faturamento
+          <h2 className="text-base font-semibold tracking-tight text-[var(--text-main)] flex items-center gap-2">
+            <Activity className="w-4 h-4 text-[var(--text-muted)]" />
+            Plano e faturamento
           </h2>
-          
-          <div className="bg-gradient-to-br from-[#1a1a24] to-[#12121a] border border-white/10 rounded-2xl p-6">
+
+          <Card padding="lg">
             <div className="flex items-center justify-between mb-6">
-              <span className="text-gray-400 text-sm">Plano Contratado</span>
-              <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs font-bold border border-indigo-500/30">
-                {client.plano}
-              </span>
+              <span className="text-sm text-[var(--text-secondary)]">Plano contratado</span>
+              <Badge variant="neutral" size="sm">{client.plano}</Badge>
             </div>
 
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-400">Limite de Disparos</span>
-                  <span className="text-white font-medium">
+                <div className="flex justify-between text-sm mb-1.5">
+                  <span className="text-[var(--text-secondary)]">Limite de disparos</span>
+                  <span className="text-[var(--text-main)] font-medium tabular-nums">
                     {client.bots?.reduce((acc, b) => acc + b.mensagensHoje, 0) || 0} / {client.plano === 'PREMIUM' ? 'Ilimitado' : '10.000'}
                   </span>
                 </div>
-                <div className="w-full bg-black/50 rounded-full h-2">
-                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: '45%' }}></div>
+                <div className="w-full bg-[var(--bg-subtle)] rounded-full h-2 overflow-hidden">
+                  <div className="bg-[var(--text-secondary)] h-2 rounded-full" style={{ width: '45%' }}></div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-white/5">
-                <p className="text-sm text-gray-400 mb-2">Última Fatura</p>
+              <div className="pt-4 border-t border-[var(--border-subtle)]">
+                <p className="text-sm text-[var(--text-secondary)] mb-2">Última fatura</p>
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
+                  <div className="w-8 h-8 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-[var(--success-text)]" />
                   </div>
                   <div>
-                    <p className="text-white text-sm font-medium">Paga via Pix</p>
-                    <p className="text-xs text-gray-500">Há 12 dias</p>
+                    <p className="text-sm font-medium text-[var(--text-main)]">Paga via Pix</p>
+                    <p className="text-xs text-[var(--text-muted)]">Há 12 dias</p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+function InfoLinha({ icon: Icon, label, valor, truncate, forte }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0">
+        <Icon className="w-4 h-4 text-[var(--text-secondary)]" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-wider">{label}</p>
+        <p className={`text-sm ${forte ? 'font-semibold text-[var(--text-main)] tabular-nums' : 'text-[var(--text-secondary)]'} ${truncate ? 'truncate' : ''}`}>{valor}</p>
       </div>
     </div>
   );

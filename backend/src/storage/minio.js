@@ -17,7 +17,14 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand, HeadBucketCommand, CreateBucketCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
+// ENDPOINT = como o BACKEND conecta no MinIO. Dentro do Docker precisa ser o
+//   nome do servico: http://minio:9000 (localhost apontaria pro proprio backend).
+// PUBLIC_ENDPOINT = host que o NAVEGADOR usa nas URLs (assinadas/publicas).
+//   Local: http://localhost:9000. Prod: https://cdn.seu-dominio. Se nao setar,
+//   cai no ENDPOINT. Separar os dois resolve o "backend fala minio:9000 mas o
+//   browser precisa de localhost/cdn".
 const ENDPOINT = process.env.MINIO_ENDPOINT || 'http://localhost:9000';
+const PUBLIC_ENDPOINT = process.env.MINIO_PUBLIC_ENDPOINT || ENDPOINT;
 const REGION = process.env.MINIO_REGION || 'us-east-1';
 const BUCKET = process.env.MINIO_BUCKET_MIDIA || 'sellergy-midia';
 const ACCESS_KEY = process.env.MINIO_ACCESS_KEY;
@@ -28,16 +35,30 @@ if (!ACCESS_KEY || !SECRET_KEY) {
   console.warn('[storage/minio] MINIO_ACCESS_KEY/SECRET_KEY nao configuradas — uploads vao falhar.');
 }
 
+const credentials = { accessKeyId: ACCESS_KEY || '', secretAccessKey: SECRET_KEY || '' };
+
+// Cliente de OPERACAO (upload/head/delete) — usa o endpoint interno.
 const cliente = new S3Client({
   endpoint: ENDPOINT,
   region: REGION,
-  credentials: {
-    accessKeyId: ACCESS_KEY || '',
-    secretAccessKey: SECRET_KEY || '',
-  },
+  credentials,
   forcePathStyle: true, // Necessario para MinIO (compativel S3 path-style)
   tls: USE_SSL,
 });
+
+// Cliente so pra ASSINAR a URL que vai pro navegador. getSignedUrl NAO faz
+// request de rede — so calcula a assinatura pro host publico. Como a assinatura
+// SigV4 inclui o host, nao da pra trocar o host de uma URL ja assinada: tem que
+// assinar com o endpoint publico. Se publico == interno, reusa o cliente.
+const clientePublico = PUBLIC_ENDPOINT === ENDPOINT
+  ? cliente
+  : new S3Client({
+      endpoint: PUBLIC_ENDPOINT,
+      region: REGION,
+      credentials,
+      forcePathStyle: true,
+      tls: PUBLIC_ENDPOINT.startsWith('https'),
+    });
 
 async function upload({ key, body, contentType, cacheControl = 'public, max-age=31536000, immutable' }) {
   if (!key || !body) throw new Error('upload: `key` e `body` sao obrigatorios.');
@@ -56,16 +77,17 @@ async function remover(key) {
   await cliente.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
 }
 
-// URL publica direta. Funciona porque o bucket esta em "anonymous read".
+// URL "canonica" gravada no banco — usa o endpoint PUBLICO (o que o navegador
+// enxerga), nao o interno do Docker.
 function urlPublica(key) {
-  const base = ENDPOINT.replace(/\/$/, '');
+  const base = PUBLIC_ENDPOINT.replace(/\/$/, '');
   return `${base}/${BUCKET}/${encodeURI(key)}`;
 }
 
 // Util pra extrair a key (caminho dentro do bucket) de uma URL publica.
 function chaveDeUrl(url) {
   if (typeof url !== 'string' || !url) return null;
-  const base = ENDPOINT.replace(/\/$/, '');
+  const base = PUBLIC_ENDPOINT.replace(/\/$/, '');
   const prefixo = `${base}/${BUCKET}/`;
   if (!url.startsWith(prefixo)) return null;
   return decodeURI(url.slice(prefixo.length));
@@ -110,7 +132,8 @@ async function urlAssinada(key, { expiraEm = TTL_PRE_SIGNED_SEGUNDOS } = {}) {
   }
 
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
-  const url = await getSignedUrl(cliente, command, { expiresIn: expiraEm });
+  // Assina com o cliente PUBLICO -> a URL aponta pro host que o navegador acessa.
+  const url = await getSignedUrl(clientePublico, command, { expiresIn: expiraEm });
 
   cacheUrlsAssinadas.set(key, {
     url,

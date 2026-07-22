@@ -5,13 +5,15 @@ const {
   requerModuloLiberado,
   requerPermissao,
 } = require('../middlewares/permissoes.middleware');
+const { cacheResposta } = require('../middlewares/cache.middleware');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
 roteador.use(requerModuloLiberado('ESTOQUE'));
 
-roteador.get('/dashboard', requerPermissao('ESTOQUE', 'visualizar'), EstoqueController.dashboard);
-roteador.get('/reposicao', requerPermissao('ESTOQUE', 'visualizar'), EstoqueController.listaReposicao);
+// Agregacoes (percorrem todas as variacoes) -> cache curto por tenant+usuario.
+roteador.get('/dashboard', requerPermissao('ESTOQUE', 'visualizar'), cacheResposta('estoque:dashboard', 60), EstoqueController.dashboard);
+roteador.get('/reposicao', requerPermissao('ESTOQUE', 'visualizar'), cacheResposta('estoque:reposicao', 60), EstoqueController.listaReposicao);
 roteador.get('/movimentacoes', requerPermissao('ESTOQUE', 'visualizar'), EstoqueController.listarMovimentacoes);
 roteador.get('/saldo/:variacaoId', requerPermissao('ESTOQUE', 'visualizar'), EstoqueController.buscarSaldoPorVariacao);
 roteador.post('/movimentar', requerPermissao('ESTOQUE', 'criar'), (req, res) => EstoqueController.registrarMovimentacao(req, res));

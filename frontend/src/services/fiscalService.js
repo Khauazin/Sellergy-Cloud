@@ -23,6 +23,11 @@ export async function emitir(dados) {
   return r.data;
 }
 
+export async function obterDocumento(id) {
+  const r = await api.get(`/fiscal/documentos/${id}`);
+  return r.data;
+}
+
 export async function sincronizar(id) {
   const r = await api.post(`/fiscal/documentos/${id}/sincronizar`);
   return r.data;
@@ -33,4 +38,4 @@ export async function cancelar(id, motivo) {
   return r.data;
 }
 
-export default { obterConfig, salvarConfig, listarDocumentos, emitir, sincronizar, cancelar };
+export default { obterConfig, salvarConfig, listarDocumentos, emitir, obterDocumento, sincronizar, cancelar };

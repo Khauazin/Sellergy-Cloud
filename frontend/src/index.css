@@ -68,12 +68,12 @@
   --shadow-lg:  0 20px 48px rgba(10, 10, 10, 0.08);
   --shadow-focus: 0 0 0 3px rgba(196, 112, 74, 0.15);
 
-  /* ── Raios ───────────────────────────────────────────────── */
-  --radius-sm:    8px;
-  --radius-md:    12px;
-  --radius-lg:    16px;
-  --radius-xl:    20px;
-  --radius-2xl:   24px;
+  /* ── Raios — apertados, traço de ferramenta (nao "app fofo") ─ */
+  --radius-sm:    6px;
+  --radius-md:    8px;
+  --radius-lg:    10px;
+  --radius-xl:    12px;
+  --radius-2xl:   14px;
   --radius-full:  9999px;
 }
 

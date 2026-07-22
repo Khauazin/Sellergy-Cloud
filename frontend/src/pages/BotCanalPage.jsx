@@ -99,7 +99,7 @@ export default function BotCanalPage() {
   const urlReceiver = `${urlPublica()}/canais/whatsapp/${botId}`;
 
   return (
-    <div className="space-y-5 max-w-[1100px]">
+    <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Link to="/admin/bots">
           <Button variant="ghost" icon={ArrowLeft} size="sm">Voltar para bots</Button>
@@ -112,7 +112,7 @@ export default function BotCanalPage() {
 
       <Card padding="md">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border-subtle)] flex items-center justify-center flex-shrink-0">
             <BotIcon size={18} strokeWidth={1.75} />
           </div>
           <div className="flex-1 min-w-0">

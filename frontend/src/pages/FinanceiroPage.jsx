@@ -446,7 +446,7 @@ export default function FinanceiroPage() {
         />
         <KpiCard
           icon={DollarSign}
-          color="accent"
+          color="neutral"
           label="Saldo do mês"
           valor={fmtBRL((resumo?.totalReceitas || 0) - (resumo?.totalDespesas || 0))}
         />
@@ -558,10 +558,10 @@ export default function FinanceiroPage() {
           {/* Barra de acoes em lote — aparece quando >=1 selecionado.
               Permite marcar varios como pagos numa tacada so. */}
           {selecionados.size > 0 && (
-            <div className="flex items-center justify-between gap-3 px-4 py-3 mb-3 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent)]/30">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 mb-3 rounded-xl bg-[var(--bg-subtle)] text-[var(--text-main)] border border-[var(--border-main)]">
               <div className="flex items-center gap-3">
-                <CheckCircle2 size={18} strokeWidth={2} />
-                <span className="text-sm font-semibold">
+                <CheckCircle2 size={18} strokeWidth={2} className="text-[var(--accent)]" />
+                <span className="text-sm font-semibold tabular-nums">
                   {selecionados.size} {selecionados.size === 1 ? 'lançamento selecionado' : 'lançamentos selecionados'}
                 </span>
               </div>
@@ -627,7 +627,7 @@ export default function FinanceiroPage() {
                         onClick={() => setDrawer({ open: true, lanc: l })}
                         className={`border-b border-[var(--border-subtle)] cursor-pointer transition-colors ${
                           estaSelecionado
-                            ? 'bg-[var(--accent-soft)]/30 hover:bg-[var(--accent-soft)]/50'
+                            ? 'bg-[var(--bg-subtle)] hover:bg-[var(--bg-subtle)]'
                             : 'hover:bg-[var(--bg-subtle)]/50'
                         }`}
                       >
@@ -1399,7 +1399,7 @@ function DrawerLancamento({ isOpen, onClose, lanc, onEditar, onExcluir, onStatus
           {lanc.lead?.nome ? (
             <Link
               to="/app/crm"
-              className="block p-3 rounded-xl bg-[var(--bg-subtle)] hover:bg-[var(--accent-soft)]/40 transition-colors group"
+              className="block p-3 rounded-xl bg-[var(--bg-subtle)] hover:bg-[var(--bg-subtle)] hover:brightness-95 transition-all group"
             >
               <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Lead</div>
               <div className="text-sm font-medium text-[var(--text-main)] mt-0.5 flex items-center gap-1.5">
@@ -2124,7 +2124,7 @@ function ModalPagarConta({ isOpen, onClose, contaSelecionada, contas, sessaoCaix
         />
 
         {/* Toggle: tirar do caixa ou não */}
-        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${tirarDoCaixa ? 'border-[var(--accent)] bg-[var(--accent-soft)]/30' : 'border-[var(--border-main)]'}`}>
+        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${tirarDoCaixa ? 'border-[var(--text-main)] bg-[var(--bg-subtle)]' : 'border-[var(--border-main)]'}`}>
           <input
             type="checkbox"
             checked={tirarDoCaixa}
@@ -2380,7 +2380,7 @@ function ModalCobranca({ isOpen, onClose, dados, onEnviar }) {
                 key={chave}
                 type="button"
                 onClick={() => inserirVariavel(chave)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-[var(--border-main)] bg-[var(--bg-card)] hover:bg-[var(--accent-soft)] hover:border-[var(--accent)] transition-colors text-left"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-[var(--border-main)] bg-[var(--bg-card)] hover:bg-[var(--bg-subtle)] hover:border-[var(--text-muted)] transition-colors text-left"
                 title={`Sera substituido por: ${valor}`}
               >
                 <span className="text-[var(--text-secondary)]">{'{'}{chave}{'}'}</span>

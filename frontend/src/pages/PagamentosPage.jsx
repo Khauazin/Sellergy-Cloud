@@ -32,6 +32,7 @@ export default function PagamentosPage() {
   const [salvando, setSalvando] = useState(false);
   const [form, setForm] = useState({ provedor: '', credencialId: '', ativo: true });
   const [drawerAberto, setDrawerAberto] = useState(false);
+  const [configAtiva, setConfigAtiva] = useState(false);
 
   const carregar = async () => {
     setCarregando(true);
@@ -43,6 +44,7 @@ export default function PagamentosPage() {
       ]);
       setCredenciais(creds);
       setCobrancas(cobs);
+      setConfigAtiva(!!(cfg?.provedor && cfg?.ativo));
       setForm({
         provedor: cfg?.provedor || '',
         credencialId: cfg?.credencialId || '',
@@ -67,7 +69,8 @@ export default function PagamentosPage() {
     if (!form.provedor) return toast.error('Escolha um provedor.');
     setSalvando(true);
     try {
-      await pagamentosService.salvarConfig(form);
+      const salvo = await pagamentosService.salvarConfig(form);
+      setConfigAtiva(!!(salvo?.provedor && salvo?.ativo));
       toast.success('Configuracao de pagamento salva.');
     } catch (e) {
       toast.error(e.response?.data?.erro || 'Falha ao salvar configuracao.');
@@ -92,7 +95,7 @@ export default function PagamentosPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-[1100px]">
+    <div className="space-y-5">
       <div>
         <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
           Configuracoes
@@ -155,7 +158,7 @@ export default function PagamentosPage() {
             />
             Ativo
           </label>
-          <Button variant="accent" onClick={salvarConfig} loading={salvando} disabled={!form.provedor}>
+          <Button variant="primary" onClick={salvarConfig} loading={salvando} disabled={!form.provedor}>
             Salvar configuracao
           </Button>
         </div>
@@ -170,7 +173,7 @@ export default function PagamentosPage() {
             </CardTitle>
             <CardDescription>Pix e links gerados, com status de confirmacao.</CardDescription>
           </div>
-          <Button variant="accent" icon={Plus} onClick={() => setDrawerAberto(true)} disabled={!form.provedor}>
+          <Button variant="primary" icon={Plus} onClick={() => setDrawerAberto(true)} disabled={!configAtiva} title={!configAtiva ? 'Salve a configuracao (provedor + ativo) antes de cobrar' : undefined}>
             Nova cobranca
           </Button>
         </CardHeader>
@@ -301,7 +304,7 @@ function NovaCobrancaDrawer({ aberto, onClose, onCriada }) {
             onChange={(e) => setForm({ ...form, descricao: e.target.value })}
             placeholder="Ex: Consulta, Pedido #123"
           />
-          <Button variant="accent" onClick={criar} loading={enviando} className="w-full">
+          <Button variant="primary" onClick={criar} loading={enviando} className="w-full">
             Gerar cobranca
           </Button>
         </div>

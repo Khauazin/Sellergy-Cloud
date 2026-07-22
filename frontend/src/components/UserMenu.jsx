@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, Sun, Moon, ChevronDown, ShieldCheck } from 'lucide-react';
+import { User, Settings, LogOut, Sun, Moon, ChevronDown } from 'lucide-react';
 import { useAuthStore } from '../store/auth.store';
 import { useUiStore } from '../store/ui.store';
 import { Avatar, Dropdown, DropdownItem, DropdownDivider, DropdownLabel } from './ui';
@@ -21,7 +21,6 @@ export default function UserMenu() {
   const ehAdmin = user?.perfil === 'ADMIN';
   const rotaConfig = ehAdmin ? '/admin/configuracoes' : '/app/configuracoes';
   const rotaPerfil = ehAdmin ? '/admin/configuracoes/perfil' : '/app/configuracoes/perfil';
-  const rotaUsuarios = ehAdmin ? '/admin/usuarios' : '/app/usuarios';
 
   const tagPerfil = {
     ADMIN: 'Administrador do sistema',
@@ -51,9 +50,6 @@ export default function UserMenu() {
       <DropdownLabel>{user?.email}</DropdownLabel>
       <DropdownItem icon={User} onClick={() => navigate(rotaPerfil)}>
         Meu perfil
-      </DropdownItem>
-      <DropdownItem icon={ShieldCheck} onClick={() => navigate(rotaUsuarios)}>
-        Usuarios
       </DropdownItem>
       <DropdownItem icon={Settings} onClick={() => navigate(rotaConfig)}>
         Configuracoes

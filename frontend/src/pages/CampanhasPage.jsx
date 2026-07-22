@@ -50,8 +50,15 @@ export default function CampanhasPage() {
 
   return (
     <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">Campanhas</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">
+          Reative clientes que compraram e ainda não voltaram.
+        </p>
+      </div>
+
       {/* Aviso de escopo: v1 e acao manual; disparo em massa e fase 2. */}
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-[var(--info-soft)] text-[var(--info-text)]">
+      <div className="flex items-start gap-3 p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--info-soft)] text-[var(--info-text)]">
         <Info size={18} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
         <div className="text-sm leading-relaxed">
           <strong>Recompra.</strong> Clientes que compraram ha um tempo e ainda nao voltaram. Fale com eles
@@ -63,7 +70,7 @@ export default function CampanhasPage() {
       {/* Controles */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Repeat size={18} className="text-[var(--accent)]" />
+          <Repeat size={18} className="text-[var(--text-muted)]" />
           <h2 className="text-base font-semibold tracking-tight text-[var(--text-main)]">Fila de recompra</h2>
           {!carregando && <Badge variant="neutral" size="sm">{candidatos.length}</Badge>}
         </div>

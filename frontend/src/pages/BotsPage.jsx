@@ -143,7 +143,7 @@ export default function BotsPage() {
         <KpiCard icon={Bot} color="neutral" label="Total" valor={stats.total} />
         <KpiCard icon={Wifi} color="success" label="Online" valor={stats.online} />
         <KpiCard icon={AlertCircle} color="danger" label="Em erro" valor={stats.erro} />
-        <KpiCard icon={MessageCircle} color="accent" label="Mensagens" valor={stats.msgs.toLocaleString('pt-BR')} />
+        <KpiCard icon={MessageCircle} color="neutral" label="Mensagens" valor={stats.msgs.toLocaleString('pt-BR')} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -203,7 +203,7 @@ export default function BotsPage() {
                   <tr key={b.id} onClick={() => setDrawer({ open: true, bot: b })} className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors">
                     <td className="py-3 px-5">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+                        <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border-subtle)] flex items-center justify-center flex-shrink-0">
                           <Bot size={16} strokeWidth={1.75} />
                         </div>
                         <div>
@@ -437,7 +437,7 @@ function DrawerBot({ isOpen, onClose, bot, cliente, onEditar, onExcluir, onDupli
     >
       <div className="space-y-5">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border-subtle)] flex items-center justify-center">
             <Bot size={20} strokeWidth={1.75} />
           </div>
           <div className="flex-1">

@@ -7,7 +7,8 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
-    "worker:dev": "nodemon src/worker.js"
+    "worker:dev": "nodemon src/worker.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1040.0",

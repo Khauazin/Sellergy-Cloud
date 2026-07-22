@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Key, Plus, Trash2, Pencil, Lock, ArrowLeft, Sparkles, Globe, MessageCircle,
+  Key, Plus, Trash2, Pencil, Lock, ArrowLeft, Sparkles, Globe, MessageCircle, CreditCard, Receipt,
 } from 'lucide-react';
 import {
   Card, CardHeader, CardTitle, CardDescription, Button, Badge, EmptyState,
@@ -10,14 +10,32 @@ import {
 import credenciaisService from '../services/credenciaisService';
 
 const ROTULOS_TIPO = {
-  OPENAI_API_KEY: { rotulo: 'OpenAI', cor: 'accent', categoria: 'IA', icone: Sparkles },
-  ANTHROPIC_API_KEY: { rotulo: 'Anthropic Claude', cor: 'accent', categoria: 'IA', icone: Sparkles },
-  GEMINI_API_KEY: { rotulo: 'Google Gemini', cor: 'accent', categoria: 'IA', icone: Sparkles },
-  WHATSAPP_CLOUD_TOKEN: { rotulo: 'WhatsApp Cloud API', cor: 'success', categoria: 'Canal', icone: MessageCircle },
+  WHATSAPP_CLOUD_TOKEN: { rotulo: 'WhatsApp Cloud API', cor: 'success', categoria: 'Bot', icone: MessageCircle },
+  MERCADO_PAGO_KEY: { rotulo: 'Mercado Pago', cor: 'accent', categoria: 'Pagamento', icone: CreditCard },
+  ASAAS_KEY: { rotulo: 'Asaas', cor: 'accent', categoria: 'Pagamento', icone: CreditCard },
+  PAGARME_KEY: { rotulo: 'Pagar.me', cor: 'accent', categoria: 'Pagamento', icone: CreditCard },
+  FOCUS_NFE_KEY: { rotulo: 'Focus NFe', cor: 'info', categoria: 'Fiscal', icone: Receipt },
+  NUVEM_FISCAL_KEY: { rotulo: 'Nuvem Fiscal', cor: 'info', categoria: 'Fiscal', icone: Receipt },
   HTTP_BEARER: { rotulo: 'HTTP Bearer Token', cor: 'neutral', categoria: 'HTTP', icone: Globe },
   HTTP_BASIC: { rotulo: 'HTTP Basic (usuario/senha)', cor: 'neutral', categoria: 'HTTP', icone: Globe },
   HTTP_API_KEY: { rotulo: 'HTTP API Key (header customizado)', cor: 'neutral', categoria: 'HTTP', icone: Globe },
   OUTRO: { rotulo: 'Outro', cor: 'neutral', categoria: 'Outro', icone: Key },
+};
+
+// Rotulos claros pros campos de `dados` (a chave que o usuario digita por tipo).
+const ROTULOS_CAMPO = {
+  accessToken: 'Access token',
+  apiKey: 'Chave de API',
+  secretKey: 'Chave secreta',
+  token: 'Token de API',
+  webhookSecret: 'Segredo do webhook (validacao de assinatura)',
+  phoneNumberId: 'ID do numero (phoneNumberId)',
+  businessAccountId: 'ID da conta comercial (WABA)',
+  usuario: 'Usuario',
+  senha: 'Senha',
+  headerName: 'Nome do header',
+  key: 'Valor da chave',
+  organizationId: 'ID da organizacao',
 };
 
 export default function CredenciaisPage() {
@@ -58,7 +76,7 @@ export default function CredenciaisPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-[1100px]">
+    <div className="space-y-5">
       <div>
         <Link to="/app/configuracoes" className="text-xs text-[var(--text-muted)] inline-flex items-center gap-1 hover:text-[var(--text-main)]">
           <ArrowLeft size={12} /> Voltar para configuracoes
@@ -78,7 +96,7 @@ export default function CredenciaisPage() {
               <span className="inline-flex items-center gap-1.5"><Lock size={11} /> AES-256-GCM com chave derivada por tenant.</span>
             </CardDescription>
           </div>
-          <Button variant="accent" icon={Plus} onClick={() => setDrawer({ aberto: true, credencial: null })}>
+          <Button variant="primary" icon={Plus} onClick={() => setDrawer({ aberto: true, credencial: null })}>
             Nova credencial
           </Button>
         </CardHeader>
@@ -91,7 +109,7 @@ export default function CredenciaisPage() {
             title="Nenhuma credencial"
             description="Adicione chaves de API para que os bots possam usar OpenAI, WhatsApp, etc."
             action={
-              <Button variant="accent" icon={Plus} onClick={() => setDrawer({ aberto: true, credencial: null })}>
+              <Button variant="primary" icon={Plus} onClick={() => setDrawer({ aberto: true, credencial: null })}>
                 Cadastrar primeira
               </Button>
             }
@@ -235,7 +253,7 @@ function DrawerCredencial({ isOpen, credencial, tipos, onClose, onSalvo }) {
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button variant="accent" onClick={salvar} loading={salvando}>
+          <Button variant="primary" onClick={salvar} loading={salvando}>
             {ehEdicao ? 'Salvar alteracoes' : 'Criar credencial'}
           </Button>
         </div>
@@ -281,7 +299,7 @@ function DrawerCredencial({ isOpen, credencial, tipos, onClose, onSalvo }) {
           {schemaAtual.obrigatorios.map((campo) => (
             <Input
               key={campo}
-              label={`${campo} *`}
+              label={`${ROTULOS_CAMPO[campo] || campo} *`}
               type={campoEhSecreto(campo) ? 'password' : 'text'}
               value={form.dados[campo] || ''}
               onChange={(e) => setCampo(campo, e.target.value)}
@@ -291,7 +309,7 @@ function DrawerCredencial({ isOpen, credencial, tipos, onClose, onSalvo }) {
           {schemaAtual.opcionais.map((campo) => (
             <Input
               key={campo}
-              label={`${campo} (opcional)`}
+              label={`${ROTULOS_CAMPO[campo] || campo} (opcional)`}
               type={campoEhSecreto(campo) ? 'password' : 'text'}
               value={form.dados[campo] || ''}
               onChange={(e) => setCampo(campo, e.target.value)}

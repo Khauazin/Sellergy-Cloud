@@ -1,9 +1,9 @@
-name: sellergy
+name: sellergy_cloud
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: sellergy-postgres
+    container_name: sellergy_cloud-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER}
@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
@@ -23,7 +23,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: sellergy-pgadmin
+    container_name: sellergy_cloud-pgadmin
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
@@ -33,11 +33,11 @@ services:
     depends_on:
       - postgres
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
 
   redis:
     image: redis:7-alpine
-    container_name: sellergy-redis
+    container_name: sellergy_cloud-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
@@ -45,7 +45,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -54,7 +54,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-04-08T15-41-24Z
-    container_name: sellergy-minio
+    container_name: sellergy_cloud-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -66,7 +66,7 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 15s
@@ -77,13 +77,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: sellergy-backend
+    container_name: sellergy_cloud-backend
     restart: unless-stopped
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
+      # Dentro do Docker o backend fala com o MinIO pelo nome do servico.
+      MINIO_ENDPOINT: http://minio:9000
     ports:
       - "${BACKEND_PORT}:3333"
     volumes:
@@ -95,20 +97,22 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
     command: sh -c "npx prisma migrate deploy && npm run dev"
 
   worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: sellergy-worker
+    container_name: sellergy_cloud-worker
     restart: unless-stopped
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
+      # Dentro do Docker o backend fala com o MinIO pelo nome do servico.
+      MINIO_ENDPOINT: http://minio:9000
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -118,14 +122,14 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
     command: node src/worker.js
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: sellergy-frontend
+    container_name: sellergy_cloud-frontend
     restart: unless-stopped
     environment:
       VITE_API_URL: ${VITE_API_URL}
@@ -137,11 +141,11 @@ services:
     depends_on:
       - backend
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
 
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: sellergy-ngrok
+    container_name: sellergy_cloud-ngrok
     restart: unless-stopped
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
@@ -151,7 +155,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - sellergy-network
+      - sellergy_cloud-network
 
 volumes:
   postgres_data:
@@ -159,5 +163,5 @@ volumes:
   minio_data:
 
 networks:
-  sellergy-network:
+  sellergy_cloud-network:
     driver: bridge

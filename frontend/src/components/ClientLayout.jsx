@@ -12,11 +12,10 @@ import { moduloLiberado } from '../constants/permissoes';
 
 // Mapeamento dos itens da sidebar para os modulos do tenant.
 // Itens cujo modulo nao foi liberado pelo admin sao escondidos.
-const NAV_TENANT = [
+const NAV_OPERACAO = [
   { to: '/app/dashboard', label: 'Início', icon: LayoutDashboard, modulo: null },
   { to: '/app/crm', label: 'Clientes', icon: Kanban, modulo: 'CRM' },
   { to: '/app/agenda', label: 'Agenda', icon: Calendar, modulo: 'AGENDA' },
-  { to: '/app/especialistas', label: 'Especialistas', icon: UserCog, modulo: 'AGENDA' },
   { to: '/app/vendas', label: 'Vendas', icon: ShoppingBag, modulo: 'VENDAS' },
   { to: '/app/catalogo', label: 'Serviços', icon: Package, modulo: 'CATALOGO' },
   {
@@ -30,8 +29,13 @@ const NAV_TENANT = [
       { to: '/app/estoque/movimentacoes', label: 'Movimentações' },
       { to: '/app/estoque/reposicao', label: 'Reposição' },
       { to: '/app/estoque/categorias', label: 'Categorias' },
+      { to: '/app/estoque/fornecedores', label: 'Fornecedores' },
+      { to: '/app/estoque/notas', label: 'Entrada de nota' },
     ],
   },
+];
+
+const NAV_GESTAO = [
   {
     to: '/app/financeiro',
     label: 'Financeiro',
@@ -73,7 +77,6 @@ const TITULOS = {
   '/app/dashboard': { titulo: 'Início', breadcrumb: 'Painel' },
   '/app/crm': { titulo: 'Clientes', breadcrumb: 'Atendimento' },
   '/app/agenda': { titulo: 'Agenda', breadcrumb: 'Operacao' },
-  '/app/especialistas': { titulo: 'Especialistas', breadcrumb: 'Operacao' },
   '/app/vendas': { titulo: 'Vendas', breadcrumb: 'Operacao' },
   '/app/catalogo': { titulo: 'Serviços', breadcrumb: 'Operacao' },
   '/app/estoque': { titulo: 'Estoque', breadcrumb: 'Produtos' },
@@ -82,6 +85,8 @@ const TITULOS = {
   '/app/estoque/movimentacoes': { titulo: 'Estoque · Movimentações', breadcrumb: 'Estoque · Produtos' },
   '/app/estoque/reposicao': { titulo: 'Estoque · Reposição', breadcrumb: 'Estoque · Produtos' },
   '/app/estoque/categorias': { titulo: 'Estoque · Categorias', breadcrumb: 'Estoque · Produtos' },
+  '/app/estoque/fornecedores': { titulo: 'Estoque · Fornecedores', breadcrumb: 'Estoque · Compras' },
+  '/app/estoque/notas': { titulo: 'Estoque · Entrada de nota', breadcrumb: 'Estoque · Compras' },
   '/app/financeiro': { titulo: 'Financeiro', breadcrumb: 'Gestao' },
   '/app/financeiro/lancamentos': { titulo: 'Financeiro · Lançamentos', breadcrumb: 'Gestão' },
   '/app/financeiro/caixa': { titulo: 'Financeiro · Caixa', breadcrumb: 'Gestão' },
@@ -113,11 +118,15 @@ export default function ClientLayout() {
 
   // Filtra os itens conforme os modulos liberados pelo admin para este tenant.
   const sections = useMemo(() => {
-    const itensTenant = NAV_TENANT.filter((item) => !item.modulo || moduloLiberado(modulosLiberados, item.modulo));
-    const itensAutomacao = NAV_AUTOMACAO.filter((item) => moduloLiberado(modulosLiberados, item.modulo));
+    const filtra = (arr) => arr.filter((item) => !item.modulo || moduloLiberado(modulosLiberados, item.modulo));
+    const operacao = filtra(NAV_OPERACAO);
+    const gestao = filtra(NAV_GESTAO);
+    const automacao = NAV_AUTOMACAO.filter((item) => moduloLiberado(modulosLiberados, item.modulo));
 
-    const result = [{ items: itensTenant }];
-    if (itensAutomacao.length > 0) result.push({ titulo: 'Automacao', items: itensAutomacao });
+    const result = [];
+    if (operacao.length) result.push({ titulo: 'Operação', items: operacao });
+    if (gestao.length) result.push({ titulo: 'Gestão', items: gestao });
+    if (automacao.length) result.push({ titulo: 'Automação', items: automacao });
     return result;
   }, [modulosLiberados]);
 

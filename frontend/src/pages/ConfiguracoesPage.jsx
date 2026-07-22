@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Sun, Moon, Upload, ImageIcon, Trash2, Save, User, ShieldCheck,
+  Sun, Moon, Upload, ImageIcon, Trash2, Save, ShieldCheck,
   Building2, ChevronRight, AlertCircle, Key, Clock, Bell
 } from 'lucide-react';
 import api from '../services/api';
@@ -38,7 +38,7 @@ export default function ConfiguracoesPage() {
   const podeEditarOperacao = user?.perfil === 'CLIENT' || user?.perfil === 'ADMINISTRADOR';
 
   return (
-    <div className="space-y-5 max-w-5xl">
+    <div className="space-y-5">
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="pills">
           <TabsTrigger value="aparencia" variant="pills">Aparencia</TabsTrigger>
@@ -84,10 +84,9 @@ export default function ConfiguracoesPage() {
         </TabsContent>
 
         <TabsContent value="conta" className="mt-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <ConfigLink icon={User} titulo="Meu perfil" descricao="Editar foto, nome, e-mail e senha" onClick={() => navigate('/app/configuracoes/perfil')} />
-            <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e definir permissões" onClick={() => navigate('/app/usuarios')} />
-            <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de API (OpenAI, WhatsApp, etc.) cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e especialistas, e definir permissões" onClick={() => navigate('/app/usuarios')} />
+            <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de pagamento, fiscal e WhatsApp, cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
           </div>
         </TabsContent>
 

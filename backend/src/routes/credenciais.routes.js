@@ -24,10 +24,16 @@ const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
 
 const TIPOS_VALIDOS = new Set([
-  'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY',
-  'GEMINI_API_KEY',
+  // Canal de mensagem (bot)
   'WHATSAPP_CLOUD_TOKEN',
+  // Provedores de pagamento (PSP)
+  'MERCADO_PAGO_KEY',
+  'ASAAS_KEY',
+  'PAGARME_KEY',
+  // Provedores fiscais (emissao de nota)
+  'FOCUS_NFE_KEY',
+  'NUVEM_FISCAL_KEY',
+  // Genericas (HTTP)
   'HTTP_BEARER',
   'HTTP_BASIC',
   'HTTP_API_KEY',
@@ -35,11 +41,15 @@ const TIPOS_VALIDOS = new Set([
 ]);
 
 // Schema esperado de `dados` por tipo. Se faltar campo obrigatorio, rejeita.
+// Os nomes dos campos batem com o que cada adapter le (adapters/pagamento,
+// adapters/fiscal) — nao renomear sem ajustar o adapter.
 const SCHEMA_POR_TIPO = {
-  OPENAI_API_KEY: { obrigatorios: ['apiKey'], opcionais: ['organizationId'] },
-  ANTHROPIC_API_KEY: { obrigatorios: ['apiKey'], opcionais: [] },
-  GEMINI_API_KEY: { obrigatorios: ['apiKey'], opcionais: [] },
   WHATSAPP_CLOUD_TOKEN: { obrigatorios: ['accessToken', 'phoneNumberId'], opcionais: ['businessAccountId'] },
+  MERCADO_PAGO_KEY: { obrigatorios: ['accessToken'], opcionais: ['webhookSecret'] },
+  ASAAS_KEY: { obrigatorios: ['apiKey'], opcionais: ['webhookSecret'] },
+  PAGARME_KEY: { obrigatorios: ['secretKey'], opcionais: ['webhookSecret'] },
+  FOCUS_NFE_KEY: { obrigatorios: ['token'], opcionais: [] },
+  NUVEM_FISCAL_KEY: { obrigatorios: ['accessToken'], opcionais: [] },
   HTTP_BEARER: { obrigatorios: ['token'], opcionais: [] },
   HTTP_BASIC: { obrigatorios: ['usuario', 'senha'], opcionais: [] },
   HTTP_API_KEY: { obrigatorios: ['headerName', 'key'], opcionais: [] },

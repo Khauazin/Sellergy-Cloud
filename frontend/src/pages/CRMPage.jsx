@@ -306,7 +306,7 @@ function KanbanView({ stages, leadsPorEtapa, onSelecionarLead, onConfigurarEtapa
         {onConfigurarEtapas && (
           <button
             onClick={onConfigurarEtapas}
-            className="w-72 flex-shrink-0 rounded-xl border-2 border-dashed border-[var(--border-main)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]/30 transition-colors flex flex-col items-center justify-center gap-2 text-[var(--text-muted)] hover:text-[var(--accent)] py-12"
+            className="w-72 flex-shrink-0 border border-dashed border-[var(--border-main)] hover:border-[var(--text-muted)] hover:bg-[var(--bg-subtle)] transition-colors flex flex-col items-center justify-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-main)] py-12"
             type="button"
           >
             <Settings size={20} strokeWidth={1.75} />
@@ -336,7 +336,7 @@ function KanbanColumn({ stage, leads, stages, onSelecionarLead, onMoverLead, isS
         <div className="text-xs text-[var(--text-muted)] px-2 mb-2 tabular-nums">{fmtBRL(totalValor)}</div>
       )}
 
-      <div className="bg-[var(--bg-subtle)]/50 rounded-xl p-2 flex-1 min-h-[200px] space-y-2">
+      <div className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] p-2 flex-1 min-h-[200px] space-y-2">
         {leads.length === 0 ? (
           <div className="text-center py-8 text-xs text-[var(--text-muted)]">Vazio</div>
         ) : (
@@ -368,7 +368,7 @@ function KanbanCard({ lead, stages, currentStageId, onClick, onMover }) {
   return (
     <div
       onClick={onClick}
-      className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3 cursor-pointer hover:border-[var(--text-muted)] hover:shadow-[var(--shadow-xs)] transition-all"
+      className="bg-[var(--bg-card)] border border-[var(--border-main)] p-3 cursor-pointer hover:border-[var(--text-muted)] transition-colors"
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -388,7 +388,7 @@ function KanbanCard({ lead, stages, currentStageId, onClick, onMover }) {
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {tags.slice(0, 3).map((t, i) => (
-            <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-[var(--bg-subtle)] text-[var(--text-secondary)] font-medium">
+            <span key={i} className="text-[10px] px-2 py-0.5 border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-secondary)] font-medium">
               {t}
             </span>
           ))}
@@ -404,7 +404,7 @@ function KanbanCard({ lead, stages, currentStageId, onClick, onMover }) {
             <button
               title={`Mover para ${anterior.nome}`}
               onClick={() => onMover(lead, anterior.id)}
-              className="p-1 rounded hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+              className="p-1 border border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
             >
               <ArrowLeft size={12} />
             </button>
@@ -413,7 +413,7 @@ function KanbanCard({ lead, stages, currentStageId, onClick, onMover }) {
             <button
               title={`Mover para ${proxima.nome}`}
               onClick={() => onMover(lead, proxima.id)}
-              className="p-1 rounded hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
+              className="p-1 border border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
             >
               <ArrowRight size={12} />
             </button>
@@ -682,7 +682,7 @@ function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
                 const ehServico = v?.produto?.tipo === 'SERVICO';
                 const precoUnit = precoEfetivoVariacao(v);
                 return (
-                  <div key={item.variacaoId} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)]">
+                  <div key={item.variacaoId} className="flex items-center gap-3 p-3 border border-[var(--border-main)] bg-[var(--bg-card)]">
                     {/* Info do item (cresce e trunca) */}
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-[var(--text-main)] truncate">
@@ -702,7 +702,7 @@ function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
                       <button
                         type="button"
                         onClick={() => mudarQuantidade(item.variacaoId, item.quantidade - 1)}
-                        className="w-7 h-9 rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] text-sm font-semibold transition-colors"
+                        className="w-7 h-9 border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] text-sm font-semibold transition-colors"
                         aria-label="Diminuir quantidade"
                         disabled={item.quantidade <= 1}
                       >−</button>
@@ -711,13 +711,13 @@ function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
                         min={1}
                         value={item.quantidade}
                         onChange={(e) => mudarQuantidade(item.variacaoId, e.target.value)}
-                        className="w-12 h-9 text-center text-sm font-semibold tabular-nums rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                        className="w-12 h-9 text-center text-sm font-semibold tabular-nums border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:border-[var(--text-muted)]"
                         aria-label="Quantidade"
                       />
                       <button
                         type="button"
                         onClick={() => mudarQuantidade(item.variacaoId, item.quantidade + 1)}
-                        className="w-7 h-9 rounded-lg border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] text-sm font-semibold transition-colors"
+                        className="w-7 h-9 border border-[var(--border-main)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] text-sm font-semibold transition-colors"
                         aria-label="Aumentar quantidade"
                       >+</button>
                     </div>
@@ -739,7 +739,7 @@ function ModalLead({ isOpen, onClose, lead, stages, onSalvar }) {
               })}
 
               {/* Total agregado */}
-              <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)] font-semibold">
+              <div className="flex items-center justify-between px-3 py-2.5 border border-[var(--border-main)] bg-[var(--bg-subtle)] text-[var(--text-main)] font-semibold">
                 <span className="text-sm">Total estimado</span>
                 <span className="text-base tabular-nums">{fmtBRL(total)}</span>
               </div>
@@ -855,7 +855,7 @@ function ModalCatalogoEtapas({ isOpen, onClose, onHabilitar, onDesabilitar }) {
           <div className="text-center py-8 text-sm text-[var(--text-muted)]">Carregando...</div>
         ) : (
           catalogo.map((item) => (
-            <div key={item.slug} className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border-main)] bg-[var(--bg-card)]">
+            <div key={item.slug} className="flex items-center gap-3 p-3 border border-[var(--border-main)] bg-[var(--bg-card)]">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.cor }} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold tracking-tight text-[var(--text-main)]">{item.nome}</div>
@@ -871,7 +871,7 @@ function ModalCatalogoEtapas({ isOpen, onClose, onHabilitar, onDesabilitar }) {
           ))
         )}
 
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-[var(--info-soft)] text-[var(--info-text)] mt-3">
+        <div className="flex items-start gap-2 p-3 border border-[var(--border-subtle)] bg-[var(--info-soft)] text-[var(--info-text)] mt-3">
           <Lock size={14} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
           <div className="text-xs leading-relaxed">
             <strong>Etapa com leads nao pode ser desabilitada.</strong> Mova ou exclua os leads dela primeiro pra liberar o desligamento.
@@ -951,22 +951,22 @@ function DrawerLead({ isOpen, onClose, lead, stages, onEditar, onExcluir, onMove
 
         <div className="grid grid-cols-2 gap-2">
           {lead.telefone && (
-            <a href={`tel:${lead.telefone}`} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
+            <a href={`tel:${lead.telefone}`} className="flex items-center gap-2 px-3 py-2.5 border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
               <Phone size={14} /> {lead.telefone}
             </a>
           )}
           {lead.email && (
-            <a href={`mailto:${lead.email}`} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
+            <a href={`mailto:${lead.email}`} className="flex items-center gap-2 px-3 py-2.5 border border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-main)] transition-colors">
               <Mail size={14} /> {lead.email}
             </a>
           )}
           {lead.cpf && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] text-sm font-medium text-[var(--text-secondary)]">
+            <div className="flex items-center gap-2 px-3 py-2.5 border border-[var(--border-main)] text-sm font-medium text-[var(--text-secondary)]">
               <IdCard size={14} /> {formatarCpf(lead.cpf)}
             </div>
           )}
           {lead.dataNascimento && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[var(--border-main)] text-sm font-medium text-[var(--text-secondary)]">
+            <div className="flex items-center gap-2 px-3 py-2.5 border border-[var(--border-main)] text-sm font-medium text-[var(--text-secondary)]">
               <Cake size={14} /> {new Date(lead.dataNascimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
             </div>
           )}
@@ -981,7 +981,7 @@ function DrawerLead({ isOpen, onClose, lead, stages, onEditar, onExcluir, onMove
                   key={s.id}
                   onClick={() => onMover(s.id)}
                   disabled={s.id === lead.etapaId}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold border transition-colors ${
                     s.id === lead.etapaId
                       ? 'bg-[var(--primary)] text-[var(--text-on-primary)] border-[var(--primary)] cursor-default'
                       : 'border-[var(--border-main)] hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)]'
@@ -998,7 +998,7 @@ function DrawerLead({ isOpen, onClose, lead, stages, onEditar, onExcluir, onMove
           <div>
             <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Tags</div>
             <div className="flex flex-wrap gap-1.5">
-              {lead.tags.split(',').map((t, i) => (<Badge key={i} variant="accent" size="sm" icon={Tag}>{t.trim()}</Badge>))}
+              {lead.tags.split(',').map((t, i) => (<Badge key={i} variant="neutral" size="sm" icon={Tag}>{t.trim()}</Badge>))}
             </div>
           </div>
         )}
@@ -1006,7 +1006,7 @@ function DrawerLead({ isOpen, onClose, lead, stages, onEditar, onExcluir, onMove
         {lead.observacoes && (
           <div>
             <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Observacoes</div>
-            <div className="text-sm text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-subtle)] rounded-xl p-3">{lead.observacoes}</div>
+            <div className="text-sm text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-subtle)] border border-[var(--border-subtle)] p-3">{lead.observacoes}</div>
           </div>
         )}
 

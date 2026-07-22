@@ -57,6 +57,8 @@ model Cliente {
   vendas                 Venda[]
   usuarios               Usuario[]
   produtos               Produto[]
+  fornecedores           Fornecedor[]
+  notasCompra            NotaCompra[]
   lancamentosFinanceiros LancamentoFinanceiro[]
   categoriasFinanceiras  CategoriaFinanceira[]
   saldosHistorico        SaldoHistorico[]
@@ -462,8 +464,14 @@ model VariacaoProduto {
   produtoId     String
   nome          String // Ex: "Tamanho P", "Cor Azul"
   sku           String?  @unique
-  preco         Float // Preço de Venda (usado em vendas, agenda e bot)
-  precoCusto    Float?   @default(0) // Preço de Compra
+  // Preço de Venda — DERIVADO (custo + lucro), recalculado pelo backend.
+  // Continua persistido pra venda/agenda/bot lerem direto.
+  preco         Float
+  precoCusto    Float?     @default(0) // Custo de compra (atualizado pela entrada de nota; custo médio)
+  // Lucro fixo somado ao custo pra formar o preço. VALOR = R$ fixo; PERCENTUAL =
+  // % sobre o custo. Custo muda (nota nova) -> preço recalcula mantendo o lucro.
+  lucroTipo     LucroTipo  @default(VALOR)
+  lucroValor    Float      @default(0)
   estoqueAtual  Int      @default(0)
   estoqueMinimo Int?     @default(0)
   estoqueIdeal  Int?     @default(0)
@@ -514,14 +522,76 @@ model MovimentacaoEstoque {
   variacaoId String
   tipo       TipoMovimentacao
   quantidade Int // Positivo para entrada, negativo para saída
+  // Custo unitário CONGELADO neste movimento. Entrada: custo da nota/compra.
+  // Saída/venda: custo médio consumido no momento (CMV e lucro imutáveis).
+  custoUnitario Float?
   motivo     String?
   vendaId    String?
+  notaCompraId String?
   data       DateTime         @default(now())
 
-  variacao VariacaoProduto @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
-  venda    Venda?          @relation(fields: [vendaId], references: [id])
+  variacao   VariacaoProduto @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
+  venda      Venda?          @relation(fields: [vendaId], references: [id])
+  notaCompra NotaCompra?     @relation(fields: [notaCompraId], references: [id])
 
   @@map("movimentacoes_estoque")
+}
+
+// ==========================================
+// FORNECEDORES (cadastro de compras)
+// ==========================================
+// Quem fornece os produtos. Base pra entrada de nota de compra (backlog).
+// Importavel por CSV (validado no backend). Multi-tenant por clienteId.
+model Fornecedor {
+  id           String   @id @default(uuid())
+  clienteId    String
+  nome         String
+  cnpj         String? // Apenas digitos (14). Normalizado no backend.
+  email        String?
+  telefone     String? // Apenas digitos. Normalizado no backend.
+  observacoes  String?
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cliente     Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  notasCompra NotaCompra[]
+
+  @@index([clienteId])
+  @@map("fornecedores")
+}
+
+// ==========================================
+// ENTRADA DE NOTA DE COMPRA
+// ==========================================
+// Cabecalho da entrada de mercadoria (compra). Os itens sao MovimentacaoEstoque
+// tipo COMPRA_FORNECEDOR com custoUnitario e notaCompraId. A entrada atualiza o
+// custo medio do produto, recalcula o preco (custo+lucro) e lanca a despesa
+// "Compra de mercadorias". Multi-tenant por clienteId.
+model NotaCompra {
+  id           String           @id @default(uuid())
+  clienteId    String
+  fornecedorId String?
+  numero       String? // numero da nota (opcional)
+  chaveAcesso  String? // chave NF-e (44 digitos) — idempotencia/import XML futuro
+  origem       OrigemNotaCompra @default(MANUAL)
+  valorTotal   Float            @default(0)
+  observacoes  String?
+  emitidaEm    DateTime? // data da nota (do fornecedor)
+  criadoEm     DateTime         @default(now())
+
+  cliente       Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  fornecedor    Fornecedor?           @relation(fields: [fornecedorId], references: [id])
+  movimentacoes MovimentacaoEstoque[]
+
+  @@index([clienteId])
+  @@map("notas_compra")
+}
+
+enum OrigemNotaCompra {
+  MANUAL
+  XML
+  SEM_NOTA
 }
 
 // ==========================================
@@ -823,7 +893,22 @@ model ConfiguracaoFiscal {
   credencialId   String?
   regime         String? // regime tributario (Simples/Presumido/Real)
   cnpj           String?
-  inscricao      String? // inscricao estadual/municipal
+  inscricao      String? // inscricao estadual
+  // Dados do emitente (identidade da empresa na nota). Todos opcionais —
+  // exigidos so na emissao real (Fase 4). Ver docs §5.
+  inscricaoMunicipal String?
+  razaoSocial    String?
+  nomeFantasia   String?
+  cnae           String?
+  emailEmitente  String?
+  telefoneEmitente String?
+  logradouro     String?
+  numero         String?
+  complemento    String?
+  bairro         String?
+  municipio      String?
+  uf             String?
+  cep            String?
   certificadoRef String? // referencia segura ao certificado digital (nunca o conteudo)
   csc            String? // Codigo de Seguranca do Contribuinte (NFC-e)
   serie          String?
@@ -847,17 +932,50 @@ model DocumentoFiscal {
   provedorDocId String? // id do documento no provedor
   numero        String?
   chave         String? // chave de acesso (44 digitos)
+  // Base do valor unitario dos itens: VENDA (preco de revenda) ou CUSTO (preco
+  // de compra). Escolhida na emissao. valorTotal = soma dos itens.
+  baseValor     String?
+  valorTotal    Float?
+  // Destinatario da nota (quem recebe). Documento = CNPJ/CPF (so digitos).
+  destNome      String?
+  destDocumento String?
+  destEmail     String?
+  destUf        String?
+  destMunicipio String?
   urlPdf        String?
   urlXml        String?
   mensagemErro  String?
   criadoEm      DateTime              @default(now())
   atualizadoEm  DateTime              @updatedAt
 
-  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  cliente Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  itens   DocumentoFiscalItem[]
 
   @@index([clienteId, status])
   @@index([clienteId, vendaId])
   @@map("documentos_fiscais")
+}
+
+// Itens da nota emitida. O valorUnitario vem TRAVADO do catalogo (preco de
+// venda ou custo, conforme baseValor do documento) — a nota nao diverge do
+// cadastro. NCM/CFOP/CEST ficam pra preencher na emissao real (Fase 4).
+model DocumentoFiscalItem {
+  id            String  @id @default(uuid())
+  documentoId   String
+  produtoId     String?
+  variacaoId    String?
+  descricao     String
+  quantidade    Float   @default(1)
+  valorUnitario Float   @default(0)
+  valorTotal    Float   @default(0)
+  ncm           String?
+  cfop          String?
+  cest          String?
+
+  documento DocumentoFiscal @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@index([documentoId])
+  @@map("documento_fiscal_itens")
 }
 
 // ==========================================
@@ -996,6 +1114,14 @@ enum VisibilidadeProduto {
 enum TipoProduto {
   FISICO
   SERVICO
+}
+
+// Como o lucro do produto e definido (somado ao custo pra formar o preco):
+//   VALOR      -> R$ fixo         (preco = custo + lucroValor)
+//   PERCENTUAL -> % sobre o custo  (preco = custo * (1 + lucroValor/100))
+enum LucroTipo {
+  VALOR
+  PERCENTUAL
 }
 
 enum TipoMovimentacao {

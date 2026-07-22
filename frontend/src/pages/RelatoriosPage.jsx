@@ -144,13 +144,13 @@ export default function RelatoriosPage() {
           dentro de cada componente. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--text-muted)]">
+          <div className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wider">
             Relatório
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-main)] mt-0.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)] mt-1">
             {config.titulo}
           </h1>
-          <p className="text-xs text-[var(--text-muted)] mt-1">{config.descricao}</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">{config.descricao}</p>
         </div>
         <div className="min-w-0 flex-1 lg:max-w-2xl">
           <PeriodoPills
@@ -1128,7 +1128,7 @@ function BlocoCurvaABC({ curva, resumo, carregando }) {
             <div key={c} className="p-3 rounded-xl border border-[var(--border-main)]">
               <div className="flex items-center gap-2">
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black text-white"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black text-[var(--text-on-primary)]"
                   style={{ backgroundColor: corClasse[c] }}
                 >
                   {c}
@@ -1162,7 +1162,7 @@ function BlocoCurvaABC({ curva, resumo, carregando }) {
               <tr key={p.variacaoId} className="border-b border-[var(--border-subtle)] last:border-b-0">
                 <td className="py-3 px-5 text-center">
                   <span
-                    className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-black text-white"
+                    className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-black text-[var(--text-on-primary)]"
                     style={{ backgroundColor: corClasse[p.classe] }}
                   >
                     {p.classe}
@@ -1251,7 +1251,7 @@ function TabelaEstoqueParado({ itens, carregando }) {
   const valorTotal = itens.reduce((acc, i) => acc + i.valorParado, 0);
   return (
     <>
-      <div className="px-5 py-2.5 bg-[var(--bg-subtle)]/30 border-b border-[var(--border-main)] flex items-baseline justify-between text-xs">
+      <div className="px-5 py-2.5 bg-[var(--bg-subtle)] border-b border-[var(--border-main)] flex items-baseline justify-between text-xs">
         <span className="text-[var(--text-muted)]">Capital travado em estoque parado:</span>
         <span className="font-bold tabular-nums text-[var(--warning)]">{fmtBRL(valorTotal)}</span>
       </div>
@@ -1873,7 +1873,7 @@ function BlocoAging({ aging, carregando }) {
         {aging.map((bucket, idx) => (
           bucket.qtd > 0 && (
             <div key={bucket.faixa} className="border border-[var(--border-main)] rounded-xl overflow-hidden">
-              <div className="px-3 py-2 bg-[var(--bg-subtle)]/50 border-b border-[var(--border-main)] flex items-center justify-between">
+              <div className="px-3 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-main)] flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-[var(--text-main)]">{bucket.faixa}</div>
                   <div className="text-[10px] text-[var(--text-muted)]">{bucket.qtd} título(s)</div>
@@ -2004,7 +2004,7 @@ function FunilEtapas({ funil, carregando }) {
                   opacity: 0.85,
                 }}
               >
-                <span className="text-xs font-bold text-white drop-shadow tabular-nums">{e.leads}</span>
+                <span className="text-xs font-bold text-[var(--text-on-primary)] drop-shadow tabular-nums">{e.leads}</span>
               </div>
             </div>
             <div className="w-32 flex-shrink-0 text-right">
@@ -2731,7 +2731,7 @@ function TabelaDivergencias({ divergencias }) {
       {divergencias.map((d) => {
         const dif = Number(d.diferenca || 0);
         return (
-          <div key={d.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)]/50">
+          <div key={d.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)]">
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-[var(--text-main)]">
                 {new Date(d.fechadaEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
@@ -3135,7 +3135,7 @@ function AbaMensais() {
               key={r.id}
               type="button"
               onClick={() => navigate(`/app/relatorios/mensais/${r.ano}-${String(r.mes).padStart(2, '0')}`)}
-              className="text-left rounded-2xl border border-[var(--border-main)] bg-[var(--bg-card)] p-5 hover:border-[var(--accent)] hover:bg-[var(--bg-subtle)]/40 transition-colors"
+              className="text-left rounded-2xl border border-[var(--border-main)] bg-[var(--bg-card)] p-5 hover:border-[var(--text-muted)] hover:bg-[var(--bg-subtle)] transition-colors"
             >
               <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Fechamento</div>
               <div className="text-xl font-semibold tracking-tight text-[var(--text-main)] mt-1">

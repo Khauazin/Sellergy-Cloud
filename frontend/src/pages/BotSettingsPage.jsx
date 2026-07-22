@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth.store';
-import { Settings, Save, Loader2, MessageSquare, Clock, Type, Hash, ToggleLeft, ToggleRight, CheckCircle } from 'lucide-react';
+import { Settings, Save, Loader2, MessageSquare, Type, Hash, ToggleLeft, CheckCircle } from 'lucide-react';
 import api from '../services/api';
+import {
+  Card, Button, Input, Textarea, Switch, EmptyState,
+} from '../components/ui';
 
 export default function BotSettingsPage() {
   const { user } = useAuthStore();
@@ -62,141 +65,131 @@ export default function BotSettingsPage() {
   };
 
   const handleChangeValue = (id, newValue) => {
-    setVariables(prev => prev.map(v => 
+    setVariables(prev => prev.map(v =>
       v.id === id ? { ...v, value: newValue } : v
     ));
   };
 
   const getVarIcon = (type) => {
     switch(type) {
-      case 'TEXT': return <Type className="w-4 h-4 text-blue-400" />;
-      case 'NUMBER': return <Hash className="w-4 h-4 text-purple-400" />;
-      case 'BOOLEAN': return <ToggleLeft className="w-4 h-4 text-amber-400" />;
-      default: return <Type className="w-4 h-4 text-gray-400" />;
+      case 'TEXT': return <Type className="w-4 h-4 text-[var(--text-secondary)]" />;
+      case 'NUMBER': return <Hash className="w-4 h-4 text-[var(--text-secondary)]" />;
+      case 'BOOLEAN': return <ToggleLeft className="w-4 h-4 text-[var(--text-secondary)]" />;
+      default: return <Type className="w-4 h-4 text-[var(--text-muted)]" />;
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20 text-gray-400">
+      <div className="flex items-center justify-center py-20 text-[var(--text-muted)]">
         <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-4xl">
-      
+    <div className="space-y-5">
+
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-[var(--text-main)] tracking-tight flex items-center gap-3">
-          <Settings className="w-8 h-8 text-[var(--text-muted)]" />
-          Configurações do Bot
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)] flex items-center gap-2.5">
+          <Settings className="w-6 h-6 text-[var(--text-muted)]" strokeWidth={1.75} />
+          Configurações do bot
         </h1>
-        <p className="text-[var(--text-muted)] mt-2">
+        <p className="text-sm text-[var(--text-muted)] mt-1">
           Personalize as mensagens e configurações do seu chatbot. Alterações avançadas no fluxo devem ser solicitadas ao suporte.
         </p>
       </div>
 
-      {/* Seletor de Bot */}
+      {/* Seletor de bot */}
       {bots.length > 1 && (
-        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl p-4">
-          <label className="text-sm font-medium text-gray-400 mb-2 block">Selecione o Bot</label>
+        <Card padding="md">
+          <label className="block text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Selecione o bot</label>
           <div className="flex flex-wrap gap-2">
             {bots.map(bot => (
               <button
                 key={bot.id}
                 onClick={() => setSelectedBotId(bot.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
-                  selectedBotId === bot.id 
-                    ? 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/20' 
-                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                  selectedBotId === bot.id
+                    ? 'bg-[var(--bg-subtle)] text-[var(--text-main)] border-[var(--border-main)]'
+                    : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text-main)]'
                 }`}
               >
                 {bot.name}
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Variáveis */}
       {variables.length === 0 ? (
-        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] border-dashed rounded-3xl p-12 text-center">
-          <MessageSquare className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-[var(--text-main)] mb-2">Nenhuma configuração disponível</h3>
-          <p className="text-[var(--text-muted)] max-w-md mx-auto">
-            O administrador ainda não liberou configurações editáveis para este bot. Entre em contato com o suporte se precisar alterar alguma mensagem.
-          </p>
-        </div>
+        <Card padding="lg">
+          <EmptyState
+            icon={MessageSquare}
+            title="Nenhuma configuração disponível"
+            description="O administrador ainda não liberou configurações editáveis para este bot. Entre em contato com o suporte se precisar alterar alguma mensagem."
+          />
+        </Card>
       ) : (
         <div className="space-y-4">
           {variables.map(variable => (
-            <div 
-              key={variable.id}
-              className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl p-6 hover:border-blue-500/30 transition-all group"
-            >
+            <Card key={variable.id} padding="md">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-[var(--bg-card)] rounded-lg border border-[var(--border-main)]">
+                  <div className="p-2 bg-[var(--bg-subtle)] rounded-lg border border-[var(--border-subtle)]">
                     {getVarIcon(variable.type)}
                   </div>
                   <div>
-                    <h3 className="text-[var(--text-main)] font-semibold">{variable.description || variable.key}</h3>
+                    <h3 className="text-sm font-semibold text-[var(--text-main)]">{variable.description || variable.key}</h3>
                     <p className="text-xs text-[var(--text-muted)] font-mono">{variable.key}</p>
                   </div>
                 </div>
-                
-                <button
-                  onClick={() => handleSaveVariable(variable)}
-                  disabled={savingId === variable.id}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    savedId === variable.id 
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 hover:text-white'
-                  }`}
-                >
-                  {savingId === variable.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : savedId === variable.id ? (
-                    <><CheckCircle className="w-4 h-4" /> Salvo!</>
-                  ) : (
-                    <><Save className="w-4 h-4" /> Salvar</>
-                  )}
-                </button>
+
+                {savedId === variable.id ? (
+                  <Button variant="secondary" size="sm" icon={CheckCircle} disabled>
+                    Salvo
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={Save}
+                    loading={savingId === variable.id}
+                    onClick={() => handleSaveVariable(variable)}
+                  >
+                    Salvar
+                  </Button>
+                )}
               </div>
 
               {variable.type === 'BOOLEAN' ? (
-                <button
-                  onClick={() => handleChangeValue(variable.id, variable.value === 'true' ? 'false' : 'true')}
-                  className="flex items-center gap-3 text-sm"
-                >
-                  {variable.value === 'true' ? (
-                    <ToggleRight className="w-8 h-8 text-emerald-400" />
-                  ) : (
-                    <ToggleLeft className="w-8 h-8 text-gray-500" />
-                  )}
-                  <span className={variable.value === 'true' ? 'text-emerald-400' : 'text-gray-500'}>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={variable.value === 'true'}
+                    onChange={(next) => handleChangeValue(variable.id, next ? 'true' : 'false')}
+                    ariaLabel={variable.description || variable.key}
+                  />
+                  <span className={`text-sm font-medium ${variable.value === 'true' ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'}`}>
                     {variable.value === 'true' ? 'Ativado' : 'Desativado'}
                   </span>
-                </button>
+                </div>
               ) : variable.type === 'NUMBER' ? (
-                <input
+                <Input
                   type="number"
                   value={variable.value}
                   onChange={(e) => handleChangeValue(variable.id, e.target.value)}
-                  className="w-full bg-[var(--bg-app)] border border-[var(--border-main)] text-[var(--text-main)] rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               ) : (
-                <textarea
+                <Textarea
                   value={variable.value}
                   onChange={(e) => handleChangeValue(variable.id, e.target.value)}
                   rows={3}
-                  className="w-full bg-[var(--bg-app)] border border-[var(--border-main)] text-[var(--text-main)] rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500 transition-colors resize-none"
                   placeholder="Digite o valor..."
                 />
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}

@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Plus, Package, Edit2, Trash2, MoreHorizontal, Filter, Tag
+  Plus, Package, Edit2, Trash2, MoreHorizontal, Tag
 } from 'lucide-react';
 import api from '../services/api';
 import {
   Card, Button, IconButton, Input, Textarea, Select, Badge,
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast,
-  UploadImagem, InputDuracao
+  UploadImagem, InputDuracao, LabelAjuda
 } from '../components/ui';
 import Modal from '../components/Modal';
 import catalogoService from '../services/catalogoService';
@@ -157,12 +157,12 @@ export default function CatalogoPage() {
 
   return (
     <div className="space-y-5">
-      {/* Aviso explicativo */}
-      <div className="flex items-start gap-3 p-4 rounded-2xl bg-[var(--info-soft)] text-[var(--info-text)]">
-        <Filter size={18} strokeWidth={1.75} className="flex-shrink-0 mt-0.5" />
-        <div className="text-xs leading-relaxed">
-          <strong>Catálogo de serviços:</strong> aqui você cadastra os serviços que oferece (corte, consulta, atendimento). Produtos físicos com estoque vão em <strong>Estoque</strong>.
-        </div>
+      {/* Cabeçalho */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-main)]">Catálogo de serviços</h1>
+        <p className="text-sm text-[var(--text-muted)] mt-1">
+          Cadastre os serviços que você oferece (corte, consulta, atendimento). Produtos físicos com estoque ficam em Estoque.
+        </p>
       </div>
 
       {/* Toolbar */}
@@ -218,11 +218,11 @@ export default function CatalogoPage() {
                 <tr
                   key={p.id}
                   onClick={() => setDrawer({ open: true, produto: p })}
-                  className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]/50 cursor-pointer transition-colors"
+                  className="border-b border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] cursor-pointer transition-colors"
                 >
                   <td className="py-3 px-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0">
+                      <div className="w-9 h-9 rounded-xl bg-[var(--bg-subtle)] flex items-center justify-center flex-shrink-0">
                         <Package size={16} strokeWidth={1.75} className="text-[var(--text-muted)]" />
                       </div>
                       <div>
@@ -319,10 +319,9 @@ function ModalCategoriaServico({ isOpen, onClose, onSalvar }) {
     <Modal isOpen={isOpen} onClose={onClose} title="Nova categoria de serviço" description="Vai aparecer só no cadastro de serviços." size="sm">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
-          label="Nome"
+          label={<LabelAjuda texto="Nome" ajuda="Ex.: Cabelo, Estética, Consultas." />}
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          placeholder="Ex.: Cabelo, Estética, Consultas..."
           required
           autoFocus
         />
@@ -450,20 +449,18 @@ function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = []
           <div className="flex-1 space-y-4 min-w-0">
             <Input
               size="lg"
-              label="Nome do serviço"
+              label={<LabelAjuda texto="Nome do serviço" ajuda="Ex.: Corte de cabelo, Consulta nutricional." />}
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               required
               autoFocus
-              placeholder="Ex.: Corte de cabelo, Consulta nutricional"
             />
             <Textarea
               size="lg"
-              label="Descrição"
+              label={<LabelAjuda texto="Descrição" ajuda="O que está incluído no atendimento." />}
               value={form.descricao}
               onChange={(e) => setForm({ ...form, descricao: e.target.value })}
               rows={3}
-              placeholder="O que está incluído no atendimento"
             />
           </div>
         </div>
@@ -481,12 +478,11 @@ function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = []
           />
           <Select
             size="lg"
-            label="Categoria financeira"
+            label={<LabelAjuda texto="Categoria financeira" ajuda="Necessária para vincular vendas e CMV." />}
             value={form.categoriaId}
             onChange={(e) => setForm({ ...form, categoriaId: e.target.value })}
             placeholder="Selecione..."
             options={categorias.map((c) => ({ value: c.id, label: c.nome }))}
-            hint="Necessária para vincular vendas e CMV."
           />
         </div>
 
@@ -494,10 +490,9 @@ function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = []
             Persiste na variacao Padrao via backend. */}
         <InputDuracao
           size="lg"
-          label="Quanto tempo leva o atendimento?"
+          label={<LabelAjuda texto="Quanto tempo leva o atendimento?" ajuda="A Agenda usa isso pra não marcar 2 clientes no mesmo horário." />}
           value={form.duracaoMin}
           onChange={(min) => setForm({ ...form, duracaoMin: min })}
-          hint="A Agenda usa isso pra não marcar 2 clientes no mesmo horário."
         />
 
         {/* Especialistas que atendem — obrigatório. A agenda usa este vínculo
@@ -522,7 +517,7 @@ function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = []
                       onClick={() => toggleEspecialista(esp.id)}
                       className={`px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
                         sel
-                          ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                          ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--text-on-primary)]'
                           : 'border-[var(--border-main)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
                       }`}
                     >
@@ -551,7 +546,7 @@ function ModalProduto({ isOpen, onClose, produto, categorias, especialistas = []
 // (nao faz sentido pra servico). Duracao sempre visivel.
 function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
   const [form, setForm] = useState({
-    nome: '', sku: '', preco: 0, precoCusto: 0,
+    nome: '', sku: '', preco: '', precoCusto: 0,
     duracaoMin: '', imagemUrl: '',
   });
   const [tempsParaLimpar, setTempsParaLimpar] = useState([]);
@@ -628,24 +623,20 @@ function ModalVariacao({ isOpen, onClose, variacao, onSalvar }) {
             tamanho="sm"
           />
           <div className="flex-1 space-y-3 min-w-0">
-            <Input label="Nome da variacao" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Tamanho P, Cor Azul" required autoFocus />
+            <Input label={<LabelAjuda texto="Nome da variação" ajuda="Ex.: Tamanho P, Cor Azul." />} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required autoFocus />
             <Input label="SKU" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Preco de venda (R$)" type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required hint="Preco padrao do estoque" />
-          <Input label="Preco de custo (R$)" type="number" step="0.01" min="0" value={form.precoCusto} onChange={(e) => setForm({ ...form, precoCusto: e.target.value })} />
-        </div>
+        <Input label={<LabelAjuda texto="Preço do serviço (R$)" ajuda="O valor que o cliente paga pelo atendimento." />} type="number" step="0.01" min="0" value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} required />
 
         {/* Campos de estoque (atual/min/ideal/localizacao) removidos —
             Catalogo so lida com servicos, esses nao se aplicam. */}
 
         {/* Duracao do atendimento — sempre visivel pra servicos. */}
         <InputDuracao
-          label="Duração do atendimento"
+          label={<LabelAjuda texto="Duração do atendimento" ajuda="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário." />}
           value={form.duracaoMin}
           onChange={(min) => setForm({ ...form, duracaoMin: min })}
-          hint="Tempo médio do atendimento. Usado pela Agenda pra evitar conflito de horário."
         />
 
         <div className="flex justify-end gap-2 pt-2">

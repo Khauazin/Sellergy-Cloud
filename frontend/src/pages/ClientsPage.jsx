@@ -105,7 +105,7 @@ export default function ClientsPage() {
       <div className="grid grid-cols-3 gap-4">
         <KpiCard label="Total" valor={stats.total} />
         <KpiCard label="Ativos" valor={stats.ativos} variant="success" />
-        <KpiCard label="MRR" valor={fmtBRL(stats.mrr)} variant="accent" />
+        <KpiCard label="MRR" valor={fmtBRL(stats.mrr)} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -356,7 +356,7 @@ function DrawerCliente({ isOpen, onClose, cliente, onEditar, onExcluir, onStatus
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)]">Modulos liberados</div>
-            <Link to={`/admin/clientes/permissoes?cliente=${cliente.id}`} className="text-xs font-bold uppercase tracking-tight text-[var(--accent)] hover:underline">Gerenciar</Link>
+            <Link to={`/admin/clientes/permissoes?cliente=${cliente.id}`} className="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">Gerenciar</Link>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(cliente.modulosLiberados || {}).filter(([_, v]) => v).map(([k]) => (

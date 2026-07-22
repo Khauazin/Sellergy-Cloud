@@ -63,7 +63,7 @@ export default function UsersPage() {
     <div className="space-y-5">
       <Card padding="lg">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-main)] text-[var(--text-secondary)] flex items-center justify-center flex-shrink-0">
             <Crown size={18} strokeWidth={1.75} />
           </div>
           <div className="flex-1">
@@ -106,7 +106,7 @@ export default function UsersPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{u.nome}</span>
-                    <Badge variant="accent" size="sm" icon={Crown}>Administrador</Badge>
+                    <Badge variant="neutral" size="sm" icon={Crown}>Administrador</Badge>
                   </div>
                   <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 mt-0.5">
                     <Mail size={11} /> {u.email}

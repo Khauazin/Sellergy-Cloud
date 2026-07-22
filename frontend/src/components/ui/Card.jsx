@@ -32,7 +32,7 @@ export default function Card({
   return (
     <div
       className={clsx(
-        'rounded-2xl',
+        'rounded-xl',
         variants[variant],
         paddings[padding],
         className

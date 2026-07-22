@@ -105,7 +105,7 @@ export default function AdminPermissoesClientePage() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 h-[calc(100vh-160px)]">
       {/* Lista de clientes */}
-      <aside className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl flex flex-col overflow-hidden">
+      <aside className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl flex flex-col overflow-hidden">
         <div className="p-3 border-b border-[var(--border-main)]">
           <SearchBar value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente..." size="sm" />
         </div>
@@ -123,12 +123,12 @@ export default function AdminPermissoesClientePage() {
                   key={c.id}
                   onClick={() => selecionar(c)}
                   className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors flex items-center gap-2.5 ${
-                    ativo ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--bg-subtle)]'
+                    ativo ? 'bg-[var(--bg-subtle)] border border-[var(--border-main)]' : 'hover:bg-[var(--bg-subtle)] border border-transparent'
                   }`}
                 >
                   <Avatar name={c.nome} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-semibold tracking-tight truncate ${ativo ? 'text-[var(--accent-text)]' : 'text-[var(--text-main)]'}`}>{c.nome}</div>
+                    <div className="text-sm font-semibold tracking-tight truncate text-[var(--text-main)]">{c.nome}</div>
                     <div className="text-[10px] text-[var(--text-muted)]">{total}/{MODULOS_TENANT.length} modulos</div>
                   </div>
                 </button>
@@ -139,7 +139,7 @@ export default function AdminPermissoesClientePage() {
       </aside>
 
       {/* Painel direito - matriz */}
-      <section className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-2xl flex flex-col overflow-hidden">
+      <section className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl flex flex-col overflow-hidden">
         {!clienteAtual ? (
           <div className="flex-1 flex items-center justify-center">
             <EmptyState icon={Users} title="Selecione um cliente" description="Escolha um cliente a esquerda para configurar os modulos liberados." />
@@ -169,15 +169,15 @@ export default function AdminPermissoesClientePage() {
                       key={modulo.id}
                       type="button"
                       onClick={() => toggle(modulo.id)}
-                      className={`text-left rounded-xl p-4 border-2 transition-colors ${
+                      className={`text-left rounded-xl p-4 border transition-colors ${
                         liberado
-                          ? 'bg-[var(--accent-soft)]/50 border-[var(--accent-border)]'
+                          ? 'bg-[var(--success-soft)] border-[var(--success-soft)]'
                           : 'bg-transparent border-[var(--border-main)] hover:border-[var(--text-muted)]'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${liberado ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-subtle)] text-[var(--text-muted)]'}`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${liberado ? 'bg-[var(--success-soft)] text-[var(--success-text)]' : 'bg-[var(--bg-subtle)] text-[var(--text-muted)]'}`}>
                             <Icone size={14} strokeWidth={1.75} />
                           </div>
                           <div className="text-sm font-semibold text-[var(--text-main)] tracking-tight">{modulo.nome}</div>

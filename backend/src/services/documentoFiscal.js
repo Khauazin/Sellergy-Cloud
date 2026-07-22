@@ -6,8 +6,9 @@ const prisma = require('../prisma');
 // Campos seguros pra devolver (sem o payload bruto do emissor).
 const CAMPOS_DOCUMENTO = {
   id: true, vendaId: true, tipo: true, status: true, provedor: true,
-  provedorDocId: true, numero: true, chave: true, urlPdf: true, urlXml: true,
-  mensagemErro: true, criadoEm: true, atualizadoEm: true,
+  provedorDocId: true, numero: true, chave: true, baseValor: true, valorTotal: true,
+  destNome: true, destDocumento: true, destEmail: true, destUf: true, destMunicipio: true,
+  urlPdf: true, urlXml: true, mensagemErro: true, criadoEm: true, atualizadoEm: true,
 };
 
 // Estados terminais — uma vez EMITIDA/CANCELADA, nao volta atras.
