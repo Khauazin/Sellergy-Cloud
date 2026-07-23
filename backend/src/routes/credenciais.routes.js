@@ -19,70 +19,20 @@ const {
   requerPermissao,
 } = require('../middlewares/permissoes.middleware');
 const { cifrarPayload, normalizarPayload } = require('../cripto/cofreCredenciais');
+// Whitelist de tipo, schema, validacao e semSegredos vivem no core (fonte unica,
+// reusada pela rota admin — sem duplicar = sem divergir).
+const {
+  TIPOS_VALIDOS,
+  CATEGORIA_POR_TIPO,
+  SCHEMA_POR_TIPO,
+  TAM_MAX_NOME,
+  TAM_MAX_DESCRICAO,
+  validarPayload,
+  semSegredos,
+} = require('../credenciaisCore');
 
 const roteador = express.Router();
 roteador.use(middlewareAutenticacao);
-
-const TIPOS_VALIDOS = new Set([
-  // Canal de mensagem (bot)
-  'WHATSAPP_CLOUD_TOKEN',
-  // Provedores de pagamento (PSP)
-  'MERCADO_PAGO_KEY',
-  'ASAAS_KEY',
-  'PAGARME_KEY',
-  // Provedores fiscais (emissao de nota)
-  'FOCUS_NFE_KEY',
-  'NUVEM_FISCAL_KEY',
-  // Genericas (HTTP)
-  'HTTP_BEARER',
-  'HTTP_BASIC',
-  'HTTP_API_KEY',
-  'OUTRO',
-]);
-
-// Schema esperado de `dados` por tipo. Se faltar campo obrigatorio, rejeita.
-// Os nomes dos campos batem com o que cada adapter le (adapters/pagamento,
-// adapters/fiscal) — nao renomear sem ajustar o adapter.
-const SCHEMA_POR_TIPO = {
-  WHATSAPP_CLOUD_TOKEN: { obrigatorios: ['accessToken', 'phoneNumberId'], opcionais: ['businessAccountId'] },
-  MERCADO_PAGO_KEY: { obrigatorios: ['accessToken'], opcionais: ['webhookSecret'] },
-  ASAAS_KEY: { obrigatorios: ['apiKey'], opcionais: ['webhookSecret'] },
-  PAGARME_KEY: { obrigatorios: ['secretKey'], opcionais: ['webhookSecret'] },
-  FOCUS_NFE_KEY: { obrigatorios: ['token'], opcionais: [] },
-  NUVEM_FISCAL_KEY: { obrigatorios: ['accessToken'], opcionais: [] },
-  HTTP_BEARER: { obrigatorios: ['token'], opcionais: [] },
-  HTTP_BASIC: { obrigatorios: ['usuario', 'senha'], opcionais: [] },
-  HTTP_API_KEY: { obrigatorios: ['headerName', 'key'], opcionais: [] },
-  OUTRO: { obrigatorios: [], opcionais: [] },
-};
-
-const TAM_MAX_NOME = 120;
-const TAM_MAX_DESCRICAO = 500;
-const TAM_MAX_VALOR_CAMPO = 8_000;
-
-function validarPayload(tipo, dados) {
-  const schema = SCHEMA_POR_TIPO[tipo];
-  if (!schema) return { erro: `Tipo invalido: ${tipo}.` };
-  if (!dados || typeof dados !== 'object') return { erro: 'dados deve ser objeto.' };
-  for (const campo of schema.obrigatorios) {
-    const v = dados[campo];
-    if (typeof v !== 'string' || !v.trim()) {
-      return { erro: `Campo obrigatorio faltando: ${campo}.` };
-    }
-    if (v.length > TAM_MAX_VALOR_CAMPO) {
-      return { erro: `Campo ${campo} excede ${TAM_MAX_VALOR_CAMPO} caracteres.` };
-    }
-  }
-  return { ok: true };
-}
-
-function semSegredos(c) {
-  // Nunca devolver dadosCifrados/iv/tag pelas rotas
-  if (!c) return c;
-  // eslint-disable-next-line no-unused-vars
-  const { dadosCifrados, iv, tag, ...resto } = c;
-  return resto;
-}
 
 async function credencialDoTenant(id, usuario) {
   const where = ehAdmin(usuario)
@@ -98,6 +48,7 @@ roteador.get('/tipos', (req, res) => {
   res.json(
     Array.from(TIPOS_VALIDOS).map((tipo) => ({
       tipo,
+      categoria: CATEGORIA_POR_TIPO[tipo] || 'Outro',
       schema: SCHEMA_POR_TIPO[tipo],
     }))
   );

@@ -7,7 +7,7 @@ import clsx from 'clsx';
  *
  * Tamanhos: sm | md | lg | xl
  */
-export default function Drawer({ isOpen, onClose, title, description, children, size = 'md', footer }) {
+export default function Drawer({ isOpen, onClose, title, description, children, size = 'md', footer, fecharAoClicarFora = false }) {
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';
     else document.body.style.overflow = 'unset';
@@ -32,9 +32,11 @@ export default function Drawer({ isOpen, onClose, title, description, children, 
 
   return (
     <div className="fixed inset-0 z-[100]">
+      {/* Clique fora NAO fecha por padrao (evita perder dados por clique acidental).
+          Fecha so pelo X ou Cancelar. Passe fecharAoClicarFora pra permitir o dismiss. */}
       <div
         className="absolute inset-0 bg-[var(--bg-overlay)] backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
+        onClick={fecharAoClicarFora ? onClose : undefined}
       />
       <div
         className={clsx(

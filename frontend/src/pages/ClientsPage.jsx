@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Edit2, Trash2, MoreHorizontal, Mail, Phone,
-  ShieldCheck, CheckCircle2, XCircle, Pause
+  ShieldCheck, CheckCircle2, XCircle, Pause, Plug
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -10,6 +10,7 @@ import {
   EmptyState, SearchBar, Drawer, Dropdown, DropdownItem, DropdownDivider, useToast
 } from '../components/ui';
 import Modal from '../components/Modal';
+import ModalIntegracoes from '../components/admin/ModalIntegracoes';
 import { formatarTelefoneBR } from '../utils/formatTelefone';
 import { MODULOS_TENANT, modulosDoSegmento } from '../constants/permissoes';
 
@@ -34,6 +35,7 @@ export default function ClientsPage() {
 
   const [modal, setModal] = useState({ open: false, data: null });
   const [drawer, setDrawer] = useState({ open: false, cliente: null });
+  const [integracoes, setIntegracoes] = useState({ open: false, cliente: null });
 
   useEffect(() => { carregar(); }, []);
 
@@ -173,6 +175,7 @@ export default function ClientsPage() {
                     <td onClick={(e) => e.stopPropagation()} className="py-3 px-3">
                       <Dropdown trigger={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" ariaLabel="Acoes" />}>
                         <DropdownItem icon={Edit2} onClick={() => setModal({ open: true, data: c })}>Editar</DropdownItem>
+                        <DropdownItem icon={Plug} onClick={() => setIntegracoes({ open: true, cliente: c })}>Integrações</DropdownItem>
                         <DropdownDivider />
                         {c.status !== 'ACTIVE' && <DropdownItem icon={CheckCircle2} onClick={() => handleStatus(c, 'ACTIVE')}>Ativar</DropdownItem>}
                         {c.status !== 'SUSPENDED' && <DropdownItem icon={Pause} onClick={() => handleStatus(c, 'SUSPENDED')}>Suspender</DropdownItem>}
@@ -203,6 +206,13 @@ export default function ClientsPage() {
         onEditar={() => { setModal({ open: true, data: drawer.cliente }); setDrawer({ open: false, cliente: null }); }}
         onExcluir={() => handleExcluir(drawer.cliente)}
         onStatus={(s) => { handleStatus(drawer.cliente, s); setDrawer({ open: false, cliente: null }); }}
+        onIntegracoes={() => { setIntegracoes({ open: true, cliente: drawer.cliente }); setDrawer({ open: false, cliente: null }); }}
+      />
+
+      <ModalIntegracoes
+        isOpen={integracoes.open}
+        onClose={() => setIntegracoes({ open: false, cliente: null })}
+        cliente={integracoes.cliente}
       />
     </div>
   );
@@ -305,7 +315,7 @@ function ModalCliente({ isOpen, onClose, cliente, onSalvar }) {
   );
 }
 
-function DrawerCliente({ isOpen, onClose, cliente, onEditar, onExcluir, onStatus }) {
+function DrawerCliente({ isOpen, onClose, cliente, onEditar, onExcluir, onStatus, onIntegracoes }) {
   if (!cliente) return null;
   const status = STATUS_LABELS[cliente.status] || { label: cliente.status, variant: 'neutral' };
 
@@ -366,6 +376,11 @@ function DrawerCliente({ isOpen, onClose, cliente, onEditar, onExcluir, onStatus
               <span className="text-xs text-[var(--text-muted)]">Nenhum modulo liberado</span>
             )}
           </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold tracking-wide text-[var(--text-secondary)] mb-2">Integracoes</div>
+          <Button variant="secondary" size="sm" icon={Plug} onClick={onIntegracoes} fullWidth>Gerenciar integracoes</Button>
         </div>
 
         <div>
