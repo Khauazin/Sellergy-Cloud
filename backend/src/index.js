@@ -45,6 +45,8 @@ const CrmUsuariosController = require('./controllers/CrmUsuariosController');
 const middlewareAutenticacao = require('./middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('./middlewares/auth.middleware');
 const { limitadorApi } = require('./middlewares/rateLimit.middleware');
+const middlewareCsrf = require('./middlewares/csrf.middleware');
+const { NOME_SESSAO, lerCookie } = require('./utils/sessaoCookie');
 
 // Origens permitidas por CORS. Em desenvolvimento, libera localhost.
 // Em producao, exige a variavel CORS_ORIGINS (lista separada por virgula).
@@ -75,7 +77,10 @@ const io = new Server(servidor, {
 
 // Autenticacao do Socket.IO via JWT no handshake.
 io.use((socket, next) => {
-  const token = socket.handshake?.auth?.token
+  // Mesma ordem do middleware HTTP: cookie httpOnly primeiro (navegador),
+  // depois as formas explicitas usadas por clientes fora do navegador.
+  const token = lerCookie(socket.handshake, NOME_SESSAO)
+    || socket.handshake?.auth?.token
     || socket.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
 
   if (!token) {
@@ -100,6 +105,11 @@ app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+
+// Defesa contra CSRF — obrigatoria porque a sessao vive em cookie e o navegador
+// o envia sozinho. Registrado no nivel do app para que nenhuma rota nova nasca
+// desprotegida por esquecimento. Detalhes e isencoes no proprio middleware.
+app.use(middlewareCsrf);
 
 // Imagens — intercepta `res.json` e troca `imagemUrl` por URL assinada
 // (bucket privado + pre-signed URL). Plugado APOS o parser e ANTES das

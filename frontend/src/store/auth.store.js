@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import api from '../services/api';
+import api, { definirCsrf } from '../services/api';
 
+// A sessao vive num cookie httpOnly gerenciado pela API. O front nao guarda (nem
+// consegue ler) o token — quem responde "estou logado?" e sempre o servidor,
+// via /perfil. Por isso nao ha mais campo `token` nem nada em localStorage.
 export const useAuthStore = create((set, get) => ({
   user: null,
-  token: localStorage.getItem('@sellergy:token') || null,
-  isAuthenticated: !!localStorage.getItem('@sellergy:token'),
+  isAuthenticated: false,
   isLoading: false,
   isCheckingAuth: true,
   error: null,
@@ -13,14 +15,17 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await api.post('/autenticacao/login', { email, senha });
-      const { usuario, token } = response.data;
+      const { usuario, csrfToken } = response.data;
 
-      localStorage.setItem('@sellergy:token', token);
-      set({ user: usuario, token, isAuthenticated: true, isLoading: false });
+      // O cookie de sessao ja veio na resposta; aqui so guardamos o segredo de
+      // CSRF que acompanha as proximas requisicoes de escrita.
+      definirCsrf(csrfToken);
+      set({ user: usuario, isAuthenticated: true, isLoading: false });
 
       // Reforca o estado com /perfil para garantir modulosLiberados, branding, foto etc.
       try {
         const perfil = await api.get('/autenticacao/perfil');
+        definirCsrf(perfil.data?.csrfToken);
         set({ user: perfil.data });
       } catch { /* ignora, ja temos o user do login */ }
 
@@ -34,24 +39,29 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('@sellergy:token');
-    set({ user: null, token: null, isAuthenticated: false });
+  // Precisa passar pelo servidor: o cookie e httpOnly, o front nao tem como
+  // apaga-lo sozinho.
+  //
+  // A limpeza local vem ANTES da chamada de rede de proposito. Quem chama
+  // navega para a tela de login logo em seguida (ver UserMenu); se o estado so
+  // zerasse na volta da requisicao, a tela de login ainda veria a sessao ativa e
+  // devolveria o usuario para dentro do sistema.
+  logout: async () => {
+    definirCsrf(null);
+    set({ user: null, isAuthenticated: false });
+    try {
+      await api.post('/autenticacao/logout');
+    } catch { /* rede fora ou sessao ja expirada: o estado local ja foi limpo */ }
   },
 
   checkAuth: async () => {
-    const token = localStorage.getItem('@sellergy:token');
-    if (!token) {
-      set({ isAuthenticated: false, isCheckingAuth: false });
-      return;
-    }
-
     try {
       const response = await api.get('/autenticacao/perfil');
+      definirCsrf(response.data?.csrfToken);
       set({ user: response.data, isAuthenticated: true, isCheckingAuth: false });
     } catch (error) {
-      localStorage.removeItem('@sellergy:token');
-      set({ user: null, token: null, isAuthenticated: false, isCheckingAuth: false });
+      definirCsrf(null);
+      set({ user: null, isAuthenticated: false, isCheckingAuth: false });
     }
   },
 
@@ -59,6 +69,7 @@ export const useAuthStore = create((set, get) => ({
   refreshUser: async () => {
     try {
       const response = await api.get('/autenticacao/perfil');
+      definirCsrf(response.data?.csrfToken);
       set({ user: response.data });
       return response.data;
     } catch (error) {
