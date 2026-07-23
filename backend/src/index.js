@@ -27,6 +27,7 @@ const rotasCatalogo = require('./routes/catalogo.routes');
 const rotasEstoque = require('./routes/estoque.routes');
 const rotasFornecedores = require('./routes/fornecedores.routes');
 const rotasNotasCompra = require('./routes/notas-compra.routes');
+const rotasAdminCredenciais = require('./routes/admin-credenciais.routes');
 const rotasFinanceiro = require('./routes/financeiro.routes');
 const rotasContasPagar = require('./routes/contas-pagar.routes');
 const rotasNotificacoes = require('./routes/notificacoes.routes');
@@ -141,6 +142,8 @@ app.use('/catalogo', rotasCatalogo);
 app.use('/estoque', rotasEstoque);
 app.use('/fornecedores', rotasFornecedores);
 app.use('/notas-compra', rotasNotasCompra);
+// Admin gerencia as integracoes (credenciais) de cada cliente — rota segura, admin-only.
+app.use('/admin/clientes', rotasAdminCredenciais);
 app.use('/financeiro', rotasFinanceiro);
 app.use('/contas-pagar', rotasContasPagar);
 app.use('/notificacoes', rotasNotificacoes);

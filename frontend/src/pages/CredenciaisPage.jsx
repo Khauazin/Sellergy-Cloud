@@ -170,7 +170,7 @@ export default function CredenciaisPage() {
 function DrawerCredencial({ isOpen, credencial, tipos, onClose, onSalvo }) {
   const toast = useToast();
   const ehEdicao = !!credencial;
-  const [form, setForm] = useState({ nome: '', tipo: 'OPENAI_API_KEY', descricao: '', dados: {} });
+  const [form, setForm] = useState({ nome: '', tipo: 'MERCADO_PAGO_KEY', descricao: '', dados: {} });
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -184,7 +184,7 @@ function DrawerCredencial({ isOpen, credencial, tipos, onClose, onSalvo }) {
         dados: {}, // edicao nao traz segredos antigos — usuario pode preencher pra trocar
       });
     } else {
-      setForm({ nome: '', tipo: 'OPENAI_API_KEY', descricao: '', dados: {} });
+      setForm({ nome: '', tipo: 'MERCADO_PAGO_KEY', descricao: '', dados: {} });
     }
   }, [isOpen, credencial]);
 

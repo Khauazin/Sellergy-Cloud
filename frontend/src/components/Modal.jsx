@@ -9,7 +9,7 @@ import clsx from 'clsx';
  * Use '2xl' pra modals de cadastro denso (varios campos lado a lado) onde
  * a UX precisa de labels maiores e mais ar entre os controles.
  */
-export default function Modal({ isOpen, onClose, title, description, children, size = 'md' }) {
+export default function Modal({ isOpen, onClose, title, description, children, size = 'md', fecharAoClicarFora = false }) {
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';
     else document.body.style.overflow = 'unset';
@@ -39,9 +39,12 @@ export default function Modal({ isOpen, onClose, title, description, children, s
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+      {/* Clique fora NAO fecha por padrao (evita perder dados de formulario por
+          clique acidental). Fecha so pelo X ou Cancelar. Passe fecharAoClicarFora
+          se algum modal quiser o dismiss por clique fora. */}
       <div
         className="absolute inset-0 bg-[var(--bg-overlay)] backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
+        onClick={fecharAoClicarFora ? onClose : undefined}
       />
 
       <div className={clsx(

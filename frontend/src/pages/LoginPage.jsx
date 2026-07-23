@@ -65,7 +65,7 @@ export default function LoginPage({ isAdmin = true }) {
               label="E-mail"
               type="email"
               icon={Mail}
-              placeholder="admin@sellergy.cloud"
+              placeholder="seuemail@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
