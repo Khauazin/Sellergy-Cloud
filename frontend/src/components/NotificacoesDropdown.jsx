@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Inbox } from 'lucide-react';
 import clsx from 'clsx';
 import notificacaoService from '../services/notificacaoService';
+import { useAuthStore } from '../store/auth.store';
 
 const INTERVALO_POLL_MS = 30_000;
 
@@ -28,6 +29,12 @@ function tempoRelativo(dataIso) {
 }
 
 export default function NotificacoesDropdown() {
+  // Notificacao e um recurso do tenant: toda consulta do backend filtra por
+  // `clienteId`. O administrador do sistema nao tem tenant, entao nao existe
+  // notificacao para ele — a API responde 403, e esta certa em responder.
+  // Como o Topbar e compartilhado pelos dois layouts, o sino aparecia tambem no
+  // admin e ficava consultando a cada 30 segundos, enchendo o console de erro.
+  const semTenant = useAuthStore((s) => !s.user?.clienteId);
   const [aberto, setAberto] = useState(false);
   const [itens, setItens] = useState([]);
   const [totalNaoLidas, setTotalNaoLidas] = useState(0);
@@ -47,10 +54,12 @@ export default function NotificacoesDropdown() {
 
   // Polling. Limpa intervalo quando o componente sair de tela.
   useEffect(() => {
+    if (semTenant) return undefined;
     buscar();
     const id = setInterval(buscar, INTERVALO_POLL_MS);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semTenant]);
 
   // Fecha ao clicar fora ou ao apertar Esc.
   useEffect(() => {
@@ -88,6 +97,10 @@ export default function NotificacoesDropdown() {
       setCarregando(false);
     }
   };
+
+  // Depois dos hooks (a ordem deles nao pode variar entre renderizacoes): um
+  // sino que nunca teria conteudo so confunde, entao nem aparece para o admin.
+  if (semTenant) return null;
 
   return (
     <div ref={ref} className="relative">
