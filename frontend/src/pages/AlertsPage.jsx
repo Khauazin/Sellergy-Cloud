@@ -34,8 +34,9 @@ export default function AlertsPage() {
 
   // Socket.IO real-time
   useEffect(() => {
-    const token = localStorage.getItem('@sellergy:token');
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333', { auth: { token } });
+    // O handshake se autentica pelo cookie httpOnly da sessao — por isso
+    // `withCredentials` no lugar de mandar o token na mao.
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3333', { withCredentials: true });
 
     socket.on('novo_alerta', (a) => {
       setAlertas((prev) => [a, ...prev]);

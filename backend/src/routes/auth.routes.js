@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const prisma = require('../prisma');
 const middlewareAutenticacao = require('../middlewares/auth.middleware');
 const { SEGREDO_JWT } = require('../middlewares/auth.middleware');
+const { definirSessao, garantirCsrf, limparSessao } = require('../utils/sessaoCookie');
 
 const roteador = express.Router();
 
@@ -99,6 +100,11 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
       branding = { logo: cliente?.brandLogo || null, nome: cliente?.brandNome || null };
     }
 
+    // O token vai para um cookie httpOnly e NAO volta no corpo: assim ele fica
+    // fora do alcance do JavaScript e um XSS nao consegue roubar a sessao.
+    // No lugar dele devolvemos o segredo de CSRF, que o front guarda em memoria.
+    const csrfToken = definirSessao(res, token);
+
     res.json({
       usuario: {
         id: usuario.id,
@@ -112,12 +118,22 @@ roteador.post('/login', limitadorLogin, async (req, res) => {
         segmento,
         branding,
       },
-      token
+      csrfToken
     });
   } catch (erro) {
     console.error('[auth/login]', erro);
     res.status(500).json({ erro: 'Erro ao fazer login' });
   }
+});
+
+// Encerra a sessao apagando os cookies. Passou a ser obrigatorio no servidor:
+// com o token em cookie httpOnly, o front nao tem como remove-lo sozinho.
+// Sem autenticacao de proposito — a rota so apaga os cookies de quem chamou, e
+// exigir sessao valida impediria a limpeza justamente no caso em que ela mais
+// importa (cookie corrompido ou token vencido).
+roteador.post('/logout', (req, res) => {
+  limparSessao(res);
+  res.json({ mensagem: 'Sessao encerrada.' });
 });
 
 roteador.get('/perfil', middlewareAutenticacao, async (req, res) => {
@@ -160,6 +176,9 @@ roteador.get('/perfil', middlewareAutenticacao, async (req, res) => {
       segmento,
       branding,
       horarioFuncionamento,
+      // Reentrega o segredo de CSRF: o front guarda so em memoria, entao a cada
+      // recarga da pagina ele precisa receber o valor de novo por aqui.
+      csrfToken: req.sessaoPorCookie ? garantirCsrf(req, res) : null,
     });
   } catch (erro) {
     console.error('[auth/perfil]', erro);
