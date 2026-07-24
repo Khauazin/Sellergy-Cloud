@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Sun, Moon, Upload, ImageIcon, Trash2, Save, ShieldCheck,
-  Building2, ChevronRight, AlertCircle, Key, Clock, Bell
+  Building2, ChevronRight, AlertCircle, Clock, Bell
 } from 'lucide-react';
 import api from '../services/api';
 import notificacaoService from '../services/notificacaoService';
@@ -86,7 +86,6 @@ export default function ConfiguracoesPage() {
         <TabsContent value="conta" className="mt-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ConfigLink icon={ShieldCheck} titulo="Equipe" descricao="Cadastrar colaboradores e especialistas, e definir permissões" onClick={() => navigate('/app/usuarios')} />
-            <ConfigLink icon={Key} titulo="Credenciais" descricao="Chaves de pagamento, fiscal e WhatsApp, cifradas em repouso" onClick={() => navigate('/app/configuracoes/credenciais')} />
           </div>
         </TabsContent>
 

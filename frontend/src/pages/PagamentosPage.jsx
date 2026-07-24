@@ -144,8 +144,8 @@ export default function PagamentosPage() {
 
         {form.provedor && credenciaisDoProvedor.length === 0 && (
           <p className="text-xs text-[var(--text-muted)] mt-3">
-            Cadastre uma credencial do tipo <strong>{TIPO_POR_PROVEDOR[form.provedor]}</strong> em{' '}
-            <Link to="/app/configuracoes/credenciais" className="underline">Credenciais</Link> para ativar este provedor.
+            Este provedor ainda não tem integração configurada na sua conta.
+            Fale com o administrador para ativar.
           </p>
         )}
 

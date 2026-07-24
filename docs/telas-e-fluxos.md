@@ -95,7 +95,7 @@ Legenda de estado: ✅ existe · 🟡 placeholder · 🆕 novo
 | `/app/campanhas` | (placeholder) | disparos/recompra (restrições Meta) | 🟡 (fase 2) |
 | `/app/bots` | (placeholder) | tenant vê/ajusta o próprio bot? (a decidir) | 🟡 (a decidir) |
 | `/app/usuarios` | CrmUsersPage | equipe do tenant + permissões (+ vínculo Especialista) | ✅ (vínculo 🆕) |
-| `/app/configuracoes` · `/perfil` · `/credenciais` | ConfiguracoesPage · PerfilPage · CredenciaisPage | config do tenant, perfil, credenciais cifradas | ✅ |
+| `/app/configuracoes` · `/perfil` | ConfiguracoesPage · PerfilPage | config do tenant e perfil. As integrações (credenciais) saíram daqui: quem cadastra é o admin, em Clientes › Integrações | ✅ |
 
 ### D. Conceitos novos que precisam de lugar na UI
 Do [cérebro](cerebro-do-negocio.md), itens decididos que ainda não têm tela:

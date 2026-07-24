@@ -1,5 +1,10 @@
-// Service de credenciais. Os endpoints NUNCA retornam dadosCifrados/iv/tag —
-// só metadata. Edição substitui os dados (re-cifra no backend).
+// Service de credenciais — somente leitura. Os endpoints NUNCA retornam
+// dadosCifrados/iv/tag, só metadata.
+//
+// Serve às telas que precisam ESCOLHER uma credencial já cadastrada (bot,
+// provedor de pagamento, emissor fiscal). Cadastrar e alterar é atribuição do
+// admin: use adminCredenciaisService, que fala com /admin/clientes/:id/credenciais.
+// O backend recusa escrita por aqui, então funções de criação não teriam efeito.
 
 import api from './api';
 
@@ -13,18 +18,4 @@ export async function listar() {
   return r.data;
 }
 
-export async function criar({ nome, tipo, descricao, dados }) {
-  const r = await api.post('/credenciais', { nome, tipo, descricao, dados });
-  return r.data;
-}
-
-export async function atualizar(id, { nome, descricao, dados }) {
-  const r = await api.put(`/credenciais/${id}`, { nome, descricao, dados });
-  return r.data;
-}
-
-export async function excluir(id) {
-  await api.delete(`/credenciais/${id}`);
-}
-
-export default { listarTipos, listar, criar, atualizar, excluir };
+export default { listarTipos, listar };

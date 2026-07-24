@@ -1,15 +1,17 @@
-// CRUD de credenciais (chaves de API). Apenas tenant member com permissao
-// CONFIGURACOES.editar pode criar/editar/excluir. ADMIN do sistema pode
-// listar metadata, mas NUNCA recebe os dados decifrados.
+// Leitura de credenciais (chaves de API) do tenant.
+//
+// A ESCRITA saiu daqui: cadastrar e alterar integracao passou a ser
+// exclusividade do admin, em /admin/clientes/:clienteId/credenciais
+// (admin-credenciais.routes.js). Esta rota ficou somente-leitura para alimentar
+// as telas que precisam ESCOLHER uma credencial ja existente — o bot, o provedor
+// de pagamento e o emissor fiscal. Nenhuma delas recebe o segredo, so a metadata.
 //
 // Politica:
+//   - GET /credenciais/tipos — lista o enum TipoCredencial com schema.
 //   - GET /credenciais — lista metadata (id, nome, tipo, ultimoUsoEm, ...).
 //     `dadosCifrados`/`iv`/`tag` NUNCA saem da API.
-//   - POST /credenciais — cria nova; o backend cifra antes de gravar.
-//   - PUT /credenciais/:id — atualiza nome/descricao OU substitui dados
-//     (re-cifra). Substituicao de dados regenera iv/tag.
-//   - DELETE /credenciais/:id — apaga.
-//   - GET /credenciais/tipos — lista enum TipoCredencial com schema.
+//   - GET /credenciais/:id — metadata de uma credencial, sem segredos.
+//   - POST / PUT / DELETE — bloqueados. Ver o fim do arquivo.
 
 const express = require('express');
 const prisma = require('../prisma');
@@ -18,16 +20,12 @@ const {
   ehAdmin,
   requerPermissao,
 } = require('../middlewares/permissoes.middleware');
-const { cifrarPayload, normalizarPayload } = require('../cripto/cofreCredenciais');
-// Whitelist de tipo, schema, validacao e semSegredos vivem no core (fonte unica,
-// reusada pela rota admin — sem duplicar = sem divergir).
+// Whitelist de tipo, schema e semSegredos vivem no core (fonte unica, reusada
+// pela rota admin — sem duplicar = sem divergir).
 const {
   TIPOS_VALIDOS,
   CATEGORIA_POR_TIPO,
   SCHEMA_POR_TIPO,
-  TAM_MAX_NOME,
-  TAM_MAX_DESCRICAO,
-  validarPayload,
   semSegredos,
 } = require('../credenciaisCore');
 
@@ -86,125 +84,32 @@ roteador.get('/:id', requerPermissao('CONFIGURACOES', 'visualizar'), async (req,
 });
 
 // ==========================================
-// CRIAR
-// Body: { nome, tipo, descricao?, dados: { ... } }
+// ESCRITA — desativada nesta rota
 // ==========================================
-roteador.post('/', requerPermissao('CONFIGURACOES', 'editar'), async (req, res) => {
-  try {
-    if (ehAdmin(req.usuario) || !req.usuario.clienteId) {
-      return res.status(403).json({ erro: 'Apenas usuarios do tenant podem criar credenciais.' });
-    }
+// Nenhuma tela do app do cliente cadastra integracao: quem faz isso e o admin.
+// Sem estes bloqueios os verbos continuariam alcancaveis por chamada direta a
+// API, permitindo que um usuario do tenant trocasse uma chave de pagamento sem
+// passar por tela nenhuma — superficie de ataque sem contrapartida, e no
+// processo mais sensivel do sistema.
+//
+// Respondem explicitamente, em vez de simplesmente deixarem de existir, por dois
+// motivos: a tentativa fica registrada no log, e a decisao fica escrita aqui —
+// quem for reintroduzir o CRUD por engano esbarra no comentario primeiro.
+function escritaBloqueada(req, res) {
+  console.warn(
+    '[credenciais] escrita bloqueada',
+    req.method,
+    req.originalUrl,
+    'usuario=', req.usuario?.id,
+    'cliente=', req.usuario?.clienteId
+  );
+  return res.status(403).json({
+    erro: 'As integrações são configuradas pelo administrador. Fale com o suporte para cadastrar ou alterar uma chave.',
+  });
+}
 
-    const { nome, tipo, descricao, dados } = req.body || {};
-
-    if (typeof nome !== 'string' || nome.trim().length < 2 || nome.length > TAM_MAX_NOME) {
-      return res.status(400).json({ erro: `Nome obrigatorio (2-${TAM_MAX_NOME} chars).` });
-    }
-    if (!TIPOS_VALIDOS.has(tipo)) {
-      return res.status(400).json({ erro: `Tipo invalido. Valores: ${[...TIPOS_VALIDOS].join(', ')}.` });
-    }
-    if (typeof descricao === 'string' && descricao.length > TAM_MAX_DESCRICAO) {
-      return res.status(400).json({ erro: `Descricao excede ${TAM_MAX_DESCRICAO} caracteres.` });
-    }
-
-    const payload = normalizarPayload(dados);
-    const valid = validarPayload(tipo, payload);
-    if (valid.erro) return res.status(400).json({ erro: valid.erro });
-
-    const cifrado = cifrarPayload(req.usuario.clienteId, payload);
-    const credencial = await prisma.credencial.create({
-      data: {
-        clienteId: req.usuario.clienteId,
-        nome: nome.trim(),
-        tipo,
-        descricao: typeof descricao === 'string' ? descricao.trim() || null : null,
-        dadosCifrados: cifrado.conteudoCifrado,
-        iv: cifrado.iv,
-        tag: cifrado.tag,
-        versaoChave: cifrado.versaoChave,
-        criadoPorId: req.usuario.id || null,
-      },
-    });
-
-    res.status(201).json(semSegredos(credencial));
-  } catch (erro) {
-    console.error('[credenciais/criar]', erro);
-    res.status(500).json({ erro: 'Erro ao criar credencial.' });
-  }
-});
-
-// ==========================================
-// ATUALIZAR
-// Body: { nome?, descricao?, dados? }  (dados regenera ciphertext)
-// ==========================================
-roteador.put('/:id', requerPermissao('CONFIGURACOES', 'editar'), async (req, res) => {
-  try {
-    if (ehAdmin(req.usuario)) {
-      return res.status(403).json({ erro: 'Apenas usuarios do tenant podem editar credenciais.' });
-    }
-    const credencial = await credencialDoTenant(req.params.id, req.usuario);
-    if (!credencial) return res.status(404).json({ erro: 'Credencial nao encontrada.' });
-
-    const { nome, descricao, dados } = req.body || {};
-    const data = {};
-
-    if (nome !== undefined) {
-      if (typeof nome !== 'string' || nome.trim().length < 2 || nome.length > TAM_MAX_NOME) {
-        return res.status(400).json({ erro: `Nome invalido (2-${TAM_MAX_NOME} chars).` });
-      }
-      data.nome = nome.trim();
-    }
-    if (descricao !== undefined) {
-      if (descricao !== null && typeof descricao !== 'string') {
-        return res.status(400).json({ erro: 'Descricao deve ser texto ou null.' });
-      }
-      if (typeof descricao === 'string' && descricao.length > TAM_MAX_DESCRICAO) {
-        return res.status(400).json({ erro: `Descricao excede ${TAM_MAX_DESCRICAO} caracteres.` });
-      }
-      data.descricao = descricao ? descricao.trim() : null;
-    }
-    if (dados !== undefined) {
-      const payload = normalizarPayload(dados);
-      const valid = validarPayload(credencial.tipo, payload);
-      if (valid.erro) return res.status(400).json({ erro: valid.erro });
-      const cifrado = cifrarPayload(credencial.clienteId, payload);
-      data.dadosCifrados = cifrado.conteudoCifrado;
-      data.iv = cifrado.iv;
-      data.tag = cifrado.tag;
-      data.versaoChave = cifrado.versaoChave;
-    }
-
-    if (Object.keys(data).length === 0) {
-      return res.status(400).json({ erro: 'Nenhum campo para atualizar.' });
-    }
-
-    const atualizada = await prisma.credencial.update({
-      where: { id: credencial.id },
-      data,
-    });
-    res.json(semSegredos(atualizada));
-  } catch (erro) {
-    console.error('[credenciais/atualizar]', erro);
-    res.status(500).json({ erro: 'Erro ao atualizar credencial.' });
-  }
-});
-
-// ==========================================
-// EXCLUIR
-// ==========================================
-roteador.delete('/:id', requerPermissao('CONFIGURACOES', 'excluir'), async (req, res) => {
-  try {
-    if (ehAdmin(req.usuario)) {
-      return res.status(403).json({ erro: 'Apenas usuarios do tenant podem excluir credenciais.' });
-    }
-    const credencial = await credencialDoTenant(req.params.id, req.usuario);
-    if (!credencial) return res.status(404).json({ erro: 'Credencial nao encontrada.' });
-    await prisma.credencial.delete({ where: { id: credencial.id } });
-    res.json({ ok: true });
-  } catch (erro) {
-    console.error('[credenciais/excluir]', erro);
-    res.status(500).json({ erro: 'Erro ao excluir credencial.' });
-  }
-});
+roteador.post('/', escritaBloqueada);
+roteador.put('/:id', escritaBloqueada);
+roteador.delete('/:id', escritaBloqueada);
 
 module.exports = roteador;

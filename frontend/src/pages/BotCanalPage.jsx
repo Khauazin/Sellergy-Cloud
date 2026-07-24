@@ -147,7 +147,7 @@ export default function BotCanalPage() {
             }
             hint={
               credenciaisDoCanal.length === 0
-                ? 'Crie em Configuracoes > Credenciais (tipo WHATSAPP_CLOUD_TOKEN).'
+                ? 'Cadastre a integração do WhatsApp em Clientes > Integrações.'
                 : undefined
             }
           />

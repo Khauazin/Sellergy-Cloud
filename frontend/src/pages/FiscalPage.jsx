@@ -221,8 +221,8 @@ export default function FiscalPage() {
 
         {form.provedor && credenciaisDoProvedor.length === 0 && (
           <p className="text-xs text-[var(--text-muted)] mt-3">
-            Cadastre uma credencial do tipo <strong>{TIPO_POR_PROVEDOR[form.provedor]}</strong> em{' '}
-            <Link to="/app/configuracoes/credenciais" className="underline">Credenciais</Link> para ativar este emissor.
+            Este emissor ainda não tem integração configurada na sua conta.
+            Fale com o administrador para ativar.
           </p>
         )}
 
