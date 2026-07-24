@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, Bot, Edit2, Trash2, MoreHorizontal, Wifi, WifiOff, AlertCircle,
-  Sparkles, Workflow, Copy, MessageCircle, Wrench, KeyRound, ExternalLink, Settings
+  Sparkles, Workflow, Copy, MessageCircle, Wrench, KeyRound, Settings
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -391,14 +391,12 @@ function ModalBot({ isOpen, onClose, bot, clientes, onSalvar }) {
                   <KeyRound size={11} />
                   {labelTipoEsperado ? `Esperado: ${labelTipoEsperado}` : 'Provedor aceita qualquer tipo'}
                 </span>
-                <Link
-                  to="/app/configuracoes/credenciais"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-[var(--accent)] hover:underline flex items-center gap-1"
-                >
-                  Cadastrar nova <ExternalLink size={11} />
-                </Link>
+                {/* As credenciais passaram a ser cadastradas pelo admin, em
+                    Clientes > Integracoes. Nao ha URL direta (e um modal na
+                    listagem), entao aqui fica so a indicacao do caminho. */}
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Cadastre em Clientes &gt; Integrações
+                </span>
               </div>
             </div>
           </div>

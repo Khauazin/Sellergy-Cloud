@@ -30,7 +30,6 @@ import FinanceiroPage from './pages/FinanceiroPage';
 import CrmUsersPage from './pages/CrmUsersPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import PerfilPage from './pages/PerfilPage';
-import CredenciaisPage from './pages/CredenciaisPage';
 import PagamentosPage from './pages/PagamentosPage';
 import FiscalPage from './pages/FiscalPage';
 
@@ -188,7 +187,6 @@ export default function App() {
             <Route path="/app/usuarios" element={<CrmUsersPage />} />
             <Route path="/app/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/app/configuracoes/perfil" element={<PerfilPage />} />
-            <Route path="/app/configuracoes/credenciais" element={<CredenciaisPage />} />
           </Route>
 
           {/* Fallback */}
